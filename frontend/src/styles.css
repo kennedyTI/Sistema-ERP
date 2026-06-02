@@ -1,0 +1,243 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-neutral: var(--neutral);
+  --color-neutral-foreground: var(--neutral-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-elegant: 0 14px 36px -18px color-mix(in oklab, var(--industria-blue) 44%, transparent);
+  --shadow-card: 0 1px 2px 0 color-mix(in oklab, var(--industria-blue-deep) 8%, transparent), 0 14px 28px -22px color-mix(in oklab, var(--industria-blue) 28%, transparent);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* industria official brand palette from the identity assets/manual. */
+  --industria-blue: #344472;
+  --industria-blue-bright: #465d9c;
+  --industria-blue-dark: #26355f;
+  --industria-blue-deep: #111a33;
+  --industria-blue-card: #17223f;
+  --industria-blue-soft: #e9edf6;
+  --industria-orange: #ee6010;
+  --industria-green: #054f08;
+  --industria-blue-secondary: #0520ba;
+  --industria-white: #ffffff;
+  --industria-gray-light: #f6f7fb;
+  --industria-border: #d8deec;
+
+  --background: var(--industria-gray-light);
+  --foreground: #18223b;
+  --card: var(--industria-white);
+  --card-foreground: #18223b;
+  --popover: var(--industria-white);
+  --popover-foreground: #18223b;
+
+  --primary: var(--industria-blue);
+  --primary-foreground: var(--industria-white);
+  --primary-dark: var(--industria-blue-dark);
+  --primary-soft: var(--industria-blue-soft);
+
+  --secondary: #f0f3fa;
+  --secondary-foreground: var(--industria-blue-dark);
+  --muted: #eef1f8;
+  --muted-foreground: #596579;
+  --accent: var(--industria-blue-soft);
+  --accent-foreground: var(--industria-blue-dark);
+  --destructive: #dc2626;
+  --destructive-foreground: var(--industria-white);
+  --border: var(--industria-border);
+  --input: #c9d6e2;
+  --ring: var(--industria-blue-bright);
+
+  /* Operational status */
+  --success: #16a34a;
+  --success-foreground: var(--industria-white);
+  --warning: #f59e0b;
+  --warning-foreground: var(--warning);
+  --danger: #dc2626;
+  --danger-foreground: var(--industria-white);
+  --neutral: #8a99a8;
+  --neutral-foreground: var(--industria-white);
+
+  --sidebar: var(--industria-blue-deep);
+  --sidebar-foreground: #e4e9f5;
+  --sidebar-primary: var(--industria-blue-bright);
+  --sidebar-primary-foreground: var(--industria-white);
+  --sidebar-accent: color-mix(in oklab, var(--industria-blue-bright) 34%, transparent);
+  --sidebar-accent-foreground: var(--industria-white);
+  --sidebar-border: color-mix(in oklab, var(--industria-blue-bright) 22%, transparent);
+  --sidebar-ring: var(--industria-blue-bright);
+}
+
+.dark {
+  --background: var(--industria-blue-deep);
+  --foreground: #f4f8fc;
+  --card: var(--industria-blue-card);
+  --card-foreground: #f4f8fc;
+  --popover: #1d2b4e;
+  --popover-foreground: #f4f8fc;
+
+  --primary: #8fa0cf;
+  --primary-foreground: #10182f;
+  --primary-dark: var(--industria-blue-bright);
+  --primary-soft: #26355f;
+
+  --secondary: #202c4f;
+  --secondary-foreground: #f4f8fc;
+  --muted: #202b4b;
+  --muted-foreground: #b5bfd6;
+  --accent: #27365f;
+  --accent-foreground: #f4f8fc;
+  --destructive: #f87171;
+  --destructive-foreground: #2b0909;
+  --border: color-mix(in oklab, var(--industria-blue-bright) 22%, transparent);
+  --input: color-mix(in oklab, var(--industria-blue-bright) 28%, transparent);
+  --ring: #8fa0cf;
+
+  --success: #34d399;
+  --success-foreground: #05251a;
+  --warning: #fbbf24;
+  --warning-foreground: var(--warning);
+  --danger: #fb7185;
+  --danger-foreground: #2b0909;
+  --neutral: #8da8bd;
+  --neutral-foreground: var(--industria-blue-deep);
+
+  --sidebar: #0e1730;
+  --sidebar-foreground: #e4e9f5;
+  --sidebar-primary: #8fa0cf;
+  --sidebar-primary-foreground: #10182f;
+  --sidebar-accent: color-mix(in oklab, var(--industria-blue-bright) 30%, transparent);
+  --sidebar-accent-foreground: var(--industria-white);
+  --sidebar-border: color-mix(in oklab, var(--industria-blue-bright) 20%, transparent);
+  --sidebar-ring: #40a6ff;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    background-image:
+      radial-gradient(circle at top right, color-mix(in oklab, var(--industria-blue-soft) 72%, transparent), transparent 34rem),
+      radial-gradient(circle at bottom left, color-mix(in oklab, var(--industria-orange) 8%, transparent), transparent 32rem),
+      linear-gradient(180deg, color-mix(in oklab, var(--industria-white) 72%, transparent), transparent 18rem);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  .dark body {
+    background-image:
+      radial-gradient(circle at top right, color-mix(in oklab, var(--industria-blue-bright) 18%, transparent), transparent 34rem),
+      radial-gradient(circle at bottom left, color-mix(in oklab, var(--industria-orange) 10%, transparent), transparent 32rem),
+      linear-gradient(180deg, color-mix(in oklab, var(--industria-blue-card) 70%, transparent), transparent 20rem);
+  }
+}
+
+/* Subtle pulse for critical / offline indicators */
+@keyframes industria-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.animate-soft-pulse {
+  animation: industria-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes industria-blink-row {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: color-mix(in oklab, var(--danger) 8%, transparent); }
+}
+.row-critical {
+  animation: industria-blink-row 2.4s ease-in-out infinite;
+}
+
+.login-floating-card {
+  animation: industria-card-float 6s ease-in-out infinite;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background-color 220ms ease;
+  will-change: transform, translate;
+}
+
+.login-floating-card:hover,
+.login-floating-card:focus-within {
+  transform: translateY(-4px) scale(1.015);
+  border-color: color-mix(in oklab, var(--primary) 34%, var(--color-border));
+  box-shadow:
+    0 36px 96px -42px color-mix(in oklab, var(--primary) 58%, transparent),
+    0 18px 42px -34px color-mix(in oklab, var(--industria-orange) 42%, transparent);
+}
+
+@keyframes industria-card-float {
+  0%, 100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-floating-card {
+    animation: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+    will-change: auto;
+  }
+
+  .login-floating-card:hover,
+  .login-floating-card:focus-within {
+    transform: none;
+  }
+}
+
+/* Warning badges must read like status cells: colored text, not black text. */
+span.inline-flex.rounded-full.text-warning-foreground,
+span.inline-flex.rounded-full.text-warning-foreground svg,
+span.inline-flex.rounded-full.text-warning,
+span.inline-flex.rounded-full.text-warning svg {
+  color: var(--warning) !important;
+}

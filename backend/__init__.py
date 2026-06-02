@@ -1,0 +1,3 @@
+"""
+Pacote raiz do backend.
+"""

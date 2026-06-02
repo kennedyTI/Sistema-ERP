@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+.tanstack/
+.wrangler/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.docker.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker volumes / local data
+postgres_data/
+pgdata/
+
+# Certificates
+docker/nginx/certs/dev/*.crt
+docker/nginx/certs/dev/*.key
+docker/nginx/certs/*.crt
+docker/nginx/certs/*.key
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak

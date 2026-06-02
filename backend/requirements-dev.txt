@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# =========================
+# TESTES / DESENVOLVIMENTO
+# =========================
+pytest==8.1.1

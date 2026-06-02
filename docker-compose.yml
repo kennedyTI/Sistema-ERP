@@ -1,0 +1,122 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: portal_industria_postgres
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      POSTGRES_DB: ${POSTGRES_DB:-portal_industria_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-portal_industria_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - portal_industria_net
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal_industria_migrations
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python docker/scripts/create_schemas.py
+      && alembic -c backend/alembic.ini upgrade head
+      && python manage.py migrate --noinput
+      && python manage.py seed_admin_groups"
+    networks:
+      - portal_industria_net
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal_industria_api
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    networks:
+      - portal_industria_net
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal_industria_admin
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    command: python manage.py runserver 0.0.0.0:8001
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/app
+    networks:
+      - portal_industria_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: portal_industria_frontend
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_started
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend_node_modules:/app/frontend/node_modules
+    networks:
+      - portal_industria_net
+
+networks:
+  portal_industria_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  frontend_node_modules:

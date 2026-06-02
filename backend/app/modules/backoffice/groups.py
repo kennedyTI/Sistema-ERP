@@ -1,0 +1,37 @@
+"""
+Grupos oficiais do Portal v2.
+"""
+
+from backend.app.modules.auth.permissions import (
+    GROUP_EQUIPE_TECNICA,
+    GROUP_GESTOR,
+    GROUP_INTEGRACAO_PROTHEUS,
+    GROUP_OPERADOR,
+)
+from backend.app.modules.backoffice.permissions import BACKOFFICE_READONLY_PERMISSIONS
+
+GROUPS = {
+    GROUP_EQUIPE_TECNICA: {
+        "description": "Acessa o portal visual e ve o Django Admin.",
+        "permissions": {
+            "audit": BACKOFFICE_READONLY_PERMISSIONS,
+        },
+    },
+    GROUP_GESTOR: {
+        "description": "Acessa o portal visual; nao ve Admin.",
+        "permissions": {},
+    },
+    GROUP_OPERADOR: {
+        "description": "Acessa o portal visual; nao ve Admin.",
+        "permissions": {},
+    },
+    GROUP_INTEGRACAO_PROTHEUS: {
+        "description": "Grupo reservado para integracoes; nao acessa portal visual.",
+        "permissions": {},
+    },
+}
+
+OLD_GROUP_RENAMES = (
+    ("Administrador", GROUP_EQUIPE_TECNICA),
+    ("T\u00e9cnico", GROUP_OPERADOR),
+)
