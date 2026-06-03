@@ -20,6 +20,20 @@ O Sistema ERP v2 possui uma base institucional e modular composta por:
 * Docker Compose para orquestração dos serviços;
 * Estrutura preparada para evolução por módulos.
 
+### Módulo Impressoras
+
+O módulo Impressoras passa a existir como um módulo futuro dentro do Sistema ERP, sem alterar a identidade institucional do produto.
+
+Nesta primeira fase, a fundação inclui:
+
+* estrutura modular no backend e no frontend;
+* páginas placeholder de Dashboard, Máquinas e Papel;
+* menu condicionado por permissões;
+* rota inicial de listagem de máquinas;
+* endpoints de status de desenvolvimento para Dashboard e Papel.
+
+Monitoramento, SNMP, toner, alertas, histórico, Celery e Redis não fazem parte desta etapa.
+
 ---
 
 ## Tecnologias utilizadas
@@ -79,10 +93,15 @@ sistema_erp/
 │   │   │   │   ├── services.py
 │   │   │   │   └── management/
 │   │   │   │
-│   │   │   └── audit/
-│   │   │       ├── models.py
-│   │   │       ├── services.py
-│   │   │       └── ...
+│   │   │   ├── audit/
+│   │   │   │   ├── models.py
+│   │   │   │   ├── services.py
+│   │   │   │   └── ...
+│   │   │   │
+│   │   │   └── printers/
+│   │   │       ├── dashboard/
+│   │   │       ├── machines/
+│   │   │       └── paper/
 │   │   │
 │   │   ├── shared/
 │   │   │   ├── constants.py
@@ -114,8 +133,13 @@ sistema_erp/
 │       │   │   ├── authApi.ts
 │       │   │   └── components/
 │       │   │
-│       │   └── home/
-│       │       └── HomePage.tsx
+│       │   ├── home/
+│       │   │   └── HomePage.tsx
+│       │   │
+│       │   └── printers/
+│       │       ├── dashboard/
+│       │       ├── machines/
+│       │       └── paper/
 │       │
 │       └── shared/
 │           ├── components/
@@ -171,19 +195,25 @@ postgres
 
 ### Frontend
 
-| Rota      | Descrição                        |
-| --------- | -------------------------------- |
-| `/login`  | Tela de autenticação             |
-| `/inicio` | Tela inicial do sistema          |
-| `/admin/` | Acesso ao Django Admin via proxy |
+| Rota                     | Descrição                                |
+| ------------------------ | ---------------------------------------- |
+| `/login`                 | Tela de autenticação                     |
+| `/inicio`                | Tela inicial do sistema                  |
+| `/impressoras/dashboard` | Placeholder do dashboard de impressoras |
+| `/impressoras/maquinas`  | Placeholder de máquinas                 |
+| `/impressoras/papel`     | Placeholder de papel                    |
+| `/admin/`                | Acesso ao Django Admin via proxy         |
 
 ### Backend
 
-| Rota                  | Método | Descrição                    |
-| --------------------- | ------ | ---------------------------- |
-| `/api/v2/auth/login`  | `POST` | Autenticação do usuário      |
-| `/api/v2/auth/me`     | `GET`  | Dados do usuário autenticado |
-| `/api/v2/auth/logout` | `POST` | Encerramento da sessão/token |
+| Rota                         | Método | Descrição                              |
+| ---------------------------- | ------ | -------------------------------------- |
+| `/api/v2/auth/login`         | `POST` | Autenticação do usuário                |
+| `/api/v2/auth/me`            | `GET`  | Dados do usuário autenticado           |
+| `/api/v2/auth/logout`        | `POST` | Encerramento da sessão/token           |
+| `/api/v2/printers/dashboard` | `GET`  | Status inicial do dashboard            |
+| `/api/v2/printers/machines`  | `GET`  | Lista inicial de máquinas, ainda vazia |
+| `/api/v2/printers/paper`     | `GET`  | Status inicial do submódulo Papel      |
 
 ---
 
@@ -191,12 +221,12 @@ postgres
 
 O sistema utiliza grupos para controlar acesso ao portal e ao Django Admin.
 
-| Grupo                 | Acesso                      |
-| --------------------- | --------------------------- |
-| `Equipe Técnica`      | Início e Django Admin       |
-| `Gestor`              | Início                      |
-| `Operador`            | Início                      |
-| `Integração Protheus` | Sem acesso ao portal visual |
+| Grupo                 | Acesso                                                      |
+| --------------------- | ----------------------------------------------------------- |
+| `Equipe Técnica`      | Início, Impressoras, Dashboard, Máquinas, Papel e Admin     |
+| `Gestor`              | Início, Impressoras, Dashboard, Máquinas e Papel            |
+| `Operador`            | Início, Impressoras, Dashboard e Máquinas                   |
+| `Integração Protheus` | Sem acesso ao portal visual                                 |
 
 ---
 
