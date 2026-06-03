@@ -80,6 +80,15 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "https://localhost:8443").split(",")
+    if origin.strip()
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
 
 # ---------------------------------------------------------------------
 # ðŸ“Œ APPS INSTALADOS
@@ -175,7 +184,7 @@ USE_TZ = False
 # ---------------------------------------------------------------------
 # ðŸ“Œ STATIC
 # ---------------------------------------------------------------------
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BACKEND_DIR / "staticfiles"
 
 
@@ -183,5 +192,4 @@ STATIC_ROOT = BACKEND_DIR / "staticfiles"
 # ðŸ“Œ DEFAULTS
 # ---------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
 
