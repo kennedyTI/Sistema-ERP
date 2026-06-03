@@ -59,3 +59,11 @@ class ApiContractsTest(TestCase):
         self.assertIn("/api/v2/auth/me", paths)
         self.assertIn("/api/v2/auth/logout", paths)
 
+    def test_rotas_iniciais_de_impressoras_estao_disponiveis_apenas_na_v2(self):
+        paths = {route.path for route in app.routes}
+
+        self.assertIn("/api/v2/printers/dashboard", paths)
+        self.assertIn("/api/v2/printers/machines", paths)
+        self.assertIn("/api/v2/printers/paper", paths)
+        self.assertNotIn("/api/v1/printers/machines", paths)
+

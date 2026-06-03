@@ -1,7 +1,7 @@
-﻿import { clearStoredToken, getStoredToken } from "@/modules/auth/authStorage";
+import { clearStoredToken, getStoredToken } from "@/modules/auth/authStorage";
+import { buildApiUrl } from "@/shared/lib/api-url";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const AUTH_BASE_PATH = "/api/v2/auth";
+const AUTH_BASE_PATH = "v2/auth";
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -13,6 +13,10 @@ interface ApiEnvelope<T> {
 export interface PortalPermissions {
   can_access_portal: boolean;
   can_access_admin: boolean;
+  can_access_printers: boolean;
+  can_access_printers_dashboard: boolean;
+  can_access_printers_machines: boolean;
+  can_access_printers_paper: boolean;
 }
 
 export type PortalPermissionKey = keyof PortalPermissions;
@@ -53,7 +57,7 @@ function handleUnauthorized() {
 }
 
 async function authRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -88,4 +92,3 @@ export async function logoutSession(): Promise<void> {
     method: "POST",
   });
 }
-

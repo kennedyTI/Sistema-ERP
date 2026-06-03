@@ -111,18 +111,30 @@ class PortalPermissionsTest(TestCase):
 
         self.assertTrue(permissions.can_access_portal)
         self.assertTrue(permissions.can_access_admin)
+        self.assertTrue(permissions.can_access_printers)
+        self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_machines)
+        self.assertTrue(permissions.can_access_printers_paper)
 
     def test_gestor_acessa_inicio_sem_admin(self):
         permissions = portal_permissions_for_groups(["Gestor"])
 
         self.assertTrue(permissions.can_access_portal)
         self.assertFalse(permissions.can_access_admin)
+        self.assertTrue(permissions.can_access_printers)
+        self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_machines)
+        self.assertTrue(permissions.can_access_printers_paper)
 
     def test_operador_acessa_inicio_sem_admin(self):
         permissions = portal_permissions_for_groups(["Operador"])
 
         self.assertTrue(permissions.can_access_portal)
         self.assertFalse(permissions.can_access_admin)
+        self.assertTrue(permissions.can_access_printers)
+        self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_machines)
+        self.assertFalse(permissions.can_access_printers_paper)
 
     def test_integracao_protheus_nao_acessa_portal_visual(self):
         permissions = portal_permissions_for_groups(["Integra\u00e7\u00e3o Protheus"])

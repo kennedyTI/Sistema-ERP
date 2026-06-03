@@ -1,11 +1,12 @@
 ﻿"""
-Entrada FastAPI da base Portal industria v2 sem dominio de Impressoras.
+Entrada FastAPI da base Sistema ERP v2.
 
-Mantem apenas o nucleo necessario nesta etapa:
+Mantem o nucleo e a fundacao modular necessaria nesta etapa:
 - autenticacao Django Auth + JWT;
 - resposta padrao;
 - logging estruturado;
 - logs/auditoria genericos.
+- modulo Impressoras sem monitoramento operacional.
 """
 
 import logging
@@ -21,6 +22,7 @@ from backend.app.core.exceptions import http_exception_handler, validation_excep
 from backend.app.core.logging import configure_logging
 from backend.app.core.response import api_success
 from backend.app.modules.auth.api import router as auth_router
+from backend.app.modules.printers.api import router as printers_router
 
 configure_logging()
 
@@ -57,9 +59,9 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 # como compatibilidade para clientes antigos de autenticacao.
 app.include_router(auth_router, prefix="/api/v2")
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(printers_router, prefix="/api/v2")
 
 
 @app.get("/")
 def health_check():
     return api_success({"status": "ok"}, "API online")
-

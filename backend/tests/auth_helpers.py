@@ -8,6 +8,10 @@ def make_user(
     groups: list[str] | None = None,
     portal: bool = True,
     admin: bool = False,
+    printers: bool = False,
+    printers_dashboard: bool = False,
+    printers_machines: bool = False,
+    printers_paper: bool = False,
 ) -> PortalUser:
     return PortalUser(
         username=username,
@@ -17,6 +21,10 @@ def make_user(
         permissions=PortalPermissions(
             can_access_portal=portal,
             can_access_admin=admin,
+            can_access_printers=printers,
+            can_access_printers_dashboard=printers_dashboard,
+            can_access_printers_machines=printers_machines,
+            can_access_printers_paper=printers_paper,
         ),
     )
 

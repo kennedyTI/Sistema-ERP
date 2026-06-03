@@ -12,17 +12,17 @@ from backend.app.modules.backoffice.permissions import BACKOFFICE_READONLY_PERMI
 
 GROUPS = {
     GROUP_EQUIPE_TECNICA: {
-        "description": "Acessa o portal visual e ve o Django Admin.",
+        "description": "Acessa Impressoras, Papel e o Django Admin.",
         "permissions": {
             "audit": BACKOFFICE_READONLY_PERMISSIONS,
         },
     },
     GROUP_GESTOR: {
-        "description": "Acessa o portal visual; nao ve Admin.",
+        "description": "Acessa Impressoras, incluindo Papel; nao ve Admin.",
         "permissions": {},
     },
     GROUP_OPERADOR: {
-        "description": "Acessa o portal visual; nao ve Admin.",
+        "description": "Acessa Dashboard e Maquinas; nao ve Papel ou Admin.",
         "permissions": {},
     },
     GROUP_INTEGRACAO_PROTHEUS: {
