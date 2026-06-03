@@ -62,4 +62,8 @@ def require_permission(permission_key: str) -> Callable:
 
 require_portal_access = require_permission("can_access_portal")
 require_admin_access = require_permission("can_access_admin")
+require_printers_access = require_permission("can_access_printers")
+require_printers_dashboard_access = require_permission("can_access_printers_dashboard")
+require_printers_machines_access = require_permission("can_access_printers_machines")
+require_printers_paper_access = require_permission("can_access_printers_paper")
 
