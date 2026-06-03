@@ -1,5 +1,5 @@
 ﻿import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ExternalLink, Files, Home, LayoutDashboard, LogOut, Printer, UserRound } from "lucide-react";
+import { ExternalLink, Files, Home, LogOut, Printer, UserRound } from "lucide-react";
 
 import {
   Sidebar,
@@ -12,6 +12,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from "@/shared/ui/sidebar";
 import { useAuth } from "@/modules/auth/authStore";
@@ -22,13 +25,14 @@ const items = [
   { title: "Inicio", url: "/inicio", icon: Home, permission: "can_access_portal" },
 ] as const;
 
+const printerModuleItem = {
+  title: "Impressoras",
+  url: "/impressoras/dashboard",
+  icon: Printer,
+  permission: "can_access_printers_dashboard",
+} as const;
+
 const printerItems = [
-  {
-    title: "Dashboard",
-    url: "/impressoras/dashboard",
-    icon: LayoutDashboard,
-    permission: "can_access_printers_dashboard",
-  },
   {
     title: "Máquinas",
     url: "/impressoras/maquinas",
@@ -66,6 +70,8 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const visibleItems = items.filter((item) => hasPermission(item.permission as PortalPermissionKey));
   const visiblePrinterItems = printerItems.filter((item) => hasPermission(item.permission as PortalPermissionKey));
+  const canAccessPrintersModule =
+    hasPermission("can_access_printers") && hasPermission(printerModuleItem.permission);
   const homeUrl = (visibleItems[0]?.url ?? "/inicio") as "/inicio";
   const profileImageUrl = (user as { profile_image_url?: string | null } | null)?.profile_image_url;
 
@@ -140,32 +146,46 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {hasPermission("can_access_printers") && visiblePrinterItems.length > 0 && (
+        {canAccessPrintersModule && (
           <SidebarGroup>
-            {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/60">Impressoras</SidebarGroupLabel>}
+            {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/60">Módulos</SidebarGroupLabel>}
             <SidebarGroupContent>
               <SidebarMenu>
-                {visiblePrinterItems.map((item) => {
-                  const active = pathname.startsWith(item.url);
-                  return (
-                    <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
-                        <Link
-                          to={item.url}
-                          className={cn(
-                            "group/link flex items-center gap-2.5 rounded-md text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
-                            active &&
-                              "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-[inset_3px_0_0_var(--sidebar-primary)]",
-                          )}
-                        >
-                          <item.icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-primary")} />
-                          <span>{item.title}</span>
-                          {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary" />}
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname.startsWith("/impressoras")} tooltip={printerModuleItem.title}>
+                    <Link
+                      to={printerModuleItem.url}
+                      className={cn(
+                        "group/link flex items-center gap-2.5 rounded-md text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+                        pathname.startsWith("/impressoras") &&
+                          "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-[inset_3px_0_0_var(--sidebar-primary)]",
+                      )}
+                    >
+                      <printerModuleItem.icon
+                        className={cn("h-4 w-4 shrink-0", pathname.startsWith("/impressoras") && "text-sidebar-primary")}
+                      />
+                      <span>{printerModuleItem.title}</span>
+                      {pathname.startsWith("/impressoras") && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary" />}
+                    </Link>
+                  </SidebarMenuButton>
+                  {visiblePrinterItems.length > 0 && (
+                    <SidebarMenuSub>
+                      {visiblePrinterItems.map((item) => {
+                        const active = pathname.startsWith(item.url);
+                        return (
+                          <SidebarMenuSubItem key={item.url}>
+                            <SidebarMenuSubButton asChild isActive={active}>
+                              <Link to={item.url}>
+                                <item.icon className={cn("h-4 w-4 shrink-0", active && "text-sidebar-primary")} />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
+                    </SidebarMenuSub>
+                  )}
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
