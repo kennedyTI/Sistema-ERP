@@ -43,7 +43,7 @@ const printerItems = [
   },
 ] as const;
 
-const ADMIN_URL = import.meta.env.VITE_ADMIN_URL ?? "http://localhost:8001/admin/";
+const ADMIN_URL = import.meta.env.VITE_ADMIN_URL ?? "/admin/";
 
 const sidebarLogoSrc = "/static/imgs/industria-logo-white.png";
 

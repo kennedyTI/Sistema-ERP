@@ -48,6 +48,9 @@ docker/nginx/certs/dev/*.crt
 docker/nginx/certs/dev/*.key
 docker/nginx/certs/*.crt
 docker/nginx/certs/*.key
+*.crt
+*.key
+*.pem
 
 # Temporary files
 tmp/

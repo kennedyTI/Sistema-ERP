@@ -151,10 +151,11 @@ sistema_erp/
 │   └── nginx/
 │       ├── nginx.conf
 │       ├── conf.d/
-│       │   └── portal.conf
+│       │   └── sistema_erp.conf
 │       └── certs/
 │           ├── README.md
-│           └── dev/
+│           ├── localhost.crt
+│           └── localhost.key
 │
 ├── docker-compose.yml
 ├── .env.example
@@ -268,7 +269,21 @@ http://localhost:8080
 https://localhost:8443/login
 https://localhost:8443/inicio
 https://localhost:8443/admin/
+https://localhost:8443/api/v2/auth/me
+https://localhost:8443/impressoras/dashboard
+https://localhost:8443/impressoras/maquinas
+https://localhost:8443/impressoras/papel
 ```
+
+As portas externas podem ser alteradas no `.env.docker`:
+
+```env
+NGINX_HTTP_PORT=8080
+NGINX_HTTPS_PORT=8443
+```
+
+O Nginx continua ouvindo nas portas internas `80` e `443`. O acesso HTTP em
+`http://localhost:8080` redireciona para `https://localhost:8443`.
 
 Em homologação ou produção, recomenda-se usar:
 
@@ -281,7 +296,19 @@ NGINX_HTTPS_PORT=443
 
 ## Certificado HTTPS local
 
-O ambiente local utiliza certificado self-signed para desenvolvimento.
+O proxy espera os arquivos `docker/nginx/certs/localhost.crt` e
+`docker/nginx/certs/localhost.key`. Esses arquivos não são versionados.
+
+Para desenvolvimento, eles podem ser certificados self-signed criados
+localmente. Um exemplo com OpenSSL:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout docker/nginx/certs/localhost.key \
+  -out docker/nginx/certs/localhost.crt \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
 
 Por isso, o navegador pode exibir um aviso de segurança ao acessar:
 
@@ -292,6 +319,11 @@ https://localhost:8443
 Esse comportamento é esperado.
 
 Em homologação ou produção, substitua o certificado de desenvolvimento por um certificado interno oficial fornecido pela equipe de infraestrutura/TI.
+Certificados reais e chaves privadas nunca devem entrar no Git.
+
+O HTTPS termina no `sistema_erp_proxy`; a comunicação interna entre Nginx,
+frontend, API e Admin permanece HTTP. Frontend, API e Admin ficam disponíveis
+sob o mesmo domínio.
 
 ---
 
@@ -313,6 +345,13 @@ Acesse:
 
 ```text
 https://localhost:8443/login
+```
+
+Para validar com `curl`, pode ser necessário usar `-k` por causa do certificado
+self-signed:
+
+```bash
+curl -k https://localhost:8443/api/v2/auth/me
 ```
 
 ---

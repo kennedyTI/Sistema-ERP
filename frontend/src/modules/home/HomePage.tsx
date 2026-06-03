@@ -5,6 +5,8 @@ import { Button } from "@/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { useAuth } from "@/modules/auth/authStore";
 
+const ADMIN_URL = import.meta.env.VITE_ADMIN_URL ?? "/admin/";
+
 export function HomePage() {
   return (
     <RequireAuth permission="can_access_portal">
@@ -30,7 +32,7 @@ function InicioPage() {
           </div>
           {user?.permissions.can_access_admin && (
             <Button asChild className="shrink-0">
-              <a href="http://localhost:8001/admin/" target="_blank" rel="noreferrer">
+              <a href={ADMIN_URL} target="_blank" rel="noreferrer">
                 <ExternalLink className="h-4 w-4" />
                 Admin
               </a>
@@ -73,6 +75,5 @@ function InicioPage() {
     </div>
   );
 }
-
 
 
