@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 class PortalPermissions(BaseModel):
     can_access_portal: bool = False
     can_access_admin: bool = False
+    can_access_printers: bool = False
+    can_access_printers_dashboard: bool = False
+    can_access_printers_machines: bool = False
+    can_access_printers_paper: bool = False
 
 
 class PortalUser(BaseModel):
