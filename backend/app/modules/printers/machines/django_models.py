@@ -5,10 +5,10 @@ from django.db import models
 
 class PrinterModelAdminModel(models.Model):
     id = models.AutoField(primary_key=True)
-    manufacturer = models.CharField(max_length=120)
-    name = models.CharField(max_length=120)
-    type = models.CharField(max_length=80, null=True, blank=True)
-    color_mode = models.CharField(max_length=40, null=True, blank=True)
+    manufacturer = models.CharField("FABRICANTE", max_length=120)
+    name = models.CharField("MODELO", max_length=120)
+    type = models.CharField("TIPO", max_length=80, null=True, blank=True)
+    color_mode = models.CharField("COR_MODELO", max_length=40, null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(null=True, blank=True)
@@ -48,8 +48,8 @@ class PrinterMachineAdminModel(models.Model):
         app_label = "printer_machines"
         managed = False
         db_table = "printer_machines"
-        verbose_name = "Maquina"
-        verbose_name_plural = "Maquinas"
+        verbose_name = "Impressora"
+        verbose_name_plural = "Impressoras"
 
     def __str__(self):
         return f"{self.name} ({self.ip_address})"
