@@ -10,6 +10,7 @@ from backend.app.modules.auth.schemas import PortalUser
 from backend.app.modules.printers.machines.schemas import MachineCreate, MachineRead, MachineStatusUpdate, MachineUpdate
 from backend.app.modules.printers.machines.services import (
     DuplicateMachineIpError,
+    MachineModelRequiredError,
     MachineNotFoundError,
     create_machine,
     get_machine,
@@ -40,6 +41,8 @@ def machines_create(
         machine = create_machine(db, payload)
     except DuplicateMachineIpError as exc:
         raise HTTPException(status_code=409, detail="Ja existe uma maquina cadastrada com este IP.") from exc
+    except MachineModelRequiredError as exc:
+        raise HTTPException(status_code=422, detail="Fabricante e modelo devem ser informados juntos.") from exc
 
     return api_success(MachineRead.model_validate(machine), "Maquina cadastrada.")
 
@@ -71,6 +74,8 @@ def machines_update(
         raise HTTPException(status_code=404, detail="Maquina nao encontrada.") from exc
     except DuplicateMachineIpError as exc:
         raise HTTPException(status_code=409, detail="Ja existe uma maquina cadastrada com este IP.") from exc
+    except MachineModelRequiredError as exc:
+        raise HTTPException(status_code=422, detail="Fabricante e modelo devem ser informados juntos.") from exc
 
     return api_success(MachineRead.model_validate(machine), "Maquina atualizada.")
 

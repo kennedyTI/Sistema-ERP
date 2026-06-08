@@ -3,17 +3,20 @@
 from datetime import datetime
 from ipaddress import ip_address
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MachineRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     id: int
     name: str
     ip_address: str
+    model_id: int | None = None
     manufacturer: str | None = None
     model: str | None = None
+    type: str | None = None
+    color_mode: str | None = None
     sector: str | None = None
     cost_center: str | None = None
     is_active: bool
@@ -27,12 +30,24 @@ class MachineCreate(BaseModel):
     ip_address: str = Field(min_length=1, max_length=45)
     manufacturer: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
+    type: str | None = Field(default=None, max_length=80)
+    color_mode: str | None = Field(default=None, max_length=40)
     sector: str | None = Field(default=None, max_length=120)
     cost_center: str | None = Field(default=None, max_length=80)
     is_active: bool = True
     notes: str | None = None
 
-    @field_validator("name", "ip_address", "manufacturer", "model", "sector", "cost_center", mode="before")
+    @field_validator(
+        "name",
+        "ip_address",
+        "manufacturer",
+        "model",
+        "type",
+        "color_mode",
+        "sector",
+        "cost_center",
+        mode="before",
+    )
     @classmethod
     def normalize_blank_strings(cls, value: str | None) -> str | None:
         if value is None:
@@ -58,18 +73,36 @@ class MachineCreate(BaseModel):
             raise ValueError("IP da maquina deve ser valido.") from exc
         return value
 
+    @model_validator(mode="after")
+    def model_pair_required(self):
+        if bool(self.manufacturer) != bool(self.model):
+            raise ValueError("Fabricante e modelo devem ser informados juntos.")
+        return self
+
 
 class MachineUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     ip_address: str | None = Field(default=None, min_length=1, max_length=45)
     manufacturer: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
+    type: str | None = Field(default=None, max_length=80)
+    color_mode: str | None = Field(default=None, max_length=40)
     sector: str | None = Field(default=None, max_length=120)
     cost_center: str | None = Field(default=None, max_length=80)
     is_active: bool | None = None
     notes: str | None = None
 
-    @field_validator("name", "ip_address", "manufacturer", "model", "sector", "cost_center", mode="before")
+    @field_validator(
+        "name",
+        "ip_address",
+        "manufacturer",
+        "model",
+        "type",
+        "color_mode",
+        "sector",
+        "cost_center",
+        mode="before",
+    )
     @classmethod
     def normalize_blank_strings(cls, value: str | None) -> str | None:
         if value is None:
