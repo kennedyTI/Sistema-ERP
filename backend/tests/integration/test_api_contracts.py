@@ -64,6 +64,8 @@ class ApiContractsTest(TestCase):
 
         self.assertIn("/api/v2/printers/dashboard", paths)
         self.assertIn("/api/v2/printers/machines", paths)
+        self.assertIn("/api/v2/printers/machines/{machine_id}", paths)
+        self.assertIn("/api/v2/printers/machines/{machine_id}/status", paths)
         self.assertIn("/api/v2/printers/paper", paths)
         self.assertNotIn("/api/v1/printers/machines", paths)
 
