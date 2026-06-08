@@ -18,7 +18,7 @@ class PrinterModelAdmin(AuditLogAdminMixin, admin.ModelAdmin):
 
 @admin.register(PrinterMachineAdminModel)
 class PrinterMachineAdmin(AuditLogAdminMixin, admin.ModelAdmin):
-    list_display = ("id", "name", "ip_address", "manufacturer_display", "model_display", "sector", "is_active")
+    list_display = ("id", "name", "ip_address", "sector", "is_active")
     list_filter = ("is_active", "printer_model__manufacturer", "sector")
     search_fields = (
         "name",
@@ -30,11 +30,3 @@ class PrinterMachineAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     )
     readonly_fields = ("created_at", "updated_at")
     ordering = ("name",)
-
-    @admin.display(ordering="printer_model__manufacturer", description="Fabricante")
-    def manufacturer_display(self, obj):
-        return obj.printer_model.manufacturer if obj.printer_model else "-"
-
-    @admin.display(ordering="printer_model__name", description="Modelo")
-    def model_display(self, obj):
-        return obj.printer_model.name if obj.printer_model else "-"

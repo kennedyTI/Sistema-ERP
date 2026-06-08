@@ -7,4 +7,4 @@ class PrinterMachinesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "backend.app.modules.printers.machines"
     label = "printer_machines"
-    verbose_name = "Impressoras - Maquinas"
+    verbose_name = "Impressoras"
