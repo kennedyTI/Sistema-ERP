@@ -19,6 +19,7 @@ class PrinterModelAdmin(AuditLogAdminMixin, admin.ModelAdmin):
 @admin.register(PrinterMachineAdminModel)
 class PrinterMachineAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     list_display = ("id", "name", "ip_address", "sector", "is_active")
+    list_display_links = ("id", "name")
     list_filter = ("is_active", "printer_model__manufacturer", "sector")
     search_fields = (
         "name",

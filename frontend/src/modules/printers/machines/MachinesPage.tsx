@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit, Loader2, Plus, Power, PowerOff, RefreshCw } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ChevronsUpDown,
+  Edit,
+  Loader2,
+  Plus,
+  Power,
+  PowerOff,
+  RefreshCw,
+} from "lucide-react";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
 import { MachineFormDialog } from "@/modules/printers/machines/components/MachineFormDialog";
@@ -23,6 +33,9 @@ import {
   TableRow,
 } from "@/shared/ui/table";
 
+type SortKey = "name" | "ip_address" | "manufacturer" | "model" | "sector" | "is_active";
+type SortDirection = "asc" | "desc";
+
 export function MachinesPage() {
   return (
     <RequireAuth permission="can_access_printers_machines">
@@ -39,8 +52,31 @@ function MachinesContent() {
   const [selectedMachine, setSelectedMachine] = useState<PrinterMachine | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const activeCount = useMemo(() => machines.filter((machine) => machine.is_active).length, [machines]);
+  const sortedMachines = useMemo(() => {
+    return [...machines].sort((current, next) => {
+      const currentValue = getSortValue(current, sortKey);
+      const nextValue = getSortValue(next, sortKey);
+      const result = currentValue.localeCompare(nextValue, "pt-BR", {
+        numeric: true,
+        sensitivity: "base",
+      });
+      return sortDirection === "asc" ? result : -result;
+    });
+  }, [machines, sortDirection, sortKey]);
+
+  function handleSort(nextKey: SortKey) {
+    if (nextKey === sortKey) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(nextKey);
+    setSortDirection("asc");
+  }
 
   async function loadMachines() {
     setLoading(true);
@@ -156,18 +192,54 @@ function MachinesContent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Fabricante</TableHead>
-                <TableHead>Modelo</TableHead>
-                <TableHead>Setor</TableHead>
-                <TableHead>Status</TableHead>
+                <SortableHead
+                  label="Nome"
+                  sortKey="name"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHead
+                  label="IP"
+                  sortKey="ip_address"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHead
+                  label="Fabricante"
+                  sortKey="manufacturer"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHead
+                  label="Modelo"
+                  sortKey="model"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHead
+                  label="Setor"
+                  sortKey="sector"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHead
+                  label="Status"
+                  sortKey="is_active"
+                  activeKey={sortKey}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
                 <TableHead className="w-[150px] text-right">Acoes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {machines.map((machine) => (
-                <TableRow key={machine.id}>
+              {sortedMachines.map((machine) => (
+                <TableRow key={machine.id} className="hover:bg-primary/10 dark:hover:bg-primary/20">
                   <TableCell className="font-medium">{machine.name}</TableCell>
                   <TableCell>{machine.ip_address}</TableCell>
                   <TableCell>{machine.manufacturer ?? "-"}</TableCell>
@@ -216,5 +288,40 @@ function MachinesContent() {
         onSubmit={handleSubmit}
       />
     </div>
+  );
+}
+
+function getSortValue(machine: PrinterMachine, key: SortKey) {
+  if (key === "is_active") return machine.is_active ? "Ativa" : "Inativa";
+  return String(machine[key] ?? "");
+}
+
+function SortableHead({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  direction: SortDirection;
+  onSort: (key: SortKey) => void;
+}) {
+  const isActive = activeKey === sortKey;
+  const Icon = isActive ? (direction === "asc" ? ArrowDownAZ : ArrowUpAZ) : ChevronsUpDown;
+
+  return (
+    <TableHead aria-sort={isActive ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex h-8 items-center gap-1.5 rounded-sm px-1 text-left font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:hover:bg-primary/20"
+      >
+        {label}
+        <Icon className="h-3.5 w-3.5" />
+      </button>
+    </TableHead>
   );
 }

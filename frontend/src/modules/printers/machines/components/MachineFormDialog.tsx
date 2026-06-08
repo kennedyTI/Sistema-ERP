@@ -87,10 +87,33 @@ export function MachineFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{machine ? "Editar maquina" : "Adicionar maquina"}</DialogTitle>
-          <DialogDescription>Cadastro operacional inicial do modulo Impressoras.</DialogDescription>
-        </DialogHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <DialogHeader>
+            <DialogTitle>{machine ? "Editar maquina" : "Adicionar maquina"}</DialogTitle>
+            <DialogDescription>Cadastro operacional inicial do modulo Impressoras.</DialogDescription>
+          </DialogHeader>
+
+          <div
+            className={
+              "flex shrink-0 items-center gap-3 rounded-md border px-3 py-2 " +
+              (form.is_active
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300")
+            }
+          >
+            <div className="text-right">
+              <p className="text-xs font-semibold uppercase tracking-wide">
+                {form.is_active ? "Ativa" : "Inativa"}
+              </p>
+              <p className="text-[11px] text-muted-foreground">Status</p>
+            </div>
+            <Switch
+              checked={Boolean(form.is_active)}
+              onCheckedChange={(checked) => setForm((current) => ({ ...current, is_active: checked }))}
+              className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-red-600"
+            />
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2">
@@ -164,17 +187,6 @@ export function MachineFormDialog({
               value={form.notes ?? ""}
               onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
               className="min-h-24 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2">
-            <div>
-              <p className="text-sm font-medium">Ativa</p>
-              <p className="text-xs text-muted-foreground">Maquinas inativas permanecem no historico do cadastro.</p>
-            </div>
-            <Switch
-              checked={Boolean(form.is_active)}
-              onCheckedChange={(checked) => setForm((current) => ({ ...current, is_active: checked }))}
             />
           </div>
 
