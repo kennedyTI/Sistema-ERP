@@ -9,6 +9,7 @@ from backend.app.modules.printers.machines.django_models import PrinterMachineAd
 @admin.register(PrinterModelAdminModel)
 class PrinterModelAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     list_display = ("id", "manufacturer", "name", "type", "color_mode")
+    list_display_links = ("id", "name")
     list_filter = ("manufacturer", "type", "color_mode")
     search_fields = ("manufacturer", "name", "type", "color_mode")
     readonly_fields = ("created_at", "updated_at")
