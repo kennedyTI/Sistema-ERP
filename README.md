@@ -24,12 +24,14 @@ O Sistema ERP v2 possui uma base institucional e modular composta por:
 
 O módulo Impressoras passa a existir como um módulo futuro dentro do Sistema ERP, sem alterar a identidade institucional do produto.
 
-Nesta primeira fase, a fundação inclui:
+Nesta fase, a fundacao inclui:
 
 * estrutura modular no backend e no frontend;
-* páginas placeholder de Dashboard, Máquinas e Papel;
+* paginas placeholder de Dashboard e Papel;
+* cadastro inicial de Maquinas com persistencia;
 * menu condicionado por permissões;
-* rota inicial de listagem de máquinas;
+* API CRUD de maquinas em `/api/v2/printers/machines`;
+* tela inicial de listagem, criacao, edicao e ativacao/inativacao de maquinas;
 * endpoints de status de desenvolvimento para Dashboard e Papel.
 
 Monitoramento, SNMP, toner, alertas, histórico, Celery e Redis não fazem parte desta etapa.
@@ -201,20 +203,24 @@ postgres
 | `/login`                 | Tela de autenticação                     |
 | `/inicio`                | Tela inicial do sistema                  |
 | `/impressoras/dashboard` | Placeholder do dashboard de impressoras |
-| `/impressoras/maquinas`  | Placeholder de máquinas                 |
+| `/impressoras/maquinas`  | Cadastro inicial de maquinas            |
 | `/impressoras/papel`     | Placeholder de papel                    |
 | `/admin/`                | Acesso ao Django Admin via proxy         |
 
 ### Backend
 
-| Rota                         | Método | Descrição                              |
-| ---------------------------- | ------ | -------------------------------------- |
-| `/api/v2/auth/login`         | `POST` | Autenticação do usuário                |
-| `/api/v2/auth/me`            | `GET`  | Dados do usuário autenticado           |
-| `/api/v2/auth/logout`        | `POST` | Encerramento da sessão/token           |
-| `/api/v2/printers/dashboard` | `GET`  | Status inicial do dashboard            |
-| `/api/v2/printers/machines`  | `GET`  | Lista inicial de máquinas, ainda vazia |
-| `/api/v2/printers/paper`     | `GET`  | Status inicial do submódulo Papel      |
+| Rota                                      | Método  | Descrição                             |
+| ----------------------------------------- | ------- | ------------------------------------- |
+| `/api/v2/auth/login`                      | `POST`  | Autenticação do usuário               |
+| `/api/v2/auth/me`                         | `GET`   | Dados do usuário autenticado          |
+| `/api/v2/auth/logout`                     | `POST`  | Encerramento da sessão/token          |
+| `/api/v2/printers/dashboard`              | `GET`   | Status inicial do dashboard           |
+| `/api/v2/printers/machines`               | `GET`   | Lista maquinas cadastradas            |
+| `/api/v2/printers/machines`               | `POST`  | Cadastra maquina                      |
+| `/api/v2/printers/machines/{id}`          | `GET`   | Detalha maquina                       |
+| `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
+| `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
+| `/api/v2/printers/paper`                  | `GET`   | Status inicial do submódulo Papel     |
 
 ---
 

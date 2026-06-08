@@ -10,6 +10,7 @@ from sqlalchemy import engine_from_config, pool, text
 from backend.app.core.database import Base, DATABASE_URL, OPERATIONS_SCHEMA
 from backend.app.modules.audit.orm import AuditLog  # noqa: F401
 from backend.app.modules.audit.orm import Log  # noqa: F401
+from backend.app.modules.printers.machines.models import PrinterMachine  # noqa: F401
 
 config = context.config
 
@@ -60,4 +61,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
