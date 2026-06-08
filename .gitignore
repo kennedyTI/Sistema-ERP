@@ -29,6 +29,11 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 
+# Local import data
+backend/scripts/*.local.json
+backend/scripts/*.local.csv
+backend/scripts/*.local.xlsx
+
 # Logs
 *.log
 logs/
