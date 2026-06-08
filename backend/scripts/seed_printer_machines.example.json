@@ -4,6 +4,8 @@
     "ip_address": "192.168.0.10",
     "manufacturer": "HP",
     "model": "LaserJet Exemplo",
+    "type": "laser",
+    "color_mode": "mono",
     "sector": "Administrativo",
     "cost_center": "CC-EXEMPLO",
     "is_active": true,

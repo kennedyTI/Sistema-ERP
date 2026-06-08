@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,33 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 REQUIRED_FIELDS = ("name", "ip_address")
+MACHINE_FIELDS = ("name", "ip_address", "sector", "cost_center", "is_active", "notes")
+FIELD_ALIASES = {
+    "nome": "name",
+    "ip": "ip_address",
+    "fabricante": "manufacturer",
+    "modelo": "model",
+    "tipo": "type",
+    "modo_cor": "color_mode",
+    "cor": "color_mode",
+    "local": "sector",
+    "setor": "sector",
+    "centro_custo": "cost_center",
+    "ativo": "is_active",
+    "observacao": "notes",
+    "observacoes": "notes",
+    "notas": "notes",
+}
+
+
+@dataclass
+class SeedSummary:
+    machines_created: int = 0
+    machines_updated: int = 0
+    models_created: int = 0
+    models_updated: int = 0
+    skipped: int = 0
+    errors: int = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,6 +54,14 @@ def parse_args() -> argparse.Namespace:
         help="Caminho do arquivo JSON com as maquinas a importar.",
     )
     return parser.parse_args()
+
+
+def normalize_record(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    for source, target in FIELD_ALIASES.items():
+        if target not in normalized and source in item:
+            normalized[target] = item[source]
+    return normalized
 
 
 def load_json(path: Path) -> list[dict[str, Any]]:
@@ -44,11 +80,12 @@ def load_json(path: Path) -> list[dict[str, Any]]:
     for index, item in enumerate(raw_data, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"Registro {index}: esperado objeto JSON.")
-        missing = [field for field in REQUIRED_FIELDS if not str(item.get(field, "")).strip()]
+        normalized = normalize_record(item)
+        missing = [field for field in REQUIRED_FIELDS if not str(normalized.get(field, "")).strip()]
         if missing:
             fields = ", ".join(missing)
             raise ValueError(f"Registro {index}: campos obrigatorios ausentes: {fields}.")
-        records.append(item)
+        records.append(normalized)
 
     return records
 
@@ -74,17 +111,61 @@ def validate_records(records: list[dict[str, Any]]):
     return validated
 
 
-def upsert_machines(records) -> tuple[int, int]:
+def _sync_printer_model(db, payload, summary: SeedSummary):
+    from backend.app.modules.printers.machines.models import PrinterModel
+
+    manufacturer = payload.manufacturer
+    model_name = payload.model
+
+    if not manufacturer and not model_name:
+        return None
+    if not manufacturer or not model_name:
+        summary.skipped += 1
+        raise ValueError("Fabricante e modelo devem ser informados juntos.")
+
+    printer_model = (
+        db.query(PrinterModel)
+        .filter(PrinterModel.manufacturer == manufacturer, PrinterModel.name == model_name)
+        .one_or_none()
+    )
+
+    if printer_model is None:
+        printer_model = PrinterModel(
+            manufacturer=manufacturer,
+            name=model_name,
+            type=payload.type,
+            color_mode=payload.color_mode,
+        )
+        db.add(printer_model)
+        db.flush()
+        summary.models_created += 1
+        return printer_model
+
+    changed = False
+    if payload.type is not None and printer_model.type != payload.type:
+        printer_model.type = payload.type
+        changed = True
+    if payload.color_mode is not None and printer_model.color_mode != payload.color_mode:
+        printer_model.color_mode = payload.color_mode
+        changed = True
+    if changed:
+        summary.models_updated += 1
+
+    return printer_model
+
+
+def upsert_machines(records) -> SeedSummary:
     from backend.app.core.database import SessionLocal
     from backend.app.modules.printers.machines.models import PrinterMachine
 
-    created = 0
-    updated = 0
+    summary = SeedSummary()
     db = SessionLocal()
 
     try:
         for payload in records:
             data = payload.model_dump()
+            printer_model = _sync_printer_model(db, payload, summary)
+            machine_data = {field: data[field] for field in MACHINE_FIELDS}
             machine = (
                 db.query(PrinterMachine)
                 .filter(PrinterMachine.ip_address == payload.ip_address)
@@ -92,17 +173,20 @@ def upsert_machines(records) -> tuple[int, int]:
             )
 
             if machine is None:
-                db.add(PrinterMachine(**data))
-                created += 1
+                db.add(PrinterMachine(**machine_data, printer_model=printer_model))
+                summary.machines_created += 1
                 continue
 
-            for field, value in data.items():
+            for field, value in machine_data.items():
                 setattr(machine, field, value)
-            updated += 1
+            machine.printer_model = printer_model
+            machine.model_id = printer_model.id if printer_model else None
+            summary.machines_updated += 1
 
         db.commit()
-        return created, updated
+        return summary
     except Exception:
+        summary.errors += 1
         db.rollback()
         raise
     finally:
@@ -115,13 +199,22 @@ def main() -> int:
     try:
         records = load_json(args.json_file)
         validated = validate_records(records)
-        created, updated = upsert_machines(validated)
+        summary = upsert_machines(validated)
     except Exception as exc:
         sys.stderr.write(f"seed_printer_machines_error: {exc}\n")
         return 1
 
-    total = created + updated
-    sys.stdout.write(f"seed_printer_machines_ok created={created} updated={updated} total={total}\n")
+    total = summary.machines_created + summary.machines_updated + summary.skipped
+    sys.stdout.write(
+        "seed_printer_machines_ok "
+        f"machines_created={summary.machines_created} "
+        f"machines_updated={summary.machines_updated} "
+        f"models_created={summary.models_created} "
+        f"models_updated={summary.models_updated} "
+        f"skipped={summary.skipped} "
+        f"errors={summary.errors} "
+        f"total={total}\n"
+    )
     return 0
 
 

@@ -5,8 +5,11 @@ export interface PrinterMachine {
   id: number;
   name: string;
   ip_address: string;
+  model_id: number | null;
   manufacturer: string | null;
   model: string | null;
+  type: string | null;
+  color_mode: string | null;
   sector: string | null;
   cost_center: string | null;
   is_active: boolean;
@@ -20,6 +23,8 @@ export interface PrinterMachinePayload {
   ip_address: string;
   manufacturer?: string | null;
   model?: string | null;
+  type?: string | null;
+  color_mode?: string | null;
   sector?: string | null;
   cost_center?: string | null;
   is_active?: boolean;

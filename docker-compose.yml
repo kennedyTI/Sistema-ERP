@@ -40,6 +40,8 @@ services:
       && alembic -c backend/alembic.ini upgrade head
       && python manage.py migrate --noinput
       && python manage.py seed_admin_groups"
+    volumes:
+      - .:/app
     networks:
       - portal_industria_net
     restart: "no"

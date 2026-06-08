@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.core.database import get_db
 from backend.app.main import app
-from backend.app.modules.printers.machines.models import PrinterMachine
+from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
 from backend.tests.auth_helpers import auth_headers
 
 
@@ -29,6 +29,7 @@ class PrinterMachinesApiTest(TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+        PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
@@ -62,6 +63,8 @@ class PrinterMachinesApiTest(TestCase):
                 "ip_address": "192.168.10.25",
                 "manufacturer": "HP",
                 "model": "LaserJet",
+                "type": "laser",
+                "color_mode": "mono",
                 "sector": "Expedicao",
                 "cost_center": "CC-100",
                 "notes": "Cadastro inicial",
@@ -72,6 +75,11 @@ class PrinterMachinesApiTest(TestCase):
         created = create_response.json()["data"]
         self.assertEqual(created["name"], "Impressora Expedicao")
         self.assertEqual(created["ip_address"], "192.168.10.25")
+        self.assertIsNotNone(created["model_id"])
+        self.assertEqual(created["manufacturer"], "HP")
+        self.assertEqual(created["model"], "LaserJet")
+        self.assertEqual(created["type"], "laser")
+        self.assertEqual(created["color_mode"], "mono")
         self.assertTrue(created["is_active"])
 
         list_response = self.client.get(
@@ -104,6 +112,32 @@ class PrinterMachinesApiTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["name"], "Recepcao Fiscal")
         self.assertEqual(response.json()["data"]["sector"], "Fiscal")
+
+    def test_atualiza_modelo_da_maquina(self):
+        create_response = self.client.post(
+            "/api/v2/printers/machines",
+            headers=auth_headers(printers_machines=True),
+            json={"name": "Recepcao", "ip_address": "10.0.0.11"},
+        )
+        machine_id = create_response.json()["data"]["id"]
+
+        response = self.client.patch(
+            f"/api/v2/printers/machines/{machine_id}",
+            headers=auth_headers(printers_machines=True),
+            json={
+                "manufacturer": "Brother",
+                "model": "HL Exemplo",
+                "type": "laser",
+                "color_mode": "mono",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["manufacturer"], "Brother")
+        self.assertEqual(data["model"], "HL Exemplo")
+        self.assertEqual(data["type"], "laser")
+        self.assertEqual(data["color_mode"], "mono")
 
     def test_recusa_ip_duplicado(self):
         headers = auth_headers(printers_machines=True)
