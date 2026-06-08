@@ -1,0 +1,12 @@
+[
+  {
+    "name": "IMPRESSORA_EXEMPLO_001",
+    "ip_address": "192.168.0.10",
+    "manufacturer": "HP",
+    "model": "LaserJet Exemplo",
+    "sector": "Administrativo",
+    "cost_center": "CC-EXEMPLO",
+    "is_active": true,
+    "notes": "Registro ficticio para demonstracao"
+  }
+]
