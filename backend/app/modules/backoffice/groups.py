@@ -18,7 +18,6 @@ GROUPS = {
             "printer_machines": "all",
             "printer_status": {
                 "view_printerstatusadminmodel",
-                "change_printerstatusadminmodel",
                 "view_printerlogadminmodel",
             },
         },

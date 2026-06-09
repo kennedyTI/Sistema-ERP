@@ -54,12 +54,18 @@ class AdminPolicyTest(TestCase):
         self.assertIn("valor_anterior", admin.list_display)
         self.assertIn("valor_novo", admin.list_display)
 
-    def test_status_nao_pode_ser_criado_ou_excluido_pelo_admin(self):
+    def test_status_de_impressoras_e_somente_leitura_no_admin(self):
         admin = PrinterStatusAdmin(PrinterStatusAdminModel, AdminSite())
         request = RequestStub()
 
+        self.assertIsInstance(admin, ReadOnlyAdminMixin)
         self.assertFalse(admin.has_add_permission(request))
+        self.assertFalse(admin.has_change_permission(request))
         self.assertFalse(admin.has_delete_permission(request))
+        self.assertEqual(
+            set(admin.get_readonly_fields(request)),
+            {field.name for field in PrinterStatusAdminModel._meta.fields},
+        )
 
     def test_logs_de_impressoras_sao_somente_leitura(self):
         admin = PrinterLogAdmin(PrinterLogAdminModel, AdminSite())
@@ -96,7 +102,6 @@ class AdminGroupsPolicyTest(TestCase):
             permissions["printer_status"],
             {
                 "view_printerstatusadminmodel",
-                "change_printerstatusadminmodel",
                 "view_printerlogadminmodel",
             },
         )
