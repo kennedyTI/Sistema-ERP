@@ -83,6 +83,46 @@ class PrinterStatusApiTest(TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(len(payload["data"]), 1)
 
+    def test_lista_e_resumo_ignoram_maquinas_inativas(self):
+        active_machine = self._create_machine()
+        inactive_model = PrinterModel(
+            manufacturer="Fabricante Inativo",
+            name="Modelo Inativo",
+        )
+        inactive_machine = PrinterMachine(
+            name="Impressora Inativa",
+            ip_address="192.0.2.11",
+            printer_model=inactive_model,
+            is_active=False,
+        )
+        self.db.add(inactive_machine)
+        self.db.flush()
+        self.db.add(
+            StatusImpressora(
+                maquina_id=inactive_machine.id,
+                status_operacional="offline",
+                nivel_alerta="vermelho",
+                mensagem_alerta="Sem comunicacao",
+                mensagem_operador="Equipamento inativo",
+                origem="manual",
+            )
+        )
+        self.db.commit()
+        headers = auth_headers(printers_status=True)
+
+        list_response = self.client.get("/api/v2/printers/status", headers=headers)
+        summary_response = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(
+            [status["machine_id"] for status in list_response.json()["data"]],
+            [active_machine["id"]],
+        )
+        self.assertEqual(summary_response.status_code, 200)
+        self.assertEqual(summary_response.json()["data"]["total_impressoras"], 1)
+        self.assertEqual(summary_response.json()["data"]["offline"], 0)
+        self.assertEqual(summary_response.json()["data"]["com_alerta"], 0)
+
     def test_resumo_operacional_calcula_cards(self):
         machine = self._create_machine()
         headers = auth_headers(printers_status=True, printers_status_manage=True)

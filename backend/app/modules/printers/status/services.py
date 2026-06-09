@@ -65,6 +65,7 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         .options(
             joinedload(StatusImpressora.maquina).joinedload(PrinterMachine.printer_model),
         )
+        .filter(PrinterMachine.is_active.is_(True))
         .order_by(PrinterMachine.name.asc(), PrinterMachine.id.asc())
         .all()
     )
@@ -72,7 +73,12 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
 
 
 def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
-    statuses = db.query(StatusImpressora).all()
+    statuses = (
+        db.query(StatusImpressora)
+        .join(StatusImpressora.maquina)
+        .filter(PrinterMachine.is_active.is_(True))
+        .all()
+    )
     return PrinterStatusSummary(
         total_impressoras=len(statuses),
         online=sum(status.status_operacional == "online" for status in statuses),
