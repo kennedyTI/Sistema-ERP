@@ -20,6 +20,18 @@ import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
 
+const PRINTER_IMAGE_BASE_URL = "/static/imgs/printers";
+
+const printerImageFiles: Record<string, string> = {
+  DCPL1632W: "DCP-L1632W.png",
+  DCPL2540DW: "DCP-L2540DW.png",
+  IRC3326I: "IR-C3326I.png",
+  K4350: "K-4350.png",
+  MFP4303: "MFP-4303.png",
+  MFP4303HP: "MFP-4303HP.png",
+  T2530: "T-2530.png",
+};
+
 const statusLabels = {
   desconhecido: "Desconhecido",
   online: "Online",
@@ -95,11 +107,7 @@ export function StatusDetailsDialog({
           <ScrollArea className="max-h-[76vh] pr-4">
             <div className="space-y-6">
               <div className="grid gap-5 lg:grid-cols-[180px_1fr]">
-                <div className="flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 text-center">
-                  <Printer className="h-10 w-10 text-muted-foreground" />
-                  <p className="mt-3 text-sm font-medium">Imagem do modelo</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Disponível em etapa futura</p>
-                </div>
+                <PrinterModelImage model={current.model} machineName={current.machine_name} />
 
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-3">
@@ -198,6 +206,46 @@ export function StatusDetailsDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function PrinterModelImage({
+  model,
+  machineName,
+}: {
+  model: string | null;
+  machineName: string;
+}) {
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+  const imageFile = model ? printerImageFiles[normalizeModelName(model)] : null;
+
+  useEffect(() => {
+    setImageUnavailable(false);
+  }, [imageFile]);
+
+  if (!imageFile || imageUnavailable) {
+    return (
+      <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 px-4 text-center">
+        <Printer className="h-10 w-10 text-muted-foreground" />
+        <p className="mt-3 text-sm font-medium">Imagem não disponível</p>
+        <p className="mt-1 text-xs text-muted-foreground">{model ?? "Modelo não informado"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-3">
+      <img
+        src={`${PRINTER_IMAGE_BASE_URL}/${imageFile}`}
+        alt={`Modelo ${model} da impressora ${machineName}`}
+        className="max-h-40 w-full object-contain"
+        onError={() => setImageUnavailable(true)}
+      />
+    </div>
+  );
+}
+
+function normalizeModelName(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
