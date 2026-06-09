@@ -1,4 +1,4 @@
-import { CircleAlert, PackageSearch, Printer, Wifi, WifiOff } from "lucide-react";
+import { CircleAlert, Droplet, Printer, Wifi, WifiOff } from "lucide-react";
 
 import type { PrinterStatusSummary } from "@/modules/printers/status/statusApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
@@ -33,7 +33,7 @@ const cards = [
   {
     key: "substituir_toner",
     label: "Substituir toner",
-    icon: PackageSearch,
+    icon: Droplet,
     className: "text-orange-600 dark:text-orange-400",
   },
 ] as const;

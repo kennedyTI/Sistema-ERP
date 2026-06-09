@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { Activity, Loader2, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { Activity, GripVertical, Loader2, RefreshCw } from "lucide-react";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
+import { useAuth } from "@/modules/auth/authStore";
 import { StatusDetailsDialog } from "@/modules/printers/status/components/StatusDetailsDialog";
 import { StatusSummaryCards } from "@/modules/printers/status/components/StatusSummaryCards";
 import {
@@ -53,6 +54,30 @@ const alertRowStyles: Record<AlertLevel, string> = {
   vermelho: "border-l-4 border-l-red-500 bg-red-500/[0.045] hover:bg-red-500/12",
 };
 
+type ColumnKey = "status" | "alert" | "message" | "location" | "machine" | "ip" | "updatedAt";
+
+const COLUMN_ORDER_STORAGE_KEY = "sistema-erp-printer-status-column-order";
+
+const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
+  "status",
+  "alert",
+  "message",
+  "location",
+  "machine",
+  "ip",
+  "updatedAt",
+];
+
+const columnLabels: Record<ColumnKey, string> = {
+  status: "Status",
+  alert: "Alerta",
+  message: "Mensagem",
+  location: "Local",
+  machine: "Máquina",
+  ip: "IP",
+  updatedAt: "Atualizado em",
+};
+
 export function StatusPage() {
   return (
     <RequireAuth permission="can_access_printers_status">
@@ -62,12 +87,20 @@ export function StatusPage() {
 }
 
 function StatusContent() {
+  const { user } = useAuth();
   const [statuses, setStatuses] = useState<PrinterOperationalStatus[]>([]);
   const [summary, setSummary] = useState<PrinterStatusSummary | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<PrinterOperationalStatus | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(DEFAULT_COLUMN_ORDER);
+  const [columnPreferencesLoaded, setColumnPreferencesLoaded] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<ColumnKey | null>(null);
+  const draggedColumnRef = useRef<ColumnKey | null>(null);
+  const dragOverColumnRef = useRef<ColumnKey | null>(null);
+  const columnOrderStorageKey = `${COLUMN_ORDER_STORAGE_KEY}:${user?.username ?? "default"}`;
 
   const sortedStatuses = useMemo(
     () =>
@@ -100,9 +133,80 @@ function StatusContent() {
     void loadStatuses();
   }, []);
 
+  useEffect(() => {
+    setColumnPreferencesLoaded(false);
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    const storedOrder = window.localStorage.getItem(columnOrderStorageKey);
+
+    if (storedOrder) {
+      try {
+        const parsedOrder = JSON.parse(storedOrder);
+        if (isValidColumnOrder(parsedOrder)) setColumnOrder(parsedOrder);
+      } catch {
+        window.localStorage.removeItem(columnOrderStorageKey);
+      }
+    }
+
+    setColumnPreferencesLoaded(true);
+  }, [columnOrderStorageKey]);
+
+  useEffect(() => {
+    if (!columnPreferencesLoaded) return;
+    window.localStorage.setItem(columnOrderStorageKey, JSON.stringify(columnOrder));
+  }, [columnOrder, columnOrderStorageKey, columnPreferencesLoaded]);
+
   function openDetails(status: PrinterOperationalStatus) {
     setSelectedStatus(status);
     setDetailsOpen(true);
+  }
+
+  function handleColumnPointerDown(event: PointerEvent<HTMLSpanElement>, column: ColumnKey) {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggedColumnRef.current = column;
+    setDraggedColumn(column);
+  }
+
+  function handleColumnPointerMove(event: PointerEvent<HTMLSpanElement>) {
+    if (!draggedColumnRef.current) return;
+
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>(
+      "[data-column-key]",
+    );
+    const targetColumn = target?.dataset.columnKey as ColumnKey | undefined;
+    if (!targetColumn || !DEFAULT_COLUMN_ORDER.includes(targetColumn)) return;
+
+    dragOverColumnRef.current = targetColumn;
+    setDragOverColumn(targetColumn);
+  }
+
+  function handleColumnPointerUp(event: PointerEvent<HTMLSpanElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    const sourceColumn = draggedColumnRef.current;
+    const targetColumn = dragOverColumnRef.current;
+
+    if (sourceColumn && targetColumn && sourceColumn !== targetColumn) {
+      setColumnOrder((currentOrder) => {
+        const nextOrder = currentOrder.filter((column) => column !== sourceColumn);
+        const targetIndex = nextOrder.indexOf(targetColumn);
+        nextOrder.splice(targetIndex, 0, sourceColumn);
+        return nextOrder;
+      });
+    }
+
+    clearColumnDrag();
+  }
+
+  function clearColumnDrag() {
+    draggedColumnRef.current = null;
+    dragOverColumnRef.current = null;
+    setDraggedColumn(null);
+    setDragOverColumn(null);
   }
 
   return (
@@ -151,13 +255,30 @@ function StatusContent() {
             <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Alerta</TableHead>
-                  <TableHead>Mensagem</TableHead>
-                  <TableHead>Local</TableHead>
-                  <TableHead>Máquina</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead>Atualizado em</TableHead>
+                  {columnOrder.map((column) => (
+                    <TableHead
+                      key={column}
+                      data-column-key={column}
+                      aria-label={`${columnLabels[column]}. Arraste para mudar a posição da coluna.`}
+                      className={cn(
+                        "select-none transition-colors",
+                        draggedColumn === column && "opacity-40",
+                        dragOverColumn === column && draggedColumn !== column && "bg-primary/10",
+                      )}
+                    >
+                      <span
+                        className="inline-flex touch-none cursor-grab items-center gap-1.5 active:cursor-grabbing"
+                        title="Arraste para mudar a posição da coluna"
+                        onPointerDown={(event) => handleColumnPointerDown(event, column)}
+                        onPointerMove={handleColumnPointerMove}
+                        onPointerUp={handleColumnPointerUp}
+                        onPointerCancel={clearColumnDrag}
+                      >
+                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
+                        {columnLabels[column]}
+                      </span>
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -179,25 +300,7 @@ function StatusContent() {
                       }
                     }}
                   >
-                    <TableCell>
-                      <Badge variant="outline" className={statusStyles[status.status_operacional]}>
-                        {statusLabels[status.status_operacional]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[260px] whitespace-normal">
-                      <span className="inline-flex items-start gap-2">
-                        <span
-                          className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", alertDotStyles[status.nivel_alerta])}
-                          aria-hidden="true"
-                        />
-                        <span>{status.mensagem_alerta ?? "-"}</span>
-                      </span>
-                    </TableCell>
-                    <TableCell className="max-w-[300px] whitespace-normal">{status.mensagem_operador}</TableCell>
-                    <TableCell>{status.sector ?? "-"}</TableCell>
-                    <TableCell className="font-medium">{status.machine_name}</TableCell>
-                    <TableCell>{status.ip_address}</TableCell>
-                    <TableCell>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>
+                    {columnOrder.map((column) => renderStatusCell(status, column))}
                   </TableRow>
                 ))}
               </TableBody>
@@ -212,6 +315,57 @@ function StatusContent() {
         onOpenChange={setDetailsOpen}
       />
     </div>
+  );
+}
+
+function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
+  switch (column) {
+    case "status":
+      return (
+        <TableCell key={column}>
+          <Badge variant="outline" className={statusStyles[status.status_operacional]}>
+            {statusLabels[status.status_operacional]}
+          </Badge>
+        </TableCell>
+      );
+    case "alert":
+      return (
+        <TableCell key={column} className="max-w-[260px] whitespace-normal">
+          <span className="inline-flex items-start gap-2">
+            <span
+              className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", alertDotStyles[status.nivel_alerta])}
+              aria-hidden="true"
+            />
+            <span>{status.mensagem_alerta ?? "-"}</span>
+          </span>
+        </TableCell>
+      );
+    case "message":
+      return (
+        <TableCell key={column} className="max-w-[300px] whitespace-normal">
+          {status.mensagem_operador}
+        </TableCell>
+      );
+    case "location":
+      return <TableCell key={column}>{status.sector ?? "-"}</TableCell>;
+    case "machine":
+      return (
+        <TableCell key={column} className="font-medium">
+          {status.machine_name}
+        </TableCell>
+      );
+    case "ip":
+      return <TableCell key={column}>{status.ip_address}</TableCell>;
+    case "updatedAt":
+      return <TableCell key={column}>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>;
+  }
+}
+
+function isValidColumnOrder(value: unknown): value is ColumnKey[] {
+  return (
+    Array.isArray(value) &&
+    value.length === DEFAULT_COLUMN_ORDER.length &&
+    DEFAULT_COLUMN_ORDER.every((column) => value.includes(column))
   );
 }
 
