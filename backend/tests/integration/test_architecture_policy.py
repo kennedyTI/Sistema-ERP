@@ -30,6 +30,7 @@ class CleanBasePolicyTest(TestCase):
             "backend/app/modules/printers/dashboard",
             "backend/app/modules/printers/machines",
             "backend/app/modules/printers/paper",
+            "backend/app/modules/printers/status",
             "backend/app/shared",
             "backend/app/migrations/versions",
             "backend/backoffice/settings.py",
@@ -60,6 +61,7 @@ class CleanBasePolicyTest(TestCase):
             "frontend/src/modules/printers/dashboard/DashboardPage.tsx",
             "frontend/src/modules/printers/machines/MachinesPage.tsx",
             "frontend/src/modules/printers/paper/PaperPage.tsx",
+            "frontend/src/modules/printers/status/StatusPage.tsx",
             "frontend/src/shared/ui",
             "frontend/src/shared/lib",
         )
