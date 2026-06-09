@@ -15,6 +15,8 @@ export interface PortalPermissions {
   can_access_admin: boolean;
   can_access_printers: boolean;
   can_access_printers_dashboard: boolean;
+  can_access_printers_status: boolean;
+  can_manage_printers_status: boolean;
   can_access_printers_machines: boolean;
   can_access_printers_paper: boolean;
 }

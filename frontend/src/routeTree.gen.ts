@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InicioRouteImport } from './routes/inicio'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ImpressorasStatusRouteImport } from './routes/impressoras/status'
 import { Route as ImpressorasPapelRouteImport } from './routes/impressoras/papel'
 import { Route as ImpressorasMaquinasRouteImport } from './routes/impressoras/maquinas'
 import { Route as ImpressorasDashboardRouteImport } from './routes/impressoras/dashboard'
@@ -35,6 +36,11 @@ const InicioRoute = InicioRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImpressorasStatusRoute = ImpressorasStatusRouteImport.update({
+  id: '/impressoras/status',
+  path: '/impressoras/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImpressorasPapelRoute = ImpressorasPapelRouteImport.update({
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/impressoras/dashboard': typeof ImpressorasDashboardRoute
   '/impressoras/maquinas': typeof ImpressorasMaquinasRoute
   '/impressoras/papel': typeof ImpressorasPapelRoute
+  '/impressoras/status': typeof ImpressorasStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/impressoras/dashboard': typeof ImpressorasDashboardRoute
   '/impressoras/maquinas': typeof ImpressorasMaquinasRoute
   '/impressoras/papel': typeof ImpressorasPapelRoute
+  '/impressoras/status': typeof ImpressorasStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/impressoras/dashboard': typeof ImpressorasDashboardRoute
   '/impressoras/maquinas': typeof ImpressorasMaquinasRoute
   '/impressoras/papel': typeof ImpressorasPapelRoute
+  '/impressoras/status': typeof ImpressorasStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/impressoras/dashboard'
     | '/impressoras/maquinas'
     | '/impressoras/papel'
+    | '/impressoras/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/impressoras/dashboard'
     | '/impressoras/maquinas'
     | '/impressoras/papel'
+    | '/impressoras/status'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/impressoras/dashboard'
     | '/impressoras/maquinas'
     | '/impressoras/papel'
+    | '/impressoras/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   ImpressorasDashboardRoute: typeof ImpressorasDashboardRoute
   ImpressorasMaquinasRoute: typeof ImpressorasMaquinasRoute
   ImpressorasPapelRoute: typeof ImpressorasPapelRoute
+  ImpressorasStatusRoute: typeof ImpressorasStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -149,6 +162,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/impressoras/status': {
+      id: '/impressoras/status'
+      path: '/impressoras/status'
+      fullPath: '/impressoras/status'
+      preLoaderRoute: typeof ImpressorasStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/impressoras/papel': {
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImpressorasDashboardRoute: ImpressorasDashboardRoute,
   ImpressorasMaquinasRoute: ImpressorasMaquinasRoute,
   ImpressorasPapelRoute: ImpressorasPapelRoute,
+  ImpressorasStatusRoute: ImpressorasStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
