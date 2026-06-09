@@ -1,0 +1,193 @@
+"""Regras do status atual e da linha do tempo operacional de impressoras."""
+
+from sqlalchemy.orm import Session, joinedload
+
+from backend.app.core.timezone import now_sao_paulo
+from backend.app.modules.printers.machines.models import PrinterMachine
+from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
+from backend.app.modules.printers.status.schemas import PrinterLogRead, PrinterStatusRead, PrinterStatusUpdate
+
+
+class PrinterStatusNotFoundError(Exception):
+    pass
+
+
+def create_initial_status(db: Session, machine_id: int, *, origem: str = "sistema") -> StatusImpressora:
+    current = db.query(StatusImpressora).filter(StatusImpressora.maquina_id == machine_id).one_or_none()
+    if current is not None:
+        return current
+
+    status = StatusImpressora(
+        maquina_id=machine_id,
+        status_operacional="desconhecido",
+        nivel_alerta="cinza",
+        mensagem_alerta="Ainda nao verificada",
+        origem=origem,
+    )
+    db.add(status)
+    db.flush()
+    return status
+
+
+def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
+    machine = status.maquina
+    return PrinterStatusRead(
+        machine_id=machine.id,
+        machine_name=machine.name,
+        ip_address=machine.ip_address,
+        manufacturer=machine.manufacturer,
+        model=machine.model,
+        sector=machine.sector,
+        cost_center=machine.cost_center,
+        status_operacional=status.status_operacional,
+        nivel_alerta=status.nivel_alerta,
+        mensagem_alerta=status.mensagem_alerta,
+        ultima_verificacao_em=status.ultima_verificacao_em,
+        ultimo_sucesso_em=status.ultimo_sucesso_em,
+        ultima_falha_em=status.ultima_falha_em,
+        tempo_resposta_ms=status.tempo_resposta_ms,
+        origem=status.origem,
+    )
+
+
+def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
+    statuses = (
+        db.query(StatusImpressora)
+        .join(StatusImpressora.maquina)
+        .options(
+            joinedload(StatusImpressora.maquina).joinedload(PrinterMachine.printer_model),
+        )
+        .order_by(PrinterMachine.name.asc(), PrinterMachine.id.asc())
+        .all()
+    )
+    return [_status_to_read(status) for status in statuses]
+
+
+def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
+    status = (
+        db.query(StatusImpressora)
+        .options(
+            joinedload(StatusImpressora.maquina).joinedload(PrinterMachine.printer_model),
+        )
+        .filter(StatusImpressora.maquina_id == machine_id)
+        .one_or_none()
+    )
+    if status is None:
+        raise PrinterStatusNotFoundError
+    return status
+
+
+def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
+    return _status_to_read(get_printer_status(db, machine_id))
+
+
+def _add_log(
+    db: Session,
+    status: StatusImpressora,
+    *,
+    tipo_evento: str,
+    status_anterior: str,
+    alerta_anterior: str,
+    verificado_em,
+) -> None:
+    db.add(
+        LogImpressora(
+            maquina_id=status.maquina_id,
+            tipo_evento=tipo_evento,
+            status_anterior=status_anterior,
+            status_novo=status.status_operacional,
+            alerta_anterior=alerta_anterior,
+            alerta_novo=status.nivel_alerta,
+            mensagem=status.mensagem_alerta,
+            verificado_em=verificado_em,
+            tempo_resposta_ms=status.tempo_resposta_ms,
+            origem=status.origem,
+            resposta_bruta=status.resposta_bruta,
+        )
+    )
+
+
+def update_printer_status(
+    db: Session,
+    machine_id: int,
+    payload: PrinterStatusUpdate,
+) -> PrinterStatusRead:
+    status = get_printer_status(db, machine_id)
+    old_status = status.status_operacional
+    old_alert = status.nivel_alerta
+    checked_at = now_sao_paulo()
+
+    for field, value in payload.model_dump().items():
+        setattr(status, field, value)
+
+    status.ultima_verificacao_em = checked_at
+    status.atualizado_em = checked_at
+    if status.status_operacional == "online":
+        status.ultimo_sucesso_em = checked_at
+    elif status.status_operacional in {"offline", "erro"}:
+        status.ultima_falha_em = checked_at
+
+    logged_change = False
+    if old_status != status.status_operacional:
+        _add_log(
+            db,
+            status,
+            tipo_evento="mudanca_status",
+            status_anterior=old_status,
+            alerta_anterior=old_alert,
+            verificado_em=checked_at,
+        )
+        logged_change = True
+
+    if old_alert != status.nivel_alerta:
+        normalized = old_alert in {"amarelo", "vermelho"} and status.nivel_alerta in {"cinza", "verde"}
+        _add_log(
+            db,
+            status,
+            tipo_evento="alerta_normalizado" if normalized else "alerta_gerado",
+            status_anterior=old_status,
+            alerta_anterior=old_alert,
+            verificado_em=checked_at,
+        )
+        logged_change = True
+
+    if not logged_change:
+        _add_log(
+            db,
+            status,
+            tipo_evento="atualizacao_manual",
+            status_anterior=old_status,
+            alerta_anterior=old_alert,
+            verificado_em=checked_at,
+        )
+
+    db.commit()
+    return read_printer_status(db, machine_id)
+
+
+def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[PrinterLogRead]:
+    get_printer_status(db, machine_id)
+    logs = (
+        db.query(LogImpressora)
+        .filter(LogImpressora.maquina_id == machine_id)
+        .order_by(LogImpressora.criado_em.desc(), LogImpressora.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        PrinterLogRead(
+            id=log.id,
+            machine_id=log.maquina_id,
+            tipo_evento=log.tipo_evento,
+            status_anterior=log.status_anterior,
+            status_novo=log.status_novo,
+            alerta_anterior=log.alerta_anterior,
+            alerta_novo=log.alerta_novo,
+            mensagem=log.mensagem,
+            verificado_em=log.verificado_em,
+            tempo_resposta_ms=log.tempo_resposta_ms,
+            origem=log.origem,
+            criado_em=log.criado_em,
+        )
+        for log in logs
+    ]

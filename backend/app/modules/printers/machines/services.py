@@ -96,6 +96,8 @@ def _apply_machine_fields(machine: PrinterMachine, changes: dict) -> None:
 
 
 def create_machine(db: Session, payload: MachineCreate) -> PrinterMachine:
+    from backend.app.modules.printers.status.services import create_initial_status
+
     _ensure_unique_ip(db, payload.ip_address)
     data = payload.model_dump()
     printer_model = _get_or_create_printer_model(
@@ -108,6 +110,8 @@ def create_machine(db: Session, payload: MachineCreate) -> PrinterMachine:
     machine_data = {field: value for field, value in data.items() if field in MACHINE_FIELDS}
     machine = PrinterMachine(**machine_data, printer_model=printer_model)
     db.add(machine)
+    db.flush()
+    create_initial_status(db, machine.id)
     db.commit()
     db.refresh(machine)
     return machine

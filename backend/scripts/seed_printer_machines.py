@@ -157,6 +157,7 @@ def _sync_printer_model(db, payload, summary: SeedSummary):
 def upsert_machines(records) -> SeedSummary:
     from backend.app.core.database import SessionLocal
     from backend.app.modules.printers.machines.models import PrinterMachine
+    from backend.app.modules.printers.status.services import create_initial_status
 
     summary = SeedSummary()
     db = SessionLocal()
@@ -173,7 +174,10 @@ def upsert_machines(records) -> SeedSummary:
             )
 
             if machine is None:
-                db.add(PrinterMachine(**machine_data, printer_model=printer_model))
+                machine = PrinterMachine(**machine_data, printer_model=printer_model)
+                db.add(machine)
+                db.flush()
+                create_initial_status(db, machine.id, origem="seed")
                 summary.machines_created += 1
                 continue
 
@@ -181,6 +185,8 @@ def upsert_machines(records) -> SeedSummary:
                 setattr(machine, field, value)
             machine.printer_model = printer_model
             machine.model_id = printer_model.id if printer_model else None
+            db.flush()
+            create_initial_status(db, machine.id, origem="seed")
             summary.machines_updated += 1
 
         db.commit()

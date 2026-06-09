@@ -15,6 +15,12 @@ GROUPS = {
         "description": "Acessa Impressoras, Papel e o Django Admin.",
         "permissions": {
             "audit": BACKOFFICE_READONLY_PERMISSIONS,
+            "printer_machines": "all",
+            "printer_status": {
+                "view_printerstatusadminmodel",
+                "change_printerstatusadminmodel",
+                "view_printerlogadminmodel",
+            },
         },
     },
     GROUP_GESTOR: {
@@ -22,7 +28,7 @@ GROUPS = {
         "permissions": {},
     },
     GROUP_OPERADOR: {
-        "description": "Acessa Dashboard e Maquinas; nao ve Papel ou Admin.",
+        "description": "Acessa Dashboard e Status; nao ve Maquinas, Papel ou Admin.",
         "permissions": {},
     },
     GROUP_INTEGRACAO_PROTHEUS: {
