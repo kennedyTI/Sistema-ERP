@@ -50,9 +50,22 @@ A Etapa 3 separa o cadastro de máquinas da consulta operacional:
 * `Status` apresenta a foto atual do estado operacional;
 * `status_impressoras` mantém um único status atual por máquina;
 * `logs_impressoras` registra somente eventos do domínio Impressoras;
-* novas máquinas recebem status inicial `desconhecido`, alerta `cinza` e origem `sistema`;
+* novas máquinas recebem status inicial `desconhecido`, alerta `cinza`,
+  orientação `Aguardando primeira verificação` e origem `sistema`;
 * atualizações manuais podem registrar `mudanca_status`, `alerta_gerado`,
   `alerta_normalizado` ou `atualizacao_manual`.
+
+A tela `/impressoras/status` funciona como Central de Operação inicial:
+
+* cards de Total, Online, Offline, Com alerta e Substituir toner;
+* tabela priorizada por alerta vermelho, amarelo, cinza e verde;
+* colunas Status, Alerta, Mensagem, Local, Máquina, IP e Atualizado em;
+* modal somente de consulta com cadastro, tempos, origem, resposta técnica e
+  últimos logs da impressora.
+
+O card `Substituir toner` utiliza temporariamente uma busca textual por
+`substituir toner` em `mensagem_alerta`. Isso não representa monitoramento de
+toner nem integração com Protheus ou GLPI.
 
 O Dashboard real permanece planejado para uma etapa posterior, quando houver
 dados operacionais suficientes.
@@ -245,6 +258,7 @@ postgres
 | `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
 | `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
 | `/api/v2/printers/status`                 | `GET`   | Lista o status atual das impressoras  |
+| `/api/v2/printers/status/summary`         | `GET`   | Resumo para os cards operacionais     |
 | `/api/v2/printers/status/{id}`            | `GET`   | Consulta o status de uma impressora   |
 | `/api/v2/printers/status/{id}`            | `PATCH` | Atualiza status manualmente           |
 | `/api/v2/printers/status/{id}/logs`       | `GET`   | Lista os últimos eventos operacionais |
