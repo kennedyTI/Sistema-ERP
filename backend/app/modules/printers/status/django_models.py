@@ -16,6 +16,7 @@ class PrinterStatusAdminModel(models.Model):
     status_operacional = models.CharField("STATUS OPERACIONAL", max_length=20)
     nivel_alerta = models.CharField("NIVEL DE ALERTA", max_length=20)
     mensagem_alerta = models.CharField("MENSAGEM", max_length=255, null=True, blank=True)
+    mensagem_operador = models.CharField("ORIENTACAO AO OPERADOR", max_length=255)
     ultima_verificacao_em = models.DateTimeField("ULTIMA VERIFICACAO", null=True, blank=True)
     ultimo_sucesso_em = models.DateTimeField("ULTIMO SUCESSO", null=True, blank=True)
     ultima_falha_em = models.DateTimeField("ULTIMA FALHA", null=True, blank=True)

@@ -18,6 +18,7 @@ class StatusImpressora(Base):
     status_operacional = Column(String(20), nullable=False, default="desconhecido")
     nivel_alerta = Column(String(20), nullable=False, default="cinza")
     mensagem_alerta = Column(String(255), nullable=True, default="Ainda nao verificada")
+    mensagem_operador = Column(String(255), nullable=False, default="Aguardando primeira verificacao.")
     ultima_verificacao_em = Column(DateTime, nullable=True)
     ultimo_sucesso_em = Column(DateTime, nullable=True)
     ultima_falha_em = Column(DateTime, nullable=True)

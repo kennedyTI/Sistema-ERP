@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session, joinedload
 from backend.app.core.timezone import now_sao_paulo
 from backend.app.modules.printers.machines.models import PrinterMachine
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
-from backend.app.modules.printers.status.schemas import PrinterLogRead, PrinterStatusRead, PrinterStatusUpdate
+from backend.app.modules.printers.status.schemas import (
+    PrinterLogRead,
+    PrinterStatusRead,
+    PrinterStatusSummary,
+    PrinterStatusUpdate,
+)
 
 
 class PrinterStatusNotFoundError(Exception):
@@ -22,6 +27,7 @@ def create_initial_status(db: Session, machine_id: int, *, origem: str = "sistem
         status_operacional="desconhecido",
         nivel_alerta="cinza",
         mensagem_alerta="Ainda nao verificada",
+        mensagem_operador="Aguardando primeira verificacao.",
         origem=origem,
     )
     db.add(status)
@@ -42,11 +48,13 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
         status_operacional=status.status_operacional,
         nivel_alerta=status.nivel_alerta,
         mensagem_alerta=status.mensagem_alerta,
+        mensagem_operador=status.mensagem_operador,
         ultima_verificacao_em=status.ultima_verificacao_em,
         ultimo_sucesso_em=status.ultimo_sucesso_em,
         ultima_falha_em=status.ultima_falha_em,
         tempo_resposta_ms=status.tempo_resposta_ms,
         origem=status.origem,
+        resposta_bruta=status.resposta_bruta,
     )
 
 
@@ -61,6 +69,20 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         .all()
     )
     return [_status_to_read(status) for status in statuses]
+
+
+def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
+    statuses = db.query(StatusImpressora).all()
+    return PrinterStatusSummary(
+        total_impressoras=len(statuses),
+        online=sum(status.status_operacional == "online" for status in statuses),
+        offline=sum(status.status_operacional == "offline" for status in statuses),
+        com_alerta=sum(status.nivel_alerta in {"amarelo", "vermelho"} for status in statuses),
+        substituir_toner=sum(
+            "substituir toner" in (status.mensagem_alerta or "").casefold()
+            for status in statuses
+        ),
+    )
 
 
 def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
@@ -117,7 +139,7 @@ def update_printer_status(
     old_alert = status.nivel_alerta
     checked_at = now_sao_paulo()
 
-    for field, value in payload.model_dump().items():
+    for field, value in payload.model_dump(exclude_none=True).items():
         setattr(status, field, value)
 
     status.ultima_verificacao_em = checked_at
@@ -187,6 +209,7 @@ def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[
             verificado_em=log.verificado_em,
             tempo_resposta_ms=log.tempo_resposta_ms,
             origem=log.origem,
+            resposta_bruta=log.resposta_bruta,
             criado_em=log.criado_em,
         )
         for log in logs

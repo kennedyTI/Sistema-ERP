@@ -7,12 +7,18 @@ from backend.app.core.database import get_db
 from backend.app.core.response import ApiResponse, api_success
 from backend.app.modules.auth.dependencies import require_printers_status_access, require_printers_status_manage
 from backend.app.modules.auth.schemas import PortalUser
-from backend.app.modules.printers.status.schemas import PrinterLogRead, PrinterStatusRead, PrinterStatusUpdate
+from backend.app.modules.printers.status.schemas import (
+    PrinterLogRead,
+    PrinterStatusRead,
+    PrinterStatusSummary,
+    PrinterStatusUpdate,
+)
 from backend.app.modules.printers.status.services import (
     PrinterStatusNotFoundError,
     list_printer_logs,
     list_printer_statuses,
     read_printer_status,
+    summarize_printer_statuses,
     update_printer_status,
 )
 
@@ -25,6 +31,14 @@ def status_list(
     db: Session = Depends(get_db),
 ):
     return api_success(list_printer_statuses(db), "Status das impressoras.")
+
+
+@router.get("/summary", response_model=ApiResponse[PrinterStatusSummary])
+def status_summary(
+    _user: PortalUser = Depends(require_printers_status_access),
+    db: Session = Depends(get_db),
+):
+    return api_success(summarize_printer_statuses(db), "Resumo operacional das impressoras.")
 
 
 @router.get("/{machine_id}", response_model=ApiResponse[PrinterStatusRead])

@@ -24,22 +24,33 @@ class PrinterStatusRead(BaseModel):
     status_operacional: StatusOperacional
     nivel_alerta: NivelAlerta
     mensagem_alerta: str | None = None
+    mensagem_operador: str
     ultima_verificacao_em: datetime | None = None
     ultimo_sucesso_em: datetime | None = None
     ultima_falha_em: datetime | None = None
     tempo_resposta_ms: int | None = None
     origem: OrigemStatus
+    resposta_bruta: str | None = None
+
+
+class PrinterStatusSummary(BaseModel):
+    total_impressoras: int
+    online: int
+    offline: int
+    com_alerta: int
+    substituir_toner: int
 
 
 class PrinterStatusUpdate(BaseModel):
     status_operacional: StatusOperacional
     nivel_alerta: NivelAlerta
     mensagem_alerta: str | None = Field(default=None, max_length=255)
+    mensagem_operador: str | None = Field(default=None, min_length=1, max_length=255)
     tempo_resposta_ms: int | None = Field(default=None, ge=0)
     origem: OrigemStatus = "manual"
     resposta_bruta: str | None = None
 
-    @field_validator("mensagem_alerta", "resposta_bruta", mode="before")
+    @field_validator("mensagem_alerta", "mensagem_operador", "resposta_bruta", mode="before")
     @classmethod
     def normalize_blank_strings(cls, value: str | None) -> str | None:
         if value is None:
@@ -62,4 +73,5 @@ class PrinterLogRead(BaseModel):
     verificado_em: datetime
     tempo_resposta_ms: int | None = None
     origem: str
+    resposta_bruta: str | None = None
     criado_em: datetime
