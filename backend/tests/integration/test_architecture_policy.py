@@ -77,24 +77,37 @@ class CleanBasePolicyTest(TestCase):
             PROJECT_ROOT
             / "frontend/src/modules/printers/status/components/StatusDetailsDialog.tsx"
         ).read_text(encoding="utf-8")
+        summary_cards = (
+            PROJECT_ROOT
+            / "frontend/src/modules/printers/status/components/StatusSummaryCards.tsx"
+        ).read_text(encoding="utf-8")
 
+        default_order = status_page.split("const DEFAULT_COLUMN_ORDER", 1)[1].split("];", 1)[0]
         expected_columns = (
-            "<TableHead>Status</TableHead>",
-            "<TableHead>Alerta</TableHead>",
-            "<TableHead>Mensagem</TableHead>",
-            "<TableHead>Local</TableHead>",
-            "<TableHead>Máquina</TableHead>",
-            "<TableHead>IP</TableHead>",
-            "<TableHead>Atualizado em</TableHead>",
+            '"status"',
+            '"alert"',
+            '"message"',
+            '"location"',
+            '"machine"',
+            '"ip"',
+            '"updatedAt"',
         )
-        positions = [status_page.index(column) for column in expected_columns]
+        positions = [default_order.index(column) for column in expected_columns]
 
         self.assertEqual(positions, sorted(positions))
         self.assertIn("StatusSummaryCards", status_page)
         self.assertIn("StatusDetailsDialog", status_page)
+        self.assertIn("onPointerDown", status_page)
+        self.assertIn("onPointerMove", status_page)
+        self.assertIn("localStorage.setItem", status_page)
+        self.assertIn("renderStatusCell", status_page)
         self.assertNotIn("Status operacional", status_page)
         self.assertNotIn("<TableHead>Resposta</TableHead>", status_page)
         self.assertNotIn("Copiar IP", status_page + details_dialog)
         self.assertNotIn("Solicitar toner", status_page + details_dialog)
         self.assertIn("Resposta técnica", details_dialog)
         self.assertIn("Últimos logs", details_dialog)
+        self.assertIn('"/static/imgs/printers"', details_dialog)
+        self.assertIn("PrinterModelImage", details_dialog)
+        self.assertIn("Droplet", summary_cards)
+        self.assertNotIn("PackageSearch", summary_cards)
