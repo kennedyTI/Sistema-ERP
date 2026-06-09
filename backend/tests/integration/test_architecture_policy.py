@@ -68,3 +68,33 @@ class CleanBasePolicyTest(TestCase):
 
         missing = [path for path in expected_paths if not (PROJECT_ROOT / path).exists()]
         self.assertEqual(missing, [])
+
+    def test_central_de_operacao_mantem_contrato_visual_da_etapa(self):
+        status_page = (
+            PROJECT_ROOT / "frontend/src/modules/printers/status/StatusPage.tsx"
+        ).read_text(encoding="utf-8")
+        details_dialog = (
+            PROJECT_ROOT
+            / "frontend/src/modules/printers/status/components/StatusDetailsDialog.tsx"
+        ).read_text(encoding="utf-8")
+
+        expected_columns = (
+            "<TableHead>Status</TableHead>",
+            "<TableHead>Alerta</TableHead>",
+            "<TableHead>Mensagem</TableHead>",
+            "<TableHead>Local</TableHead>",
+            "<TableHead>Máquina</TableHead>",
+            "<TableHead>IP</TableHead>",
+            "<TableHead>Atualizado em</TableHead>",
+        )
+        positions = [status_page.index(column) for column in expected_columns]
+
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("StatusSummaryCards", status_page)
+        self.assertIn("StatusDetailsDialog", status_page)
+        self.assertNotIn("Status operacional", status_page)
+        self.assertNotIn("<TableHead>Resposta</TableHead>", status_page)
+        self.assertNotIn("Copiar IP", status_page + details_dialog)
+        self.assertNotIn("Solicitar toner", status_page + details_dialog)
+        self.assertIn("Resposta técnica", details_dialog)
+        self.assertIn("Últimos logs", details_dialog)

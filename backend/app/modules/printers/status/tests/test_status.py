@@ -67,6 +67,7 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["model"], "Modelo Exemplo")
         self.assertEqual(data["status_operacional"], "desconhecido")
         self.assertEqual(data["nivel_alerta"], "cinza")
+        self.assertEqual(data["mensagem_operador"], "Aguardando primeira verificacao.")
         self.assertEqual(data["origem"], "sistema")
 
     def test_lista_status_com_envelope_padrao(self):
@@ -82,6 +83,35 @@ class PrinterStatusApiTest(TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(len(payload["data"]), 1)
 
+    def test_resumo_operacional_calcula_cards(self):
+        machine = self._create_machine()
+        headers = auth_headers(printers_status=True, printers_status_manage=True)
+        self.client.patch(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+            json={
+                "status_operacional": "online",
+                "nivel_alerta": "amarelo",
+                "mensagem_alerta": "Substituir toner black",
+                "mensagem_operador": "Solicitar toner ao almoxarifado",
+                "origem": "manual",
+            },
+        )
+
+        response = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["data"],
+            {
+                "total_impressoras": 1,
+                "online": 1,
+                "offline": 0,
+                "com_alerta": 1,
+                "substituir_toner": 1,
+            },
+        )
+
     def test_atualizacao_manual_registra_mudancas_e_logs(self):
         machine = self._create_machine()
         headers = auth_headers(printers_status=True, printers_status_manage=True)
@@ -93,9 +123,10 @@ class PrinterStatusApiTest(TestCase):
                 "status_operacional": "online",
                 "nivel_alerta": "verde",
                 "mensagem_alerta": "Atualizacao manual de teste",
+                "mensagem_operador": "Sem acao necessaria",
                 "tempo_resposta_ms": 25,
                 "origem": "manual",
-                "resposta_bruta": None,
+                "resposta_bruta": "Resposta tecnica ficticia",
             },
         )
 
@@ -103,7 +134,9 @@ class PrinterStatusApiTest(TestCase):
         data = response.json()["data"]
         self.assertEqual(data["status_operacional"], "online")
         self.assertEqual(data["nivel_alerta"], "verde")
+        self.assertEqual(data["mensagem_operador"], "Sem acao necessaria")
         self.assertEqual(data["tempo_resposta_ms"], 25)
+        self.assertEqual(data["resposta_bruta"], "Resposta tecnica ficticia")
         self.assertIsNotNone(data["ultima_verificacao_em"])
         self.assertIsNotNone(data["ultimo_sucesso_em"])
 
@@ -114,6 +147,9 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(logs_response.status_code, 200)
         event_types = {log["tipo_evento"] for log in logs_response.json()["data"]}
         self.assertEqual(event_types, {"mudanca_status", "alerta_gerado"})
+        self.assertTrue(
+            all(log["resposta_bruta"] == "Resposta tecnica ficticia" for log in logs_response.json()["data"])
+        )
 
     def test_atualizacao_sem_transicao_registra_atualizacao_manual(self):
         machine = self._create_machine()
