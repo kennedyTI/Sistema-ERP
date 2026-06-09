@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CircleAlert, Loader2, RefreshCw } from "lucide-react";
+import { Activity, Loader2, RefreshCw } from "lucide-react";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
+import { StatusDetailsDialog } from "@/modules/printers/status/components/StatusDetailsDialog";
+import { StatusSummaryCards } from "@/modules/printers/status/components/StatusSummaryCards";
 import {
   fetchPrinterStatuses,
+  fetchPrinterStatusSummary,
   type AlertLevel,
   type OperationalStatus,
   type PrinterOperationalStatus,
+  type PrinterStatusSummary,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
@@ -28,11 +32,25 @@ const statusStyles: Record<OperationalStatus, string> = {
   erro: "border-orange-500/30 bg-orange-500/12 text-orange-700 dark:text-orange-300",
 };
 
-const alertStyles: Record<AlertLevel, string> = {
+const alertPriority: Record<AlertLevel, number> = {
+  vermelho: 0,
+  amarelo: 1,
+  cinza: 2,
+  verde: 3,
+};
+
+const alertDotStyles: Record<AlertLevel, string> = {
   cinza: "bg-muted-foreground",
   verde: "bg-emerald-500",
   amarelo: "bg-amber-400",
   vermelho: "bg-red-500",
+};
+
+const alertRowStyles: Record<AlertLevel, string> = {
+  cinza: "border-l-4 border-l-muted-foreground/50 hover:bg-muted/65",
+  verde: "border-l-4 border-l-emerald-500/60 hover:bg-emerald-500/8",
+  amarelo: "border-l-4 border-l-amber-400 bg-amber-500/[0.035] hover:bg-amber-500/10",
+  vermelho: "border-l-4 border-l-red-500 bg-red-500/[0.045] hover:bg-red-500/12",
 };
 
 export function StatusPage() {
@@ -45,15 +63,19 @@ export function StatusPage() {
 
 function StatusContent() {
   const [statuses, setStatuses] = useState<PrinterOperationalStatus[]>([]);
+  const [summary, setSummary] = useState<PrinterStatusSummary | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<PrinterOperationalStatus | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const onlineCount = useMemo(
-    () => statuses.filter((status) => status.status_operacional === "online").length,
-    [statuses],
-  );
-  const attentionCount = useMemo(
-    () => statuses.filter((status) => ["amarelo", "vermelho"].includes(status.nivel_alerta)).length,
+  const sortedStatuses = useMemo(
+    () =>
+      [...statuses].sort(
+        (current, next) =>
+          alertPriority[current.nivel_alerta] - alertPriority[next.nivel_alerta] ||
+          current.machine_name.localeCompare(next.machine_name, "pt-BR", { sensitivity: "base" }),
+      ),
     [statuses],
   );
 
@@ -61,7 +83,12 @@ function StatusContent() {
     setLoading(true);
     setError(null);
     try {
-      setStatuses(await fetchPrinterStatuses());
+      const [statusData, summaryData] = await Promise.all([
+        fetchPrinterStatuses(),
+        fetchPrinterStatusSummary(),
+      ]);
+      setStatuses(statusData);
+      setSummary(summaryData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar os status.");
     } finally {
@@ -73,15 +100,20 @@ function StatusContent() {
     void loadStatuses();
   }, []);
 
+  function openDetails(status: PrinterOperationalStatus) {
+    setSelectedStatus(status);
+    setDetailsOpen(true);
+  }
+
   return (
-    <div className="mx-auto flex max-w-[1380px] flex-col gap-5">
+    <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
       <section className="rounded-lg border border-border/70 bg-card px-6 py-6 shadow-[var(--shadow-card)]">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-primary">Impressoras</p>
             <h1 className="mt-2 text-2xl font-semibold tracking-tight">Status</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Consulta do estado operacional atual das impressoras cadastradas.
+              Central de consulta do estado atual e das orientações operacionais.
             </p>
           </div>
           <Button type="button" variant="outline" onClick={loadStatuses} disabled={loading}>
@@ -89,13 +121,9 @@ function StatusContent() {
             Atualizar
           </Button>
         </div>
-
-        <div className="mt-5 flex flex-wrap gap-2 text-sm">
-          <Badge variant="secondary">{statuses.length} impressora(s)</Badge>
-          <Badge variant="outline">{onlineCount} online</Badge>
-          <Badge variant="outline">{attentionCount} com alerta</Badge>
-        </div>
       </section>
+
+      <StatusSummaryCards summary={summary} loading={loading} />
 
       {error && (
         <Alert variant="destructive">
@@ -110,12 +138,12 @@ function StatusContent() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Carregando status...
           </div>
-        ) : statuses.length === 0 ? (
+        ) : sortedStatuses.length === 0 ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
             <Activity className="h-9 w-9 text-muted-foreground" />
-            <h2 className="mt-4 text-base font-semibold">Nenhum status disponivel</h2>
+            <h2 className="mt-4 text-base font-semibold">Nenhum status disponível</h2>
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Os status operacionais aparecerao aqui quando houver impressoras cadastradas.
+              Os estados operacionais aparecerão aqui quando houver impressoras cadastradas.
             </p>
           </div>
         ) : (
@@ -123,47 +151,53 @@ function StatusContent() {
             <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Maquina</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead>Fabricante</TableHead>
-                  <TableHead>Modelo</TableHead>
-                  <TableHead>Setor</TableHead>
-                  <TableHead>Status operacional</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Alerta</TableHead>
-                  <TableHead>Ultima verificacao</TableHead>
                   <TableHead>Mensagem</TableHead>
-                  <TableHead className="text-right">Resposta</TableHead>
+                  <TableHead>Local</TableHead>
+                  <TableHead>Máquina</TableHead>
+                  <TableHead>IP</TableHead>
+                  <TableHead>Atualizado em</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {statuses.map((status) => (
-                  <TableRow key={status.machine_id} className="hover:bg-primary/10 dark:hover:bg-primary/20">
-                    <TableCell className="font-medium">{status.machine_name}</TableCell>
-                    <TableCell>{status.ip_address}</TableCell>
-                    <TableCell>{status.manufacturer ?? "-"}</TableCell>
-                    <TableCell>{status.model ?? "-"}</TableCell>
-                    <TableCell>{status.sector ?? "-"}</TableCell>
+                {sortedStatuses.map((status) => (
+                  <TableRow
+                    key={status.machine_id}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Abrir detalhes de ${status.machine_name}`}
+                    className={cn(
+                      "cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      alertRowStyles[status.nivel_alerta],
+                    )}
+                    onClick={() => openDetails(status)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetails(status);
+                      }
+                    }}
+                  >
                     <TableCell>
                       <Badge variant="outline" className={statusStyles[status.status_operacional]}>
                         {statusLabels[status.status_operacional]}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-2 capitalize">
+                    <TableCell className="max-w-[260px] whitespace-normal">
+                      <span className="inline-flex items-start gap-2">
                         <span
-                          className={cn("h-2.5 w-2.5 rounded-full", alertStyles[status.nivel_alerta])}
+                          className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", alertDotStyles[status.nivel_alerta])}
                           aria-hidden="true"
                         />
-                        {status.nivel_alerta}
+                        <span>{status.mensagem_alerta ?? "-"}</span>
                       </span>
                     </TableCell>
-                    <TableCell>{formatDateTime(status.ultima_verificacao_em)}</TableCell>
-                    <TableCell className="max-w-[260px] whitespace-normal">
-                      {status.mensagem_alerta ?? "-"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {status.tempo_resposta_ms === null ? "-" : `${status.tempo_resposta_ms} ms`}
-                    </TableCell>
+                    <TableCell className="max-w-[300px] whitespace-normal">{status.mensagem_operador}</TableCell>
+                    <TableCell>{status.sector ?? "-"}</TableCell>
+                    <TableCell className="font-medium">{status.machine_name}</TableCell>
+                    <TableCell>{status.ip_address}</TableCell>
+                    <TableCell>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -172,20 +206,26 @@ function StatusContent() {
         )}
       </section>
 
-      {!loading && attentionCount > 0 && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <CircleAlert className="h-4 w-4 text-amber-500" />
-          Existem impressoras que exigem atencao operacional.
-        </div>
-      )}
+      <StatusDetailsDialog
+        status={selectedStatus}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+      />
     </div>
   );
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "Ainda nao verificada";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(value));
+function formatRelativeUpdate(value: string | null) {
+  if (!value) return "Desatualizado";
+
+  const elapsedMs = Date.now() - new Date(value).getTime();
+  const elapsedMinutes = Math.max(0, Math.floor(elapsedMs / 60_000));
+
+  if (elapsedMinutes < 1) return "Agora";
+  if (elapsedMinutes < 60) return `Há ${elapsedMinutes} min`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `Há ${elapsedHours} h`;
+
+  return "Desatualizado";
 }
