@@ -29,12 +29,33 @@ Nesta fase, a fundacao inclui:
 * estrutura modular no backend e no frontend;
 * paginas placeholder de Dashboard e Papel;
 * cadastro inicial de Maquinas com persistencia;
+* status operacional atual das impressoras;
+* linha do tempo de eventos operacionais de cada impressora;
 * menu condicionado por permissões;
 * API CRUD de maquinas em `/api/v2/printers/machines`;
+* API de status em `/api/v2/printers/status`;
 * tela inicial de listagem, criacao, edicao e ativacao/inativacao de maquinas;
-* endpoints de status de desenvolvimento para Dashboard e Papel.
+* tela de consulta operacional em `/impressoras/status`;
+* endpoints de desenvolvimento para Dashboard e Papel.
 
-Monitoramento, SNMP, toner, alertas, histórico, Celery e Redis não fazem parte desta etapa.
+O status desta etapa é atualizado manualmente pela API para preparar o domínio.
+Monitoramento automático, SNMP, toner, alertas complexos, Celery e Redis não
+fazem parte desta etapa.
+
+### Etapa 3 - Status operacional das impressoras
+
+A Etapa 3 separa o cadastro de máquinas da consulta operacional:
+
+* `Máquinas` continua responsável por criar, editar, ativar e inativar cadastros;
+* `Status` apresenta a foto atual do estado operacional;
+* `status_impressoras` mantém um único status atual por máquina;
+* `logs_impressoras` registra somente eventos do domínio Impressoras;
+* novas máquinas recebem status inicial `desconhecido`, alerta `cinza` e origem `sistema`;
+* atualizações manuais podem registrar `mudanca_status`, `alerta_gerado`,
+  `alerta_normalizado` ou `atualizacao_manual`.
+
+O Dashboard real permanece planejado para uma etapa posterior, quando houver
+dados operacionais suficientes.
 
 ---
 
@@ -103,7 +124,8 @@ sistema_erp/
 │   │   │   └── printers/
 │   │   │       ├── dashboard/
 │   │   │       ├── machines/
-│   │   │       └── paper/
+│   │   │       ├── paper/
+│   │   │       └── status/
 │   │   │
 │   │   ├── shared/
 │   │   │   ├── constants.py
@@ -141,7 +163,8 @@ sistema_erp/
 │       │   └── printers/
 │       │       ├── dashboard/
 │       │       ├── machines/
-│       │       └── paper/
+│       │       ├── paper/
+│       │       └── status/
 │       │
 │       └── shared/
 │           ├── components/
@@ -203,6 +226,7 @@ postgres
 | `/login`                 | Tela de autenticação                     |
 | `/inicio`                | Tela inicial do sistema                  |
 | `/impressoras/dashboard` | Placeholder do dashboard de impressoras |
+| `/impressoras/status`    | Consulta do status operacional atual    |
 | `/impressoras/maquinas`  | Cadastro inicial de maquinas            |
 | `/impressoras/papel`     | Placeholder de papel                    |
 | `/admin/`                | Acesso ao Django Admin via proxy         |
@@ -220,6 +244,10 @@ postgres
 | `/api/v2/printers/machines/{id}`          | `GET`   | Detalha maquina                       |
 | `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
 | `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
+| `/api/v2/printers/status`                 | `GET`   | Lista o status atual das impressoras  |
+| `/api/v2/printers/status/{id}`            | `GET`   | Consulta o status de uma impressora   |
+| `/api/v2/printers/status/{id}`            | `PATCH` | Atualiza status manualmente           |
+| `/api/v2/printers/status/{id}/logs`       | `GET`   | Lista os últimos eventos operacionais |
 | `/api/v2/printers/paper`                  | `GET`   | Status inicial do submódulo Papel     |
 
 ---
@@ -230,9 +258,9 @@ O sistema utiliza grupos para controlar acesso ao portal e ao Django Admin.
 
 | Grupo                 | Acesso                                                      |
 | --------------------- | ----------------------------------------------------------- |
-| `Equipe Técnica`      | Início, Impressoras, Dashboard, Máquinas, Papel e Admin     |
-| `Gestor`              | Início, Impressoras, Dashboard, Máquinas e Papel            |
-| `Operador`            | Início, Impressoras, Dashboard e Máquinas                   |
+| `Equipe Técnica`      | Início, Impressoras, Dashboard, Status, Máquinas, Papel e Admin |
+| `Gestor`              | Início, Impressoras, Dashboard, Status, Máquinas e Papel       |
+| `Operador`            | Início, Impressoras, Dashboard e Status                        |
 | `Integração Protheus` | Sem acesso ao portal visual                                 |
 
 ---
@@ -277,6 +305,7 @@ https://localhost:8443/inicio
 https://localhost:8443/admin/
 https://localhost:8443/api/v2/auth/me
 https://localhost:8443/impressoras/dashboard
+https://localhost:8443/impressoras/status
 https://localhost:8443/impressoras/maquinas
 https://localhost:8443/impressoras/papel
 ```
