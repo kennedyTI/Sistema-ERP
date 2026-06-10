@@ -22,21 +22,26 @@ export function AppLayout() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
         <AppSidebar />
-        <div className="flex flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border/70 bg-card/86 px-4 shadow-[0_1px_0_color-mix(in_oklab,var(--industria-blue)_8%,transparent)] backdrop-blur supports-[backdrop-filter]:bg-card/74 sm:px-6">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/70 bg-card/86 px-4 shadow-[0_1px_0_color-mix(in_oklab,var(--industria-blue)_8%,transparent)] backdrop-blur supports-[backdrop-filter]:bg-card/74 sm:px-5">
             <SidebarTrigger className="-ml-1 text-primary hover:bg-primary-soft hover:text-primary-dark dark:hover:bg-primary/15 dark:hover:text-primary" />
             <div className="hidden sm:block">
               <h1 className="text-sm font-semibold leading-tight">{meta.title}</h1>
               <p className="text-xs text-muted-foreground">{meta.sub}</p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="rounded-full text-primary hover:bg-primary-soft hover:text-primary-dark dark:hover:bg-primary/15 dark:hover:text-primary" aria-label="Notificacoes">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full text-primary hover:bg-primary-soft hover:text-primary-dark dark:hover:bg-primary/15 dark:hover:text-primary"
+                aria-label="Notificacoes"
+              >
                 <Bell className="h-4 w-4" />
               </Button>
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <main className="flex-1 px-4 py-5 sm:px-5 lg:px-6">
             <Outlet />
           </main>
         </div>
@@ -44,4 +49,3 @@ export function AppLayout() {
     </SidebarProvider>
   );
 }
-
