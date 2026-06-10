@@ -106,6 +106,25 @@ O comando idempotente `python manage.py seed_admin_groups` cria as permissões e
 as atribui aos grupos oficiais. O endpoint `/api/v2/auth/me` expõe o contrato
 `permissoes.impressoras` para o frontend.
 
+### Experiência frontend da tela Máquinas
+
+A tela `/impressoras/maquinas` consome exclusivamente os contratos reais da
+API v2 e apresenta:
+
+* cards de total, ativas, inativas, fabricantes e modelos cadastrados;
+* tabela sem paginação com máquinas ativas e inativas;
+* seleção de colunas visíveis e reordenação por arraste no cabeçalho;
+* preferências de ordem e visibilidade salvas no navegador por usuário;
+* linhas clicáveis que abrem um único modal de detalhes e edição;
+* imagem do modelo pelo campo `url_imagem`, com fallback visual;
+* toggle cadastral Ativa/Inativa que atualiza a linha e os cards sem reload;
+* erros de validação por campo e conflito de concorrência por `atualizado_em`;
+* botões condicionados pelas permissões retornadas em
+  `permissoes.impressoras` e pelas ações retornadas no endpoint de detalhes.
+
+O status cadastral Ativa/Inativa continua separado do status operacional.
+Alterações cadastrais não permitem editar status, alertas ou logs operacionais.
+
 ---
 
 ## Tecnologias utilizadas
