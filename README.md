@@ -29,12 +29,129 @@ Nesta fase, a fundacao inclui:
 * estrutura modular no backend e no frontend;
 * paginas placeholder de Dashboard e Papel;
 * cadastro inicial de Maquinas com persistencia;
+* status operacional atual das impressoras;
+* linha do tempo de eventos operacionais de cada impressora;
 * menu condicionado por permissões;
 * API CRUD de maquinas em `/api/v2/printers/machines`;
+* API de status em `/api/v2/printers/status`;
 * tela inicial de listagem, criacao, edicao e ativacao/inativacao de maquinas;
-* endpoints de status de desenvolvimento para Dashboard e Papel.
+* tela de consulta operacional em `/impressoras/status`;
+* endpoints de desenvolvimento para Dashboard e Papel.
 
-Monitoramento, SNMP, toner, alertas, histórico, Celery e Redis não fazem parte desta etapa.
+Status e logs operacionais são somente leitura no portal, na API pública e no
+Django Admin. Monitoramento automático, SNMP, toner, alertas complexos, Celery
+e Redis não fazem parte desta etapa.
+
+### Etapa 3 - Status operacional das impressoras
+
+A Etapa 3 separa o cadastro de máquinas da consulta operacional:
+
+* `Máquinas` continua responsável por criar, editar, ativar e inativar cadastros;
+* `Status` apresenta a foto atual do estado operacional;
+* `status_impressoras` mantém um único status atual por máquina;
+* `logs_impressoras` registra somente eventos do domínio Impressoras;
+* novas máquinas recebem status inicial `desconhecido`, alerta `cinza`,
+  orientação `Aguardando primeira verificação` e origem `sistema`;
+* status e logs operacionais não possuem endpoint público de escrita e não
+  podem ser adicionados, editados ou excluídos pelo Django Admin.
+
+A tela `/impressoras/status` funciona como Central de Operação inicial:
+
+* cards de Total, Online, Offline, Com alerta e Substituir toner;
+* tabela priorizada por alerta vermelho, amarelo, cinza e verde;
+* colunas Status, Alerta, Mensagem, Local, Máquina, IP e Atualizado em;
+* modal somente de consulta com cadastro, tempos, origem, resposta técnica e
+  últimos logs da impressora.
+
+O card `Substituir toner` utiliza temporariamente uma busca textual por
+`substituir toner` em `mensagem_alerta`. Isso não representa monitoramento de
+toner nem integração com Protheus ou GLPI.
+
+O Dashboard real permanece planejado para uma etapa posterior, quando houver
+dados operacionais suficientes.
+
+### Backend avançado de Máquinas
+
+A API de Máquinas utiliza contratos em português e mantém a listagem completa,
+sem paginação, incluindo cadastros ativos e inativos.
+
+Endpoints disponíveis:
+
+* `GET /api/v2/printers/machines`: lista todas as máquinas;
+* `GET /api/v2/printers/machines/summary`: retorna totais, ativos, inativos,
+  fabricantes e modelos cadastrados;
+* `GET /api/v2/printers/machines/{id}/details`: retorna cadastro, modelo,
+  `url_imagem`, status operacional resumido, logs somente leitura e ações
+  permitidas;
+* `PATCH /api/v2/printers/machines/{id}`: atualiza dados cadastrais com
+  validação por campo e concorrência por `atualizado_em`;
+* `PATCH /api/v2/printers/machines/{id}/status`: altera apenas o status
+  cadastral Ativo/Inativo e retorna o resumo atualizado.
+
+Alterações cadastrais e toggles são transacionais e registrados em
+`audit_logs`, incluindo usuário, valores anteriores, valores novos e campos
+alterados.
+
+As permissões funcionais são administradas pelo Django Auth:
+
+* `impressoras.ver_dashboard`;
+* `impressoras.ver_status`;
+* `impressoras.ver_maquinas`;
+* `impressoras.criar_maquinas`;
+* `impressoras.editar_maquinas`;
+* `impressoras.alternar_status_maquinas`;
+* `impressoras.ver_papel`.
+
+O comando idempotente `python manage.py seed_admin_groups` cria as permissões e
+as atribui aos grupos oficiais. O endpoint `/api/v2/auth/me` expõe o contrato
+`permissoes.impressoras` para o frontend.
+
+### Experiência frontend da tela Máquinas
+
+A tela `/impressoras/maquinas` consome exclusivamente os contratos reais da
+API v2 e apresenta:
+
+* cards de total, ativas, inativas, fabricantes e modelos cadastrados;
+* tabela sem paginação com máquinas ativas e inativas;
+* seleção de colunas visíveis e reordenação por arraste no cabeçalho;
+* preferências de ordem e visibilidade salvas no navegador por usuário;
+* linhas clicáveis que abrem um único modal de detalhes e edição;
+* imagem do modelo pelo campo `url_imagem`, com fallback visual;
+* toggle cadastral Ativa/Inativa que atualiza a linha e os cards sem reload;
+* erros de validação por campo e conflito de concorrência por `atualizado_em`;
+* botões condicionados pelas permissões retornadas em
+  `permissoes.impressoras` e pelas ações retornadas no endpoint de detalhes.
+
+O status cadastral Ativa/Inativa continua separado do status operacional.
+Alterações cadastrais não permitem editar status, alertas ou logs operacionais.
+
+### Padrão visual do módulo Impressoras
+
+As telas Máquinas e Status compartilham o mesmo padrão de densidade, cards,
+tabelas, imagens e modais grandes:
+
+* cards integrados ao fundo do tema claro ou escuro;
+* tabelas com altura de linha uniforme e melhor aproveitamento horizontal;
+* colunas configuráveis e reordenáveis com preview e indicação de destino;
+* preferências de colunas persistidas por usuário no navegador;
+* modais grandes com rolagem interna, cabeçalho e rodapé de ações fixos;
+* fechamento pelo botão X; o rodapé contém apenas ações do fluxo;
+* área de imagem padronizada com o fallback `Imagem não disponível`.
+
+Máquinas e Status usam os cards como primeiro bloco do conteúdo. O título e o
+contexto ficam no cabeçalho global da aplicação, sem duplicação dentro da
+página e sem botão manual de atualização. Em telas menores, os cards se
+reorganizam, as tabelas mantêm rolagem horizontal própria e os modais usam a
+altura disponível do dispositivo sem criar overflow horizontal na página.
+
+O campo `url_imagem` de `printers_models` é a fonte oficial das imagens nos
+endpoints de Máquinas e Status. Caminhos públicos locais podem apontar para
+`/static/imgs/printers/<arquivo>`, desde que o arquivo exista e responda HTTP
+200 pelo proxy. O frontend não deduz nomes nem monta caminhos por modelo.
+
+O modal Adicionar máquina preserva o contrato de criação atual, que recebe
+fabricante e modelo em texto. A seleção por catálogo e a prévia de imagem na
+criação dependem de um endpoint futuro específico para modelos.
 
 ---
 
@@ -103,7 +220,8 @@ sistema_erp/
 │   │   │   └── printers/
 │   │   │       ├── dashboard/
 │   │   │       ├── machines/
-│   │   │       └── paper/
+│   │   │       ├── paper/
+│   │   │       └── status/
 │   │   │
 │   │   ├── shared/
 │   │   │   ├── constants.py
@@ -141,7 +259,8 @@ sistema_erp/
 │       │   └── printers/
 │       │       ├── dashboard/
 │       │       ├── machines/
-│       │       └── paper/
+│       │       ├── paper/
+│       │       └── status/
 │       │
 │       └── shared/
 │           ├── components/
@@ -203,6 +322,7 @@ postgres
 | `/login`                 | Tela de autenticação                     |
 | `/inicio`                | Tela inicial do sistema                  |
 | `/impressoras/dashboard` | Placeholder do dashboard de impressoras |
+| `/impressoras/status`    | Consulta do status operacional atual    |
 | `/impressoras/maquinas`  | Cadastro inicial de maquinas            |
 | `/impressoras/papel`     | Placeholder de papel                    |
 | `/admin/`                | Acesso ao Django Admin via proxy         |
@@ -217,9 +337,15 @@ postgres
 | `/api/v2/printers/dashboard`              | `GET`   | Status inicial do dashboard           |
 | `/api/v2/printers/machines`               | `GET`   | Lista maquinas cadastradas            |
 | `/api/v2/printers/machines`               | `POST`  | Cadastra maquina                      |
+| `/api/v2/printers/machines/summary`       | `GET`   | Resumo cadastral das maquinas         |
 | `/api/v2/printers/machines/{id}`          | `GET`   | Detalha maquina                       |
+| `/api/v2/printers/machines/{id}/details`  | `GET`   | Dados completos para o modal          |
 | `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
 | `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
+| `/api/v2/printers/status`                 | `GET`   | Lista o status atual das impressoras  |
+| `/api/v2/printers/status/summary`         | `GET`   | Resumo para os cards operacionais     |
+| `/api/v2/printers/status/{id}`            | `GET`   | Consulta o status de uma impressora   |
+| `/api/v2/printers/status/{id}/logs`       | `GET`   | Lista os últimos eventos operacionais |
 | `/api/v2/printers/paper`                  | `GET`   | Status inicial do submódulo Papel     |
 
 ---
@@ -230,9 +356,9 @@ O sistema utiliza grupos para controlar acesso ao portal e ao Django Admin.
 
 | Grupo                 | Acesso                                                      |
 | --------------------- | ----------------------------------------------------------- |
-| `Equipe Técnica`      | Início, Impressoras, Dashboard, Máquinas, Papel e Admin     |
-| `Gestor`              | Início, Impressoras, Dashboard, Máquinas e Papel            |
-| `Operador`            | Início, Impressoras, Dashboard e Máquinas                   |
+| `Equipe Técnica`      | Início, Impressoras, Dashboard, Status, Máquinas, Papel e Admin |
+| `Gestor`              | Início, Impressoras, Dashboard, Status, Máquinas e Papel       |
+| `Operador`            | Início, Impressoras, Dashboard e Status                        |
 | `Integração Protheus` | Sem acesso ao portal visual                                 |
 
 ---
@@ -277,6 +403,7 @@ https://localhost:8443/inicio
 https://localhost:8443/admin/
 https://localhost:8443/api/v2/auth/me
 https://localhost:8443/impressoras/dashboard
+https://localhost:8443/impressoras/status
 https://localhost:8443/impressoras/maquinas
 https://localhost:8443/impressoras/papel
 ```

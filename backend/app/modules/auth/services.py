@@ -15,27 +15,43 @@ from sqlalchemy.orm import Session
 from backend.app.core.django import ensure_django_ready
 from backend.app.modules.audit.orm import Log
 from backend.app.modules.audit.services import create_audit_log
-from backend.app.modules.auth.permissions import portal_permissions_for_groups
-from backend.app.modules.auth.schemas import PortalUser
+from backend.app.modules.auth.permissions import portal_permissions_from_django
+from backend.app.modules.auth.schemas import PortalUser, UsuarioAutenticado
+from backend.app.modules.backoffice.admin_policy import can_access_django_admin
 
 logger = logging.getLogger(__name__)
 
 def build_portal_user(django_user: Any) -> PortalUser:
     groups = list(django_user.groups.values_list("name", flat=True))
+    permission_names = set(django_user.get_all_permissions())
     display_name = ""
     if hasattr(django_user, "get_full_name"):
         display_name = django_user.get_full_name()
     display_name = display_name or getattr(django_user, "username", "")
 
+    legacy_permissions, permissions = portal_permissions_from_django(
+        permission_names,
+        groups=groups,
+        is_superuser=bool(getattr(django_user, "is_superuser", False)),
+        can_access_admin=can_access_django_admin(
+            is_superuser=bool(getattr(django_user, "is_superuser", False)),
+            group_names=groups,
+        ),
+    )
+    user_id = getattr(django_user, "pk", None)
     return PortalUser(
+        id=user_id,
         username=django_user.username,
         display_name=display_name,
         email=getattr(django_user, "email", "") or None,
         groups=groups,
-        permissions=portal_permissions_for_groups(
-            groups,
-            is_superuser=bool(getattr(django_user, "is_superuser", False)),
+        permissions=legacy_permissions,
+        usuario=UsuarioAutenticado(
+            id=user_id,
+            username=django_user.username,
+            grupos=groups,
         ),
+        permissoes=permissions,
     )
 
 

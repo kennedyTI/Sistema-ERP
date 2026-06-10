@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,19 +8,11 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.core.database import get_db
 from backend.app.main import app
+from backend.app.modules.audit.orm import AuditLog
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
+from backend.app.modules.printers.machines.services import get_machine_for_update
+from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.tests.auth_helpers import auth_headers
-
-
-class FakeDb:
-    def add(self, _obj):
-        return None
-
-    def commit(self):
-        return None
-
-    def rollback(self):
-        return None
 
 
 class PrinterMachinesApiTest(TestCase):
@@ -29,175 +22,319 @@ class PrinterMachinesApiTest(TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+        AuditLog.__table__.create(engine)
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
+        StatusImpressora.__table__.create(engine)
+        LogImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
+        self.model = PrinterModel(
+            manufacturer="Fabricante Exemplo",
+            name="Modelo Exemplo",
+            type="laser",
+            color_mode="mono",
+            url_imagem="/static/imgs/printers/modelo-exemplo.png",
+        )
+        self.db.add(self.model)
+        self.db.commit()
 
         def override_db():
             yield self.db
 
         app.dependency_overrides[get_db] = override_db
         self.client = TestClient(app)
+        self.full_headers = auth_headers(
+            username="tecnico",
+            printers_machines=True,
+        )
 
     def tearDown(self):
         self.db.close()
         app.dependency_overrides.clear()
 
-    def test_lista_inicial_retorna_envelope_vazio(self):
+    def _create_machine(
+        self,
+        *,
+        name: str = "Impressora Expedicao",
+        ip_address: str = "192.168.10.25",
+        active: bool = True,
+        model_id: int | None = None,
+    ) -> dict:
+        response = self.client.post(
+            "/api/v2/printers/machines",
+            headers=self.full_headers,
+            json={
+                "nome": name,
+                "endereco_ip": ip_address,
+                "modelo_id": model_id or self.model.id,
+                "setor": "Expedicao",
+                "centro_custo": "CC-100",
+                "ativo": active,
+                "observacoes": "Cadastro inicial",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["dados"]["maquina"]
+
+    def test_listagem_retorna_contrato_portugues_sem_paginacao(self):
+        active = self._create_machine()
+        inactive = self._create_machine(
+            name="Impressora Inativa",
+            ip_address="192.168.10.26",
+            active=False,
+        )
+
         response = self.client.get(
             "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
+            headers=self.full_headers,
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["data"], [])
-        self.assertTrue(response.json()["success"])
+        payload = response.json()
+        self.assertTrue(payload["sucesso"])
+        self.assertEqual(
+            {machine["id"] for machine in payload["dados"]},
+            {active["id"], inactive["id"]},
+        )
+        self.assertIn("nome", payload["dados"][0])
+        self.assertIn("endereco_ip", payload["dados"][0])
+        self.assertNotIn("name", payload["dados"][0])
 
-    def test_cria_lista_e_detalha_maquina(self):
-        create_response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
-            json={
-                "name": "Impressora Expedicao",
-                "ip_address": "192.168.10.25",
-                "manufacturer": "HP",
-                "model": "LaserJet",
-                "type": "laser",
-                "color_mode": "mono",
-                "sector": "Expedicao",
-                "cost_center": "CC-100",
-                "notes": "Cadastro inicial",
+    def test_summary_conta_total_ativos_inativos_fabricantes_e_modelos(self):
+        self._create_machine()
+        self._create_machine(
+            name="Impressora Inativa",
+            ip_address="192.168.10.26",
+            active=False,
+        )
+        self.db.add(
+            PrinterModel(
+                manufacturer="Outro Fabricante",
+                name="Modelo sem maquina",
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            "/api/v2/printers/machines/summary",
+            headers=self.full_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["dados"],
+            {
+                "total_maquinas": 2,
+                "ativas": 1,
+                "inativas": 1,
+                "fabricantes": 1,
+                "modelos_cadastrados": 2,
             },
         )
 
-        self.assertEqual(create_response.status_code, 201)
-        created = create_response.json()["data"]
-        self.assertEqual(created["name"], "Impressora Expedicao")
-        self.assertEqual(created["ip_address"], "192.168.10.25")
-        self.assertIsNotNone(created["model_id"])
-        self.assertEqual(created["manufacturer"], "HP")
-        self.assertEqual(created["model"], "LaserJet")
-        self.assertEqual(created["type"], "laser")
-        self.assertEqual(created["color_mode"], "mono")
-        self.assertTrue(created["is_active"])
-
-        list_response = self.client.get(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
+    def test_details_retorna_modelo_status_logs_acoes_e_url_imagem(self):
+        machine = self._create_machine()
+        self.db.add(
+            LogImpressora(
+                maquina_id=machine["id"],
+                tipo_evento="erro_sistema",
+                mensagem="Evento ficticio",
+                origem="sistema",
+            )
         )
-        self.assertEqual(len(list_response.json()["data"]), 1)
+        self.db.commit()
 
-        detail_response = self.client.get(
-            f"/api/v2/printers/machines/{created['id']}",
-            headers=auth_headers(printers_machines=True),
-        )
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertEqual(detail_response.json()["data"]["id"], created["id"])
-
-    def test_atualiza_maquina(self):
-        create_response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
-            json={"name": "Recepcao", "ip_address": "10.0.0.10"},
-        )
-        machine_id = create_response.json()["data"]["id"]
-
-        response = self.client.patch(
-            f"/api/v2/printers/machines/{machine_id}",
-            headers=auth_headers(printers_machines=True),
-            json={"name": "Recepcao Fiscal", "sector": "Fiscal"},
+        response = self.client.get(
+            f"/api/v2/printers/machines/{machine['id']}/details",
+            headers=self.full_headers,
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["data"]["name"], "Recepcao Fiscal")
-        self.assertEqual(response.json()["data"]["sector"], "Fiscal")
-
-    def test_atualiza_modelo_da_maquina(self):
-        create_response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
-            json={"name": "Recepcao", "ip_address": "10.0.0.11"},
+        data = response.json()["dados"]
+        self.assertEqual(data["maquina"]["url_imagem"], self.model.url_imagem)
+        self.assertEqual(data["modelo_dados"]["modelo"], self.model.name)
+        self.assertEqual(data["status_operacional"]["status"], "desconhecido")
+        self.assertEqual(data["logs_recentes"][0]["mensagem"], "Evento ficticio")
+        self.assertEqual(
+            data["acoes"],
+            {"pode_editar": True, "pode_alternar_status": True},
         )
-        machine_id = create_response.json()["data"]["id"]
+
+    def test_edicao_transacional_salva_e_registra_auditoria(self):
+        machine = self._create_machine()
 
         response = self.client.patch(
-            f"/api/v2/printers/machines/{machine_id}",
-            headers=auth_headers(printers_machines=True),
+            f"/api/v2/printers/machines/{machine['id']}",
+            headers=self.full_headers,
             json={
-                "manufacturer": "Brother",
-                "model": "HL Exemplo",
-                "type": "laser",
-                "color_mode": "mono",
+                "nome": "Impressora Fiscal",
+                "endereco_ip": "192.168.10.30",
+                "modelo_id": self.model.id,
+                "setor": "Fiscal",
+                "centro_custo": "CC-200",
+                "observacoes": "Atualizada",
+                "atualizado_em": machine["atualizado_em"],
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        data = response.json()["data"]
-        self.assertEqual(data["manufacturer"], "Brother")
-        self.assertEqual(data["model"], "HL Exemplo")
-        self.assertEqual(data["type"], "laser")
-        self.assertEqual(data["color_mode"], "mono")
-
-    def test_recusa_ip_duplicado(self):
-        headers = auth_headers(printers_machines=True)
-        self.client.post(
-            "/api/v2/printers/machines",
-            headers=headers,
-            json={"name": "A", "ip_address": "10.0.0.20"},
+        self.assertEqual(response.status_code, 200, response.text)
+        updated = response.json()["dados"]["maquina"]
+        self.assertEqual(updated["nome"], "Impressora Fiscal")
+        self.assertEqual(updated["setor"], "Fiscal")
+        audit = (
+            self.db.query(AuditLog)
+            .filter(
+                AuditLog.record_id == machine["id"],
+                AuditLog.action == "update",
+            )
+            .one()
         )
+        self.assertEqual(audit.changed_by, "tecnico")
+        self.assertIn("nome", audit.new_data["alteracoes"])
 
-        response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=headers,
-            json={"name": "B", "ip_address": "10.0.0.20"},
+    def test_edicao_retorna_erros_por_campo_e_nao_salva_parcialmente(self):
+        first = self._create_machine()
+        second = self._create_machine(
+            name="Segunda Impressora",
+            ip_address="192.168.10.26",
         )
-
-        self.assertEqual(response.status_code, 409)
-
-    def test_inativa_maquina(self):
-        create_response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
-            json={"name": "Producao", "ip_address": "10.0.0.30"},
-        )
-        machine_id = create_response.json()["data"]["id"]
 
         response = self.client.patch(
-            f"/api/v2/printers/machines/{machine_id}/status",
-            headers=auth_headers(printers_machines=True),
-            json={"is_active": False},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["data"]["is_active"])
-
-    def test_retorna_404_para_maquina_inexistente(self):
-        response = self.client.get(
-            "/api/v2/printers/machines/999",
-            headers=auth_headers(printers_machines=True),
-        )
-
-        self.assertEqual(response.status_code, 404)
-
-    def test_valida_ip_obrigatorio_e_valido(self):
-        response = self.client.post(
-            "/api/v2/printers/machines",
-            headers=auth_headers(printers_machines=True),
-            json={"name": "Sem IP", "ip_address": "ip-invalido"},
+            f"/api/v2/printers/machines/{first['id']}",
+            headers=self.full_headers,
+            json={
+                "nome": "Nome que nao deve persistir",
+                "endereco_ip": second["endereco_ip"],
+                "modelo_id": self.model.id,
+                "atualizado_em": first["atualizado_em"],
+            },
         )
 
         self.assertEqual(response.status_code, 422)
+        self.assertIn("endereco_ip", response.json()["erros"])
+        self.db.expire_all()
+        unchanged = self.db.get(PrinterMachine, first["id"])
+        self.assertEqual(unchanged.name, first["nome"])
+        self.assertEqual(unchanged.ip_address, first["endereco_ip"])
 
-    def test_lista_exige_autenticacao(self):
-        response = self.client.get("/api/v2/printers/machines")
+    def test_edicao_detecta_conflito_por_atualizado_em(self):
+        machine = self._create_machine()
+        first_response = self.client.patch(
+            f"/api/v2/printers/machines/{machine['id']}",
+            headers=self.full_headers,
+            json={
+                "nome": "Primeira alteracao",
+                "modelo_id": self.model.id,
+                "atualizado_em": machine["atualizado_em"],
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
 
-        self.assertEqual(response.status_code, 401)
+        conflict = self.client.patch(
+            f"/api/v2/printers/machines/{machine['id']}",
+            headers=self.full_headers,
+            json={
+                "nome": "Alteracao concorrente",
+                "modelo_id": self.model.id,
+                "atualizado_em": machine["atualizado_em"],
+            },
+        )
 
-    def test_lista_recusa_usuario_sem_permissao(self):
-        response = self.client.get(
-            "/api/v2/printers/machines",
-            headers=auth_headers(portal=True, printers_machines=False),
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(
+            conflict.json()["erros"]["atualizado_em"],
+            ["Registro desatualizado."],
+        )
+
+    def test_edicao_bloqueia_registro_durante_validacao_de_concorrencia(self):
+        machine = PrinterMachine(id=10, name="Impressora", ip_address="192.168.10.25")
+        query = MagicMock()
+        query.options.return_value = query
+        query.filter.return_value = query
+        query.with_for_update.return_value = query
+        query.one_or_none.return_value = machine
+        db = MagicMock()
+        db.query.return_value = query
+
+        result = get_machine_for_update(db, machine.id)
+
+        self.assertIs(result, machine)
+        query.with_for_update.assert_called_once_with(of=PrinterMachine)
+
+    def test_edicao_recusa_modelo_inexistente(self):
+        machine = self._create_machine()
+
+        response = self.client.patch(
+            f"/api/v2/printers/machines/{machine['id']}",
+            headers=self.full_headers,
+            json={
+                "modelo_id": 999,
+                "atualizado_em": machine["atualizado_em"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("modelo_id", response.json()["erros"])
+
+    def test_toggle_altera_apenas_status_cadastral_e_retorna_summary(self):
+        machine = self._create_machine()
+        status_before = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        operational_before = status_before.status_operacional
+
+        response = self.client.patch(
+            f"/api/v2/printers/machines/{machine['id']}/status",
+            headers=self.full_headers,
+            json={"ativo": False},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["dados"]
+        self.assertFalse(data["maquina"]["ativo"])
+        self.assertEqual(data["resumo"]["inativas"], 1)
+        self.db.expire_all()
+        status_after = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        self.assertEqual(status_after.status_operacional, operational_before)
+        audit = (
+            self.db.query(AuditLog)
+            .filter(
+                AuditLog.record_id == machine["id"],
+                AuditLog.action == "update",
+            )
+            .one()
+        )
+        self.assertEqual(audit.new_data["ativo"], False)
+
+    def test_toggle_sem_permissao_retorna_403(self):
+        machine = self._create_machine()
+        headers = auth_headers(
+            printers_machines=True,
+            printers_machines_toggle=False,
+        )
+
+        response = self.client.patch(
+            f"/api/v2/printers/machines/{machine['id']}/status",
+            headers=headers,
+            json={"ativo": False},
         )
 
         self.assertEqual(response.status_code, 403)
+        self.assertFalse(response.json()["sucesso"])
+
+    def test_operador_nao_acessa_maquinas(self):
+        response = self.client.get(
+            "/api/v2/printers/machines",
+            headers=auth_headers(
+                groups=["Operador"],
+                printers_dashboard=True,
+                printers_status=True,
+                printers_machines=False,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_listagem_exige_autenticacao(self):
+        response = self.client.get("/api/v2/printers/machines")
+
+        self.assertEqual(response.status_code, 401)

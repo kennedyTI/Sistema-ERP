@@ -6,7 +6,10 @@ from fastapi.testclient import TestClient
 from backend.app.core.security import create_access_token
 from backend.app.core.database import get_db
 from backend.app.main import app
-from backend.app.modules.auth.permissions import portal_permissions_for_groups
+from backend.app.modules.auth.permissions import (
+    portal_permissions_for_groups,
+    portal_permissions_from_django,
+)
 from backend.app.modules.auth.schemas import PortalPermissions
 from backend.tests.auth_helpers import auth_headers, make_user
 
@@ -81,10 +84,22 @@ class PortalAuthApiTest(TestCase):
         self.assertNotIn("senha-secreta", str(self.db.added))
 
     def test_auth_me_retorna_usuario_do_token(self):
-        response = self.client.get("/api/v2/auth/me", headers=auth_headers(username="gestor"))
+        response = self.client.get(
+            "/api/v2/auth/me",
+            headers=auth_headers(
+                username="gestor",
+                groups=["Gestor"],
+                printers_dashboard=True,
+                printers_status=True,
+                printers_machines=True,
+                printers_paper=True,
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["username"], "gestor")
+        self.assertEqual(response.json()["usuario"]["grupos"], ["Gestor"])
+        self.assertTrue(response.json()["permissoes"]["impressoras"]["ver_maquinas"])
 
     def test_token_invalido_retorna_401(self):
         response = self.client.get("/api/v2/auth/me", headers={"Authorization": "Bearer invalido"})
@@ -113,6 +128,8 @@ class PortalPermissionsTest(TestCase):
         self.assertTrue(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertFalse(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
 
@@ -123,6 +140,8 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertFalse(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
 
@@ -133,11 +152,30 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
-        self.assertTrue(permissions.can_access_printers_machines)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertFalse(permissions.can_manage_printers_status)
+        self.assertFalse(permissions.can_access_printers_machines)
         self.assertFalse(permissions.can_access_printers_paper)
 
     def test_integracao_protheus_nao_acessa_portal_visual(self):
         permissions = portal_permissions_for_groups(["Integra\u00e7\u00e3o Protheus"])
 
         self.assertEqual(permissions, PortalPermissions())
+
+    def test_permissoes_granulares_sao_derivadas_do_django_auth(self):
+        legacy, permissions = portal_permissions_from_django(
+            {
+                "impressoras.ver_dashboard",
+                "impressoras.ver_status",
+                "impressoras.ver_maquinas",
+                "impressoras.editar_maquinas",
+            },
+            groups=["Gestor"],
+        )
+
+        self.assertTrue(legacy.can_access_printers_machines)
+        self.assertTrue(permissions.impressoras.ver_maquinas)
+        self.assertTrue(permissions.impressoras.editar_maquinas)
+        self.assertFalse(permissions.impressoras.criar_maquinas)
+        self.assertFalse(permissions.impressoras.alternar_status_maquinas)
 

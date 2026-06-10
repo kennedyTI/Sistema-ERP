@@ -102,7 +102,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "backend.app.modules.audit.apps.AuditConfig",
     "backend.app.modules.backoffice.apps.BackofficeModuleConfig",
+    "backend.app.modules.printers.apps.PrintersConfig",
     "backend.app.modules.printers.machines.apps.PrinterMachinesConfig",
+    "backend.app.modules.printers.status.apps.PrinterStatusConfig",
 ]
 
 
@@ -112,7 +114,9 @@ INSTALLED_APPS = [
 MIGRATION_MODULES = {
     "audit": None,
     "portal_backoffice": None,
+    "impressoras": None,
     "printer_machines": None,
+    "printer_status": None,
 }
 
 
