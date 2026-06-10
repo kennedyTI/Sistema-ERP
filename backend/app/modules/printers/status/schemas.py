@@ -19,6 +19,7 @@ class PrinterStatusRead(BaseModel):
     ip_address: str
     manufacturer: str | None = None
     model: str | None = None
+    url_imagem: str | None = None
     sector: str | None = None
     cost_center: str | None = None
     status_operacional: StatusOperacional
