@@ -23,12 +23,26 @@ export interface PortalPermissions {
 
 export type PortalPermissionKey = keyof PortalPermissions;
 
+export interface PrinterPermissions {
+  ver_dashboard: boolean;
+  ver_status: boolean;
+  ver_maquinas: boolean;
+  criar_maquinas: boolean;
+  editar_maquinas: boolean;
+  alternar_status_maquinas: boolean;
+  ver_papel: boolean;
+}
+
 export interface PortalUser {
+  id?: number | null;
   username: string;
   display_name: string;
   email: string | null;
   groups: string[];
   permissions: PortalPermissions;
+  permissoes: {
+    impressoras: PrinterPermissions;
+  };
 }
 
 export interface LoginResponse {
