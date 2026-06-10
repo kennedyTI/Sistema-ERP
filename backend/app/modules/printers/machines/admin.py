@@ -11,7 +11,7 @@ class PrinterModelAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     list_display = ("id", "manufacturer", "name", "type", "color_mode")
     list_display_links = ("id", "name")
     list_filter = ("manufacturer", "type", "color_mode")
-    search_fields = ("manufacturer", "name", "type", "color_mode")
+    search_fields = ("manufacturer", "name", "type", "color_mode", "url_imagem")
     readonly_fields = ("created_at", "updated_at")
     ordering = ("manufacturer", "name")
 
