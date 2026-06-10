@@ -138,6 +138,12 @@ tabelas, imagens e modais grandes:
 * fechamento pelo botão X; o rodapé contém apenas ações do fluxo;
 * área de imagem padronizada com o fallback `Imagem não disponível`.
 
+Máquinas e Status usam os cards como primeiro bloco do conteúdo. O título e o
+contexto ficam no cabeçalho global da aplicação, sem duplicação dentro da
+página e sem botão manual de atualização. Em telas menores, os cards se
+reorganizam, as tabelas mantêm rolagem horizontal própria e os modais usam a
+altura disponível do dispositivo sem criar overflow horizontal na página.
+
 O campo `url_imagem` de `printers_models` é a fonte oficial das imagens nos
 endpoints de Máquinas e Status. Caminhos públicos locais podem apontar para
 `/static/imgs/printers/<arquivo>`, desde que o arquivo exista e responda HTTP
