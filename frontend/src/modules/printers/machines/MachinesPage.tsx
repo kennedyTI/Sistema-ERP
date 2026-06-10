@@ -10,7 +10,6 @@ import {
   Power,
   PowerOff,
   Printer,
-  RefreshCw,
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -357,26 +356,6 @@ function MachinesContent() {
 
   return (
     <div className="mx-auto flex max-w-[1540px] flex-col gap-4">
-      <section className="rounded-lg border border-border/70 bg-card px-5 py-4 shadow-[var(--shadow-card)]">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase text-primary">Impressoras</p>
-            <h1 className="mt-1.5 text-xl font-semibold">Máquinas</h1>
-            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-              Inventário cadastral de máquinas ativas e inativas.
-            </p>
-          </div>
-          <Button type="button" variant="outline" onClick={loadMachines} disabled={loading}>
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Atualizar
-          </Button>
-        </div>
-      </section>
-
       <MachinesSummaryCards summary={summary} loading={loading} />
 
       {error && (
@@ -387,7 +366,7 @@ function MachinesContent() {
       )}
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
-        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 px-4 py-2.5">
+        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
           <div>
             {canCreate && (
               <Button type="button" onClick={openCreateDialog}>
@@ -451,7 +430,7 @@ function MachinesContent() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto p-3">
+          <div className="max-w-full touch-pan-x overflow-x-auto overscroll-x-contain p-2 sm:p-3">
             <Table className="min-w-[980px]">
               <TableHeader>
                 <TableRow>

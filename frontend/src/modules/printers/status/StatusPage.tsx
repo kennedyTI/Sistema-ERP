@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { Activity, Columns3, GripVertical, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+import { Activity, Columns3, GripVertical, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
@@ -272,26 +272,6 @@ function StatusContent() {
 
   return (
     <div className="mx-auto flex max-w-[1540px] flex-col gap-4">
-      <section className="rounded-lg border border-border/70 bg-card px-5 py-4 shadow-[var(--shadow-card)]">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-primary">Impressoras</p>
-            <h1 className="mt-1.5 text-xl font-semibold">Status</h1>
-            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-              Central de consulta do estado atual e das orientações operacionais.
-            </p>
-          </div>
-          <Button type="button" variant="outline" onClick={loadStatuses} disabled={loading}>
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Atualizar
-          </Button>
-        </div>
-      </section>
-
       <StatusSummaryCards summary={summary} loading={loading} />
 
       {error && (
@@ -302,7 +282,7 @@ function StatusContent() {
       )}
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
-        <div className="flex min-h-14 items-center justify-end border-b border-border/70 px-4 py-2.5">
+        <div className="flex min-h-14 items-center justify-end border-b border-border/70 px-3 py-2.5 sm:px-4">
           <TooltipProvider>
             <DropdownMenu>
               <Tooltip>
@@ -357,7 +337,7 @@ function StatusContent() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto p-3">
+          <div className="max-w-full touch-pan-x overflow-x-auto overscroll-x-contain p-2 sm:p-3">
             <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>

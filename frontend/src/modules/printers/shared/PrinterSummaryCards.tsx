@@ -23,12 +23,15 @@ export function PrinterSummaryCards({
   label: string;
 }) {
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label={label}>
+    <section
+      className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+      aria-label={label}
+    >
       {cards.map((card) => (
         <article
           key={card.key}
           className={cn(
-            "relative min-h-[108px] overflow-hidden rounded-lg border border-border/70 border-t-[3px] bg-card/80 px-4 py-3.5 text-card-foreground shadow-[var(--shadow-card)] backdrop-blur-sm",
+            "relative flex min-h-[112px] flex-col overflow-hidden rounded-lg border border-border/70 border-t-[3px] bg-card/80 px-4 py-3.5 text-card-foreground shadow-[var(--shadow-card)] backdrop-blur-sm",
             card.accent,
           )}
         >
@@ -40,13 +43,17 @@ export function PrinterSummaryCards({
           >
             <card.icon className="h-4 w-4" aria-hidden="true" />
           </div>
-          <p className="max-w-[72%] text-xs font-medium text-muted-foreground">{card.label}</p>
+          <p className="flex min-h-8 max-w-[72%] items-start text-xs font-medium leading-4 text-muted-foreground">
+            {card.label}
+          </p>
           {loading ? (
-            <Skeleton className="mt-3 h-7 w-16" />
+            <Skeleton className="mt-1 h-7 w-16" />
           ) : (
-            <p className="mt-2 text-2xl font-semibold tabular-nums">{card.value}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{card.value}</p>
           )}
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{card.subtitle}</p>
+          <p className="mt-auto pt-0.5 text-[11px] leading-4 text-muted-foreground">
+            {card.subtitle}
+          </p>
         </article>
       ))}
     </section>
