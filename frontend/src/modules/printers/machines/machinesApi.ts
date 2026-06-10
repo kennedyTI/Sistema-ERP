@@ -31,11 +31,62 @@ export interface PrinterMachinePayload {
   notes?: string | null;
 }
 
-interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-  message?: string | null;
-  errors?: string[] | null;
+interface MaquinaApi {
+  id: number;
+  nome: string;
+  endereco_ip: string;
+  modelo_id: number | null;
+  fabricante: string | null;
+  modelo: string | null;
+  tipo: string | null;
+  cor_modelo: string | null;
+  setor: string | null;
+  centro_custo: string | null;
+  ativo: boolean;
+  observacoes: string | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+interface RespostaApi<T> {
+  sucesso: boolean;
+  dados: T;
+  mensagem?: string | null;
+  erros?: Record<string, string[]> | null;
+}
+
+function mapMachine(machine: MaquinaApi): PrinterMachine {
+  return {
+    id: machine.id,
+    name: machine.nome,
+    ip_address: machine.endereco_ip,
+    model_id: machine.modelo_id,
+    manufacturer: machine.fabricante,
+    model: machine.modelo,
+    type: machine.tipo,
+    color_mode: machine.cor_modelo,
+    sector: machine.setor,
+    cost_center: machine.centro_custo,
+    is_active: machine.ativo,
+    notes: machine.observacoes,
+    created_at: machine.criado_em,
+    updated_at: machine.atualizado_em,
+  };
+}
+
+function requestPayload(payload: PrinterMachinePayload) {
+  return {
+    nome: payload.name,
+    endereco_ip: payload.ip_address,
+    fabricante: payload.manufacturer,
+    modelo: payload.model,
+    tipo: payload.type,
+    cor_modelo: payload.color_mode,
+    setor: payload.sector,
+    centro_custo: payload.cost_center,
+    ativo: payload.is_active,
+    observacoes: payload.notes,
+  };
 }
 
 async function requestMachinesApi<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -49,39 +100,58 @@ async function requestMachinesApi<T>(path: string, init: RequestInit = {}): Prom
     },
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const payload = (await response.json()) as RespostaApi<T>;
 
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.errors?.[0] ?? payload.message ?? "Nao foi possivel concluir a operacao.");
+  if (!response.ok || !payload.sucesso) {
+    const fieldError = payload.erros ? Object.values(payload.erros).flat()[0] : null;
+    throw new Error(fieldError ?? payload.mensagem ?? "Nao foi possivel concluir a operacao.");
   }
 
-  return payload.data;
+  return payload.dados;
 }
 
 export async function fetchPrinterMachines(): Promise<PrinterMachine[]> {
-  return requestMachinesApi<PrinterMachine[]>("v2/printers/machines");
+  const machines = await requestMachinesApi<MaquinaApi[]>("v2/printers/machines");
+  return machines.map(mapMachine);
 }
 
 export async function createPrinterMachine(payload: PrinterMachinePayload): Promise<PrinterMachine> {
-  return requestMachinesApi<PrinterMachine>("v2/printers/machines", {
+  const result = await requestMachinesApi<{ maquina: MaquinaApi }>("v2/printers/machines", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(requestPayload(payload)),
   });
+  return mapMachine(result.maquina);
 }
 
 export async function updatePrinterMachine(
-  id: number,
+  machine: PrinterMachine,
   payload: PrinterMachinePayload,
 ): Promise<PrinterMachine> {
-  return requestMachinesApi<PrinterMachine>(`v2/printers/machines/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+  const result = await requestMachinesApi<{ maquina: MaquinaApi }>(
+    `v2/printers/machines/${machine.id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        nome: payload.name,
+        endereco_ip: payload.ip_address,
+        modelo_id: machine.model_id,
+        setor: payload.sector,
+        centro_custo: payload.cost_center,
+        observacoes: payload.notes,
+        atualizado_em: machine.updated_at,
+      }),
+    },
+  );
+  return mapMachine(result.maquina);
 }
 
 export async function updatePrinterMachineStatus(id: number, isActive: boolean): Promise<PrinterMachine> {
-  return requestMachinesApi<PrinterMachine>(`v2/printers/machines/${id}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ is_active: isActive }),
-  });
+  const result = await requestMachinesApi<{ maquina: MaquinaApi }>(
+    `v2/printers/machines/${id}/status`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ ativo: isActive }),
+    },
+  );
+  return mapMachine(result.maquina);
 }

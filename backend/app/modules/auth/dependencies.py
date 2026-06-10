@@ -60,6 +60,35 @@ def require_permission(permission_key: str) -> Callable:
     return dependency
 
 
+def require_printer_permission(permission_key: str) -> Callable:
+    def dependency(
+        request: Request,
+        user: PortalUser = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> PortalUser:
+        if getattr(user.permissoes.impressoras, permission_key):
+            return user
+
+        try:
+            record_auth_event(
+                db,
+                event="access_denied",
+                username=user.username,
+                message=f"Acesso negado ao recurso {request.url.path}.",
+                success=False,
+                extra={"path": request.url.path, "permission": f"impressoras.{permission_key}"},
+            )
+            db.commit()
+        except Exception:
+            rollback = getattr(db, "rollback", None)
+            if rollback:
+                rollback()
+
+        raise HTTPException(status_code=403, detail="Acesso nao autorizado.")
+
+    return dependency
+
+
 require_portal_access = require_permission("can_access_portal")
 require_admin_access = require_permission("can_access_admin")
 require_printers_access = require_permission("can_access_printers")
@@ -68,4 +97,8 @@ require_printers_status_access = require_permission("can_access_printers_status"
 require_printers_status_manage = require_permission("can_manage_printers_status")
 require_printers_machines_access = require_permission("can_access_printers_machines")
 require_printers_paper_access = require_permission("can_access_printers_paper")
+require_printers_machines_view = require_printer_permission("ver_maquinas")
+require_printers_machines_create = require_printer_permission("criar_maquinas")
+require_printers_machines_edit = require_printer_permission("editar_maquinas")
+require_printers_machines_status_toggle = require_printer_permission("alternar_status_maquinas")
 

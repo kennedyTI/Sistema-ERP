@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict
 
 
 StatusOperacional = Literal["desconhecido", "online", "offline", "erro"]
@@ -39,24 +39,6 @@ class PrinterStatusSummary(BaseModel):
     offline: int
     com_alerta: int
     substituir_toner: int
-
-
-class PrinterStatusUpdate(BaseModel):
-    status_operacional: StatusOperacional
-    nivel_alerta: NivelAlerta
-    mensagem_alerta: str | None = Field(default=None, max_length=255)
-    mensagem_operador: str | None = Field(default=None, min_length=1, max_length=255)
-    tempo_resposta_ms: int | None = Field(default=None, ge=0)
-    origem: OrigemStatus = "manual"
-    resposta_bruta: str | None = None
-
-    @field_validator("mensagem_alerta", "mensagem_operador", "resposta_bruta", mode="before")
-    @classmethod
-    def normalize_blank_strings(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        return normalized or None
 
 
 class PrinterLogRead(BaseModel):

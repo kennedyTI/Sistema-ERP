@@ -9,9 +9,10 @@ class PrinterModelAdminModel(models.Model):
     name = models.CharField("MODELO", max_length=120)
     type = models.CharField("TIPO", max_length=80, null=True, blank=True)
     color_mode = models.CharField("COR_MODELO", max_length=40, null=True, blank=True)
-    notes = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(null=True, blank=True)
-    updated_at = models.DateTimeField(null=True, blank=True)
+    url_imagem = models.CharField("URL DA IMAGEM", max_length=500, null=True, blank=True)
+    notes = models.TextField("OBSERVACOES", null=True, blank=True)
+    created_at = models.DateTimeField("CRIADO EM", null=True, blank=True)
+    updated_at = models.DateTimeField("ATUALIZADO EM", null=True, blank=True)
 
     class Meta:
         app_label = "printer_machines"

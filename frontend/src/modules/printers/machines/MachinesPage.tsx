@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
+import { useAuth } from "@/modules/auth/authStore";
 import { MachineFormDialog } from "@/modules/printers/machines/components/MachineFormDialog";
 import {
   createPrinterMachine,
@@ -45,6 +46,7 @@ export function MachinesPage() {
 }
 
 function MachinesContent() {
+  const { user } = useAuth();
   const [machines, setMachines] = useState<PrinterMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,6 +56,10 @@ function MachinesContent() {
   const [formError, setFormError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const machinePermissions = user?.permissoes.impressoras;
+  const canCreate = Boolean(machinePermissions?.criar_maquinas);
+  const canEdit = Boolean(machinePermissions?.editar_maquinas);
+  const canToggle = Boolean(machinePermissions?.alternar_status_maquinas);
 
   const activeCount = useMemo(() => machines.filter((machine) => machine.is_active).length, [machines]);
   const sortedMachines = useMemo(() => {
@@ -111,7 +117,7 @@ function MachinesContent() {
     setFormError(null);
     try {
       if (selectedMachine) {
-        await updatePrinterMachine(selectedMachine.id, payload);
+        await updatePrinterMachine(selectedMachine, payload);
       } else {
         await createPrinterMachine(payload);
       }
@@ -150,10 +156,12 @@ function MachinesContent() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Atualizar
             </Button>
-            <Button type="button" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
-              Adicionar maquina
-            </Button>
+            {canCreate && (
+              <Button type="button" onClick={openCreateDialog}>
+                <Plus className="h-4 w-4" />
+                Adicionar maquina
+              </Button>
+            )}
           </div>
         </div>
 
@@ -183,10 +191,12 @@ function MachinesContent() {
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
               Adicione a primeira maquina para iniciar o inventario do modulo Impressoras.
             </p>
-            <Button type="button" onClick={openCreateDialog} className="mt-4">
-              <Plus className="h-4 w-4" />
-              Adicionar maquina
-            </Button>
+            {canCreate && (
+              <Button type="button" onClick={openCreateDialog} className="mt-4">
+                <Plus className="h-4 w-4" />
+                Adicionar maquina
+              </Button>
+            )}
           </div>
         ) : (
           <Table>
@@ -252,24 +262,28 @@ function MachinesContent() {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditDialog(machine)}
-                        aria-label={`Editar ${machine.name}`}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void toggleStatus(machine)}
-                        aria-label={machine.is_active ? `Inativar ${machine.name}` : `Ativar ${machine.name}`}
-                      >
-                        {machine.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
-                      </Button>
+                      {canEdit && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(machine)}
+                          aria-label={`Editar ${machine.name}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canToggle && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void toggleStatus(machine)}
+                          aria-label={machine.is_active ? `Inativar ${machine.name}` : `Ativar ${machine.name}`}
+                        >
+                          {machine.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

@@ -2,14 +2,12 @@
 
 from sqlalchemy.orm import Session, joinedload
 
-from backend.app.core.timezone import now_sao_paulo
 from backend.app.modules.printers.machines.models import PrinterMachine
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.app.modules.printers.status.schemas import (
     PrinterLogRead,
     PrinterStatusRead,
     PrinterStatusSummary,
-    PrinterStatusUpdate,
 )
 
 
@@ -107,90 +105,6 @@ def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
 
 def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
     return _status_to_read(get_printer_status(db, machine_id))
-
-
-def _add_log(
-    db: Session,
-    status: StatusImpressora,
-    *,
-    tipo_evento: str,
-    status_anterior: str,
-    alerta_anterior: str,
-    verificado_em,
-) -> None:
-    db.add(
-        LogImpressora(
-            maquina_id=status.maquina_id,
-            tipo_evento=tipo_evento,
-            status_anterior=status_anterior,
-            status_novo=status.status_operacional,
-            alerta_anterior=alerta_anterior,
-            alerta_novo=status.nivel_alerta,
-            mensagem=status.mensagem_alerta,
-            verificado_em=verificado_em,
-            tempo_resposta_ms=status.tempo_resposta_ms,
-            origem=status.origem,
-            resposta_bruta=status.resposta_bruta,
-        )
-    )
-
-
-def update_printer_status(
-    db: Session,
-    machine_id: int,
-    payload: PrinterStatusUpdate,
-) -> PrinterStatusRead:
-    status = get_printer_status(db, machine_id)
-    old_status = status.status_operacional
-    old_alert = status.nivel_alerta
-    checked_at = now_sao_paulo()
-
-    for field, value in payload.model_dump(exclude_none=True).items():
-        setattr(status, field, value)
-
-    status.ultima_verificacao_em = checked_at
-    status.atualizado_em = checked_at
-    if status.status_operacional == "online":
-        status.ultimo_sucesso_em = checked_at
-    elif status.status_operacional in {"offline", "erro"}:
-        status.ultima_falha_em = checked_at
-
-    logged_change = False
-    if old_status != status.status_operacional:
-        _add_log(
-            db,
-            status,
-            tipo_evento="mudanca_status",
-            status_anterior=old_status,
-            alerta_anterior=old_alert,
-            verificado_em=checked_at,
-        )
-        logged_change = True
-
-    if old_alert != status.nivel_alerta:
-        normalized = old_alert in {"amarelo", "vermelho"} and status.nivel_alerta in {"cinza", "verde"}
-        _add_log(
-            db,
-            status,
-            tipo_evento="alerta_normalizado" if normalized else "alerta_gerado",
-            status_anterior=old_status,
-            alerta_anterior=old_alert,
-            verificado_em=checked_at,
-        )
-        logged_change = True
-
-    if not logged_change:
-        _add_log(
-            db,
-            status,
-            tipo_evento="atualizacao_manual",
-            status_anterior=old_status,
-            alerta_anterior=old_alert,
-            verificado_em=checked_at,
-        )
-
-    db.commit()
-    return read_printer_status(db, machine_id)
 
 
 def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[PrinterLogRead]:

@@ -64,7 +64,9 @@ class ApiContractsTest(TestCase):
 
         self.assertIn("/api/v2/printers/dashboard", paths)
         self.assertIn("/api/v2/printers/machines", paths)
+        self.assertIn("/api/v2/printers/machines/summary", paths)
         self.assertIn("/api/v2/printers/machines/{machine_id}", paths)
+        self.assertIn("/api/v2/printers/machines/{machine_id}/details", paths)
         self.assertIn("/api/v2/printers/machines/{machine_id}/status", paths)
         self.assertIn("/api/v2/printers/status", paths)
         self.assertIn("/api/v2/printers/status/summary", paths)
@@ -72,4 +74,13 @@ class ApiContractsTest(TestCase):
         self.assertIn("/api/v2/printers/status/{machine_id}/logs", paths)
         self.assertIn("/api/v2/printers/paper", paths)
         self.assertNotIn("/api/v1/printers/machines", paths)
+
+    def test_status_operacional_nao_expoe_edicao_manual(self):
+        status_route = next(
+            route
+            for route in app.routes
+            if route.path == "/api/v2/printers/status/{machine_id}"
+        )
+
+        self.assertEqual(status_route.methods, {"GET"})
 

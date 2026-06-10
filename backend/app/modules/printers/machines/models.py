@@ -18,6 +18,7 @@ class PrinterModel(Base):
     name = Column(String(120), nullable=False)
     type = Column(String(80), nullable=True)
     color_mode = Column(String(40), nullable=True)
+    url_imagem = Column(String(500), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=now_sao_paulo)
     updated_at = Column(DateTime, nullable=False, default=now_sao_paulo, onupdate=now_sao_paulo)

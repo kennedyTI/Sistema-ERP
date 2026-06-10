@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.core.database import get_db
 from backend.app.main import app
+from backend.app.modules.audit.orm import AuditLog
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.tests.auth_helpers import auth_headers
@@ -19,6 +20,7 @@ class PrinterStatusApiTest(TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
+        AuditLog.__table__.create(engine)
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
@@ -50,7 +52,7 @@ class PrinterStatusApiTest(TestCase):
             },
         )
         self.assertEqual(response.status_code, 201)
-        return response.json()["data"]
+        return response.json()["dados"]["maquina"]
 
     def test_nova_maquina_recebe_status_inicial(self):
         machine = self._create_machine()
@@ -125,18 +127,13 @@ class PrinterStatusApiTest(TestCase):
 
     def test_resumo_operacional_calcula_cards(self):
         machine = self._create_machine()
-        headers = auth_headers(printers_status=True, printers_status_manage=True)
-        self.client.patch(
-            f"/api/v2/printers/status/{machine['id']}",
-            headers=headers,
-            json={
-                "status_operacional": "online",
-                "nivel_alerta": "amarelo",
-                "mensagem_alerta": "Substituir toner black",
-                "mensagem_operador": "Solicitar toner ao almoxarifado",
-                "origem": "manual",
-            },
-        )
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "amarelo"
+        status.mensagem_alerta = "Substituir toner black"
+        status.mensagem_operador = "Solicitar toner ao almoxarifado"
+        self.db.commit()
+        headers = auth_headers(printers_status=True)
 
         response = self.client.get("/api/v2/printers/status/summary", headers=headers)
 
@@ -152,9 +149,9 @@ class PrinterStatusApiTest(TestCase):
             },
         )
 
-    def test_atualizacao_manual_registra_mudancas_e_logs(self):
+    def test_status_operacional_nao_possui_endpoint_manual_de_edicao(self):
         machine = self._create_machine()
-        headers = auth_headers(printers_status=True, printers_status_manage=True)
+        headers = auth_headers(printers_status=True)
 
         response = self.client.patch(
             f"/api/v2/printers/status/{machine['id']}",
@@ -170,63 +167,15 @@ class PrinterStatusApiTest(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        data = response.json()["data"]
-        self.assertEqual(data["status_operacional"], "online")
-        self.assertEqual(data["nivel_alerta"], "verde")
-        self.assertEqual(data["mensagem_operador"], "Sem acao necessaria")
-        self.assertEqual(data["tempo_resposta_ms"], 25)
-        self.assertEqual(data["resposta_bruta"], "Resposta tecnica ficticia")
-        self.assertIsNotNone(data["ultima_verificacao_em"])
-        self.assertIsNotNone(data["ultimo_sucesso_em"])
-
-        logs_response = self.client.get(
-            f"/api/v2/printers/status/{machine['id']}/logs",
-            headers=headers,
-        )
-        self.assertEqual(logs_response.status_code, 200)
-        event_types = {log["tipo_evento"] for log in logs_response.json()["data"]}
-        self.assertEqual(event_types, {"mudanca_status", "alerta_gerado"})
-        self.assertTrue(
-            all(log["resposta_bruta"] == "Resposta tecnica ficticia" for log in logs_response.json()["data"])
-        )
-
-    def test_atualizacao_sem_transicao_registra_atualizacao_manual(self):
-        machine = self._create_machine()
-        headers = auth_headers(printers_status=True, printers_status_manage=True)
-
-        response = self.client.patch(
-            f"/api/v2/printers/status/{machine['id']}",
-            headers=headers,
-            json={
-                "status_operacional": "desconhecido",
-                "nivel_alerta": "cinza",
-                "mensagem_alerta": "Registro manual",
-                "origem": "manual",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        log = self.db.query(LogImpressora).one()
-        self.assertEqual(log.tipo_evento, "atualizacao_manual")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(self.db.query(LogImpressora).count(), 0)
 
     def test_operador_consulta_status_mas_nao_atualiza(self):
         machine = self._create_machine()
         operator_headers = auth_headers(printers_status=True)
 
         list_response = self.client.get("/api/v2/printers/status", headers=operator_headers)
-        update_response = self.client.patch(
-            f"/api/v2/printers/status/{machine['id']}",
-            headers=operator_headers,
-            json={
-                "status_operacional": "offline",
-                "nivel_alerta": "vermelho",
-                "origem": "manual",
-            },
-        )
-
         self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(update_response.status_code, 403)
 
     def test_status_exige_autenticacao_e_permissao(self):
         self.assertEqual(self.client.get("/api/v2/printers/status").status_code, 401)
