@@ -282,8 +282,8 @@ export function MachineDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="h-[min(88vh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
-        <div className="border-b border-border px-5 py-4 pr-12">
+      <DialogContent className="h-[min(92dvh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+        <div className="border-b border-border px-4 py-3.5 pr-14 sm:px-5 sm:py-4">
           <DialogHeader>
             <div className="flex flex-wrap items-center gap-3">
               <DialogTitle>{editing ? "Editar máquina" : "Detalhes da máquina"}</DialogTitle>
@@ -304,7 +304,7 @@ export function MachineDetailsDialog({
           </div>
         ) : (
           <ScrollArea className="min-h-0">
-            <div className="space-y-5 px-5 py-4">
+            <div className="space-y-4 px-4 py-3.5 sm:px-5 sm:py-4">
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -338,7 +338,7 @@ export function MachineDetailsDialog({
                 </Alert>
               )}
 
-              <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
                 <PrinterModelImage
                   imageUrl={currentMachine.image_url}
                   model={currentMachine.model}
@@ -368,7 +368,7 @@ export function MachineDetailsDialog({
           </ScrollArea>
         )}
 
-        <DialogFooter className="border-t border-border bg-card/95 px-5 py-3.5">
+        <DialogFooter className="shrink-0 border-t border-border bg-card/95 px-4 py-3 sm:px-5 sm:py-3.5">
           {editing ? (
             <>
               <Button type="button" variant="outline" onClick={cancelEditing} disabled={saving}>

@@ -84,8 +84,8 @@ export function StatusDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[min(88vh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
-        <div className="border-b border-border px-5 py-4 pr-12">
+      <DialogContent className="h-[min(92dvh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <div className="border-b border-border px-4 py-3.5 pr-14 sm:px-5 sm:py-4">
           <DialogHeader>
             <DialogTitle>Detalhes da impressora</DialogTitle>
             <DialogDescription>
@@ -96,8 +96,8 @@ export function StatusDetailsDialog({
 
         {!current ? null : (
           <ScrollArea className="min-h-0">
-            <div className="space-y-5 px-5 py-4">
-              <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <div className="space-y-4 px-4 py-3.5 sm:px-5 sm:py-4">
+              <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
                 <PrinterModelImage
                   imageUrl={current.url_imagem}
                   model={current.model}

@@ -93,9 +93,9 @@ export function MachineFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[min(88vh,780px)] max-w-[1180px] overflow-hidden p-0">
+      <DialogContent className="h-[min(92dvh,780px)] max-w-[1180px] overflow-hidden p-0">
         <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col">
-          <div className="flex flex-col gap-3 border-b border-border px-5 py-4 pr-12 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border px-4 py-3.5 pr-14 sm:flex-row sm:items-start sm:justify-between sm:px-5 sm:py-4">
             <DialogHeader>
               <DialogTitle>{machine ? "Editar máquina" : "Adicionar máquina"}</DialogTitle>
               <DialogDescription>Cadastro operacional do módulo Impressoras.</DialogDescription>
@@ -126,7 +126,7 @@ export function MachineFormDialog({
           </div>
 
           <ScrollArea className="min-h-0 flex-1">
-            <div className="space-y-4 px-5 py-4">
+            <div className="space-y-4 px-4 py-3.5 sm:px-5 sm:py-4">
               {error && (
                 <p className="rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm font-medium text-destructive">
                   {error}
@@ -232,7 +232,7 @@ export function MachineFormDialog({
             </div>
           </ScrollArea>
 
-          <DialogFooter className="border-t border-border bg-card/95 px-5 py-3.5">
+          <DialogFooter className="shrink-0 border-t border-border bg-card/95 px-4 py-3 sm:px-5 sm:py-3.5">
             <Button
               type="button"
               variant="outline"
