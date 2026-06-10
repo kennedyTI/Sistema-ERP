@@ -1,42 +1,7 @@
 import { CircleAlert, Droplet, Printer, Wifi, WifiOff } from "lucide-react";
 
+import { PrinterSummaryCards } from "@/modules/printers/shared/PrinterSummaryCards";
 import type { PrinterStatusSummary } from "@/modules/printers/status/statusApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
-import { Skeleton } from "@/shared/ui/skeleton";
-import { cn } from "@/shared/lib/utils";
-
-const cards = [
-  {
-    key: "total_impressoras",
-    label: "Total de impressoras",
-    icon: Printer,
-    className: "text-primary",
-  },
-  {
-    key: "online",
-    label: "Online",
-    icon: Wifi,
-    className: "text-emerald-600 dark:text-emerald-400",
-  },
-  {
-    key: "offline",
-    label: "Offline",
-    icon: WifiOff,
-    className: "text-red-600 dark:text-red-400",
-  },
-  {
-    key: "com_alerta",
-    label: "Com alerta",
-    icon: CircleAlert,
-    className: "text-amber-600 dark:text-amber-400",
-  },
-  {
-    key: "substituir_toner",
-    label: "Substituir toner",
-    icon: Droplet,
-    className: "text-orange-600 dark:text-orange-400",
-  },
-] as const;
 
 export function StatusSummaryCards({
   summary,
@@ -45,23 +10,53 @@ export function StatusSummaryCards({
   summary: PrinterStatusSummary | null;
   loading: boolean;
 }) {
-  return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Resumo operacional">
-      {cards.map((card) => (
-        <Card key={card.key} className="rounded-lg border-border/70 shadow-[var(--shadow-card)]">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{card.label}</CardTitle>
-            <card.icon className={cn("h-4 w-4 shrink-0", card.className)} />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <p className="text-2xl font-semibold tabular-nums">{summary?.[card.key] ?? 0}</p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-    </section>
-  );
+  const cards = [
+    {
+      key: "total_impressoras",
+      label: "Total de impressoras",
+      subtitle: "Equipamentos monitorados",
+      value: summary?.total_impressoras ?? 0,
+      icon: Printer,
+      accent: "border-t-sky-500",
+      iconStyle: "bg-sky-500/12 text-sky-600 dark:text-sky-300",
+    },
+    {
+      key: "online",
+      label: "Online",
+      subtitle: "Respondendo normalmente",
+      value: summary?.online ?? 0,
+      icon: Wifi,
+      accent: "border-t-emerald-500",
+      iconStyle: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-300",
+    },
+    {
+      key: "offline",
+      label: "Offline",
+      subtitle: "Sem comunicação",
+      value: summary?.offline ?? 0,
+      icon: WifiOff,
+      accent: "border-t-rose-500",
+      iconStyle: "bg-rose-500/12 text-rose-600 dark:text-rose-300",
+    },
+    {
+      key: "com_alerta",
+      label: "Com alerta",
+      subtitle: "Exigem atenção",
+      value: summary?.com_alerta ?? 0,
+      icon: CircleAlert,
+      accent: "border-t-amber-500",
+      iconStyle: "bg-amber-500/12 text-amber-600 dark:text-amber-300",
+    },
+    {
+      key: "substituir_toner",
+      label: "Substituir toner",
+      subtitle: "Ação de suprimento",
+      value: summary?.substituir_toner ?? 0,
+      icon: Droplet,
+      accent: "border-t-orange-500",
+      iconStyle: "bg-orange-500/12 text-orange-600 dark:text-orange-300",
+    },
+  ];
+
+  return <PrinterSummaryCards cards={cards} loading={loading} label="Resumo operacional" />;
 }

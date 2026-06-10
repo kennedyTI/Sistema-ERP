@@ -4,7 +4,6 @@ import {
   Check,
   CircleAlert,
   Edit3,
-  ImageOff,
   Loader2,
   Power,
   PowerOff,
@@ -26,6 +25,7 @@ import {
   updatePrinterMachine,
   updatePrinterMachineStatus,
 } from "@/modules/printers/machines/machinesApi";
+import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -99,7 +99,6 @@ export function MachineDetailsDialog({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const [imageUnavailable, setImageUnavailable] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [savedFields, setSavedFields] = useState<Set<EditableField>>(new Set());
@@ -134,10 +133,6 @@ export function MachineDetailsDialog({
     setSavedFields(new Set());
     void loadDetails(machineId, false);
   }, [machineId, open]);
-
-  useEffect(() => {
-    setImageUnavailable(false);
-  }, [currentMachine?.image_url]);
 
   useEffect(() => {
     if (savedFields.size === 0) return;
@@ -180,7 +175,6 @@ export function MachineDetailsDialog({
     setGeneralError(null);
     setFieldErrors({});
     setSavedFields(new Set());
-    setImageUnavailable(false);
   }
 
   function beginEditing() {
@@ -288,8 +282,8 @@ export function MachineDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[94vh] max-w-6xl overflow-hidden p-0">
-        <div className="border-b border-border px-6 py-5 pr-12">
+      <DialogContent className="h-[min(88vh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
+        <div className="border-b border-border px-5 py-4 pr-12">
           <DialogHeader>
             <div className="flex flex-wrap items-center gap-3">
               <DialogTitle>{editing ? "Editar máquina" : "Detalhes da máquina"}</DialogTitle>
@@ -309,8 +303,8 @@ export function MachineDetailsDialog({
             Carregando máquina...
           </div>
         ) : (
-          <ScrollArea className="max-h-[calc(94vh-156px)]">
-            <div className="space-y-6 px-6 py-5">
+          <ScrollArea className="min-h-0">
+            <div className="space-y-5 px-5 py-4">
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -323,7 +317,11 @@ export function MachineDetailsDialog({
                   <CircleAlert className="h-4 w-4" />
                   <AlertTitle>Não foi possível concluir a operação</AlertTitle>
                   <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <span>{generalError}</span>
+                    <span>
+                      {fieldErrors.atualizado_em
+                        ? "Esta máquina foi alterada por outro usuário. Atualize os dados antes de salvar."
+                        : generalError}
+                    </span>
                     {fieldErrors.atualizado_em && (
                       <Button
                         type="button"
@@ -340,13 +338,11 @@ export function MachineDetailsDialog({
                 </Alert>
               )}
 
-              <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
+              <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
                 <PrinterModelImage
                   imageUrl={currentMachine.image_url}
                   model={currentMachine.model}
-                  machineName={currentMachine.name}
-                  unavailable={imageUnavailable}
-                  onUnavailable={() => setImageUnavailable(true)}
+                  equipmentName={currentMachine.name}
                 />
 
                 {editing ? (
@@ -372,7 +368,7 @@ export function MachineDetailsDialog({
           </ScrollArea>
         )}
 
-        <DialogFooter className="border-t border-border bg-muted/20 px-6 py-4">
+        <DialogFooter className="border-t border-border bg-card/95 px-5 py-3.5">
           {editing ? (
             <>
               <Button type="button" variant="outline" onClick={cancelEditing} disabled={saving}>
@@ -389,9 +385,6 @@ export function MachineDetailsDialog({
             </>
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-                Fechar
-              </Button>
               {detailsCanEdit && (
                 <Button type="button" variant="outline" onClick={beginEditing} disabled={loading}>
                   <Edit3 className="h-4 w-4" />
@@ -423,41 +416,6 @@ export function MachineDetailsDialog({
   );
 }
 
-function PrinterModelImage({
-  imageUrl,
-  model,
-  machineName,
-  unavailable,
-  onUnavailable,
-}: {
-  imageUrl: string | null;
-  model: string | null;
-  machineName: string;
-  unavailable: boolean;
-  onUnavailable: () => void;
-}) {
-  if (!imageUrl || unavailable) {
-    return (
-      <div className="flex min-h-52 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 px-5 text-center">
-        <ImageOff className="h-10 w-10 text-muted-foreground" />
-        <p className="mt-3 text-sm font-medium">Imagem não disponível</p>
-        <p className="mt-1 text-xs text-muted-foreground">{model ?? "Modelo não informado"}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-52 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-4">
-      <img
-        src={imageUrl}
-        alt={`Modelo ${model ?? ""} da máquina ${machineName}`}
-        className="max-h-52 w-full object-contain"
-        onError={onUnavailable}
-      />
-    </div>
-  );
-}
-
 function MachineData({
   machine,
   savedFields,
@@ -478,7 +436,7 @@ function MachineData({
       </div>
 
       <div className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
-        <Detail label="Máquina" value={machine.name} success={savedFields.has("nome")} />
+        <Detail label="Nome da máquina" value={machine.name} success={savedFields.has("nome")} />
         <Detail label="IP" value={machine.ip_address} success={savedFields.has("endereco_ip")} />
         <Detail label="Fabricante" value={machine.manufacturer} />
         <Detail label="Modelo" value={machine.model} success={savedFields.has("modelo_id")} />
@@ -517,7 +475,7 @@ function EditForm({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <EditField label="Máquina" error={fieldErrors.nome?.[0]}>
+      <EditField label="Nome da máquina" error={fieldErrors.nome?.[0]}>
         <Input
           value={form.name}
           onChange={(event) => onChange({ ...form, name: event.target.value })}
