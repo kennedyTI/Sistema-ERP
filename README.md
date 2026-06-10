@@ -38,9 +38,9 @@ Nesta fase, a fundacao inclui:
 * tela de consulta operacional em `/impressoras/status`;
 * endpoints de desenvolvimento para Dashboard e Papel.
 
-O status desta etapa é atualizado manualmente pela API para preparar o domínio.
-Monitoramento automático, SNMP, toner, alertas complexos, Celery e Redis não
-fazem parte desta etapa.
+Status e logs operacionais são somente leitura no portal, na API pública e no
+Django Admin. Monitoramento automático, SNMP, toner, alertas complexos, Celery
+e Redis não fazem parte desta etapa.
 
 ### Etapa 3 - Status operacional das impressoras
 
@@ -52,8 +52,8 @@ A Etapa 3 separa o cadastro de máquinas da consulta operacional:
 * `logs_impressoras` registra somente eventos do domínio Impressoras;
 * novas máquinas recebem status inicial `desconhecido`, alerta `cinza`,
   orientação `Aguardando primeira verificação` e origem `sistema`;
-* atualizações manuais podem registrar `mudanca_status`, `alerta_gerado`,
-  `alerta_normalizado` ou `atualizacao_manual`.
+* status e logs operacionais não possuem endpoint público de escrita e não
+  podem ser adicionados, editados ou excluídos pelo Django Admin.
 
 A tela `/impressoras/status` funciona como Central de Operação inicial:
 
@@ -69,6 +69,42 @@ toner nem integração com Protheus ou GLPI.
 
 O Dashboard real permanece planejado para uma etapa posterior, quando houver
 dados operacionais suficientes.
+
+### Backend avançado de Máquinas
+
+A API de Máquinas utiliza contratos em português e mantém a listagem completa,
+sem paginação, incluindo cadastros ativos e inativos.
+
+Endpoints disponíveis:
+
+* `GET /api/v2/printers/machines`: lista todas as máquinas;
+* `GET /api/v2/printers/machines/summary`: retorna totais, ativos, inativos,
+  fabricantes e modelos cadastrados;
+* `GET /api/v2/printers/machines/{id}/details`: retorna cadastro, modelo,
+  `url_imagem`, status operacional resumido, logs somente leitura e ações
+  permitidas;
+* `PATCH /api/v2/printers/machines/{id}`: atualiza dados cadastrais com
+  validação por campo e concorrência por `atualizado_em`;
+* `PATCH /api/v2/printers/machines/{id}/status`: altera apenas o status
+  cadastral Ativo/Inativo e retorna o resumo atualizado.
+
+Alterações cadastrais e toggles são transacionais e registrados em
+`audit_logs`, incluindo usuário, valores anteriores, valores novos e campos
+alterados.
+
+As permissões funcionais são administradas pelo Django Auth:
+
+* `impressoras.ver_dashboard`;
+* `impressoras.ver_status`;
+* `impressoras.ver_maquinas`;
+* `impressoras.criar_maquinas`;
+* `impressoras.editar_maquinas`;
+* `impressoras.alternar_status_maquinas`;
+* `impressoras.ver_papel`.
+
+O comando idempotente `python manage.py seed_admin_groups` cria as permissões e
+as atribui aos grupos oficiais. O endpoint `/api/v2/auth/me` expõe o contrato
+`permissoes.impressoras` para o frontend.
 
 ---
 
@@ -254,13 +290,14 @@ postgres
 | `/api/v2/printers/dashboard`              | `GET`   | Status inicial do dashboard           |
 | `/api/v2/printers/machines`               | `GET`   | Lista maquinas cadastradas            |
 | `/api/v2/printers/machines`               | `POST`  | Cadastra maquina                      |
+| `/api/v2/printers/machines/summary`       | `GET`   | Resumo cadastral das maquinas         |
 | `/api/v2/printers/machines/{id}`          | `GET`   | Detalha maquina                       |
+| `/api/v2/printers/machines/{id}/details`  | `GET`   | Dados completos para o modal          |
 | `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
 | `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
 | `/api/v2/printers/status`                 | `GET`   | Lista o status atual das impressoras  |
 | `/api/v2/printers/status/summary`         | `GET`   | Resumo para os cards operacionais     |
 | `/api/v2/printers/status/{id}`            | `GET`   | Consulta o status de uma impressora   |
-| `/api/v2/printers/status/{id}`            | `PATCH` | Atualiza status manualmente           |
 | `/api/v2/printers/status/{id}/logs`       | `GET`   | Lista os últimos eventos operacionais |
 | `/api/v2/printers/paper`                  | `GET`   | Status inicial do submódulo Papel     |
 
