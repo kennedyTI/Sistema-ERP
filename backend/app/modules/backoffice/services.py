@@ -5,8 +5,11 @@ Servicos de sincronizacao dos grupos/permissoes oficiais.
 from __future__ import annotations
 
 from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
 
 from backend.app.modules.backoffice.groups import GROUPS, OLD_GROUP_RENAMES
+from backend.app.modules.printers.django_models import PermissoesImpressoras
+from backend.app.modules.printers.permissions import PERMISSOES_IMPRESSORAS
 
 
 def merge_or_rename_group(old_name: str, new_name: str) -> str | None:
@@ -37,8 +40,22 @@ def get_permissions(app_label: str, rules):
     )
 
 
+def ensure_printer_permissions() -> None:
+    content_type = ContentType.objects.get_for_model(
+        PermissoesImpressoras,
+        for_concrete_model=False,
+    )
+    for codename, name in PERMISSOES_IMPRESSORAS.items():
+        Permission.objects.update_or_create(
+            content_type=content_type,
+            codename=codename,
+            defaults={"name": name},
+        )
+
+
 def sync_official_groups() -> list[str]:
     messages: list[str] = []
+    ensure_printer_permissions()
 
     for old_name, new_name in OLD_GROUP_RENAMES:
         message = merge_or_rename_group(old_name, new_name)
