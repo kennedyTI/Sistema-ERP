@@ -260,7 +260,7 @@ class PrinterMachinesApiTest(TestCase):
         result = get_machine_for_update(db, machine.id)
 
         self.assertIs(result, machine)
-        query.with_for_update.assert_called_once_with()
+        query.with_for_update.assert_called_once_with(of=PrinterMachine)
 
     def test_edicao_recusa_modelo_inexistente(self):
         machine = self._create_machine()
