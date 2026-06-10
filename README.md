@@ -125,6 +125,28 @@ API v2 e apresenta:
 O status cadastral Ativa/Inativa continua separado do status operacional.
 Alterações cadastrais não permitem editar status, alertas ou logs operacionais.
 
+### Padrão visual do módulo Impressoras
+
+As telas Máquinas e Status compartilham o mesmo padrão de densidade, cards,
+tabelas, imagens e modais grandes:
+
+* cards integrados ao fundo do tema claro ou escuro;
+* tabelas com altura de linha uniforme e melhor aproveitamento horizontal;
+* colunas configuráveis e reordenáveis com preview e indicação de destino;
+* preferências de colunas persistidas por usuário no navegador;
+* modais grandes com rolagem interna, cabeçalho e rodapé de ações fixos;
+* fechamento pelo botão X; o rodapé contém apenas ações do fluxo;
+* área de imagem padronizada com o fallback `Imagem não disponível`.
+
+O campo `url_imagem` de `printers_models` é a fonte oficial das imagens nos
+endpoints de Máquinas e Status. Caminhos públicos locais podem apontar para
+`/static/imgs/printers/<arquivo>`, desde que o arquivo exista e responda HTTP
+200 pelo proxy. O frontend não deduz nomes nem monta caminhos por modelo.
+
+O modal Adicionar máquina preserva o contrato de criação atual, que recebe
+fabricante e modelo em texto. A seleção por catálogo e a prévia de imagem na
+criação dependem de um endpoint futuro específico para modelos.
+
 ---
 
 ## Tecnologias utilizadas
