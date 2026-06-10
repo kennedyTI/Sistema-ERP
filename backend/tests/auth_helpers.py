@@ -1,5 +1,11 @@
 ﻿from backend.app.core.security import create_access_token
-from backend.app.modules.auth.schemas import PortalPermissions, PortalUser
+from backend.app.modules.auth.schemas import (
+    PermissoesImpressoras,
+    PermissoesPortal,
+    PortalPermissions,
+    PortalUser,
+    UsuarioAutenticado,
+)
 
 
 def make_user(
@@ -14,12 +20,20 @@ def make_user(
     printers_status_manage: bool = False,
     printers_machines: bool = False,
     printers_paper: bool = False,
+    printers_machines_create: bool | None = None,
+    printers_machines_edit: bool | None = None,
+    printers_machines_toggle: bool | None = None,
 ) -> PortalUser:
+    groups = groups or ["Equipe T\u00e9cnica"]
+    create_allowed = printers_machines if printers_machines_create is None else printers_machines_create
+    edit_allowed = printers_machines if printers_machines_edit is None else printers_machines_edit
+    toggle_allowed = printers_machines if printers_machines_toggle is None else printers_machines_toggle
     return PortalUser(
+        id=1,
         username=username,
         display_name=username,
         email=f"{username}@example.com",
-        groups=groups or ["Equipe T\u00e9cnica"],
+        groups=groups,
         permissions=PortalPermissions(
             can_access_portal=portal,
             can_access_admin=admin,
@@ -29,6 +43,18 @@ def make_user(
             can_manage_printers_status=printers_status_manage,
             can_access_printers_machines=printers_machines,
             can_access_printers_paper=printers_paper,
+        ),
+        usuario=UsuarioAutenticado(id=1, username=username, grupos=groups),
+        permissoes=PermissoesPortal(
+            impressoras=PermissoesImpressoras(
+                ver_dashboard=printers_dashboard,
+                ver_status=printers_status,
+                ver_maquinas=printers_machines,
+                criar_maquinas=create_allowed,
+                editar_maquinas=edit_allowed,
+                alternar_status_maquinas=toggle_allowed,
+                ver_papel=printers_paper,
+            )
         ),
     )
 

@@ -111,3 +111,29 @@ class CleanBasePolicyTest(TestCase):
         self.assertIn("PrinterModelImage", details_dialog)
         self.assertIn("Droplet", summary_cards)
         self.assertNotIn("PackageSearch", summary_cards)
+
+    def test_backend_de_maquinas_mantem_contratos_em_portugues(self):
+        schemas = (
+            PROJECT_ROOT / "backend/app/modules/printers/machines/schemas.py"
+        ).read_text(encoding="utf-8")
+        api = (
+            PROJECT_ROOT / "backend/app/modules/printers/machines/api.py"
+        ).read_text(encoding="utf-8")
+        migration = (
+            PROJECT_ROOT
+            / "backend/app/migrations/versions/20260610_maquinas_backend.py"
+        ).read_text(encoding="utf-8")
+
+        for field in (
+            "nome",
+            "endereco_ip",
+            "centro_custo",
+            "ativo",
+            "criado_em",
+            "atualizado_em",
+            "url_imagem",
+        ):
+            self.assertIn(field, schemas)
+        self.assertIn('"/summary"', api)
+        self.assertIn('"/{machine_id}/details"', api)
+        self.assertIn("url_imagem", migration)
