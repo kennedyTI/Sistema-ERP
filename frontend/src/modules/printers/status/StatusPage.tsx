@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { Activity, GripVertical, Loader2, RefreshCw } from "lucide-react";
+import { Activity, Columns3, GripVertical, Loader2, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
 import { useAuth } from "@/modules/auth/authStore";
+import { ColumnDragPreview } from "@/modules/printers/shared/ColumnDragPreview";
 import { StatusDetailsDialog } from "@/modules/printers/status/components/StatusDetailsDialog";
 import { StatusSummaryCards } from "@/modules/printers/status/components/StatusSummaryCards";
 import {
@@ -16,7 +18,17 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 
 const statusLabels: Record<OperationalStatus, string> = {
@@ -55,8 +67,14 @@ const alertRowStyles: Record<AlertLevel, string> = {
 };
 
 type ColumnKey = "status" | "alert" | "message" | "location" | "machine" | "ip" | "updatedAt";
+type DropSide = "before" | "after";
 
-const COLUMN_ORDER_STORAGE_KEY = "sistema-erp-printer-status-column-order";
+interface ColumnPreferences {
+  order: ColumnKey[];
+  visible: ColumnKey[];
+}
+
+const COLUMN_PREFERENCES_STORAGE_KEY = "sistema-erp-printer-status-columns";
 
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
   "status",
@@ -95,12 +113,20 @@ function StatusContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(DEFAULT_COLUMN_ORDER);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(DEFAULT_COLUMN_ORDER);
   const [columnPreferencesLoaded, setColumnPreferencesLoaded] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ColumnKey | null>(null);
+  const [dropSide, setDropSide] = useState<DropSide>("before");
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
   const draggedColumnRef = useRef<ColumnKey | null>(null);
   const dragOverColumnRef = useRef<ColumnKey | null>(null);
-  const columnOrderStorageKey = `${COLUMN_ORDER_STORAGE_KEY}:${user?.username ?? "default"}`;
+  const columnPreferencesStorageKey = `${COLUMN_PREFERENCES_STORAGE_KEY}:${user?.username ?? "default"}`;
+
+  const displayedColumns = useMemo(
+    () => columnOrder.filter((column) => visibleColumns.includes(column)),
+    [columnOrder, visibleColumns],
+  );
 
   const sortedStatuses = useMemo(
     () =>
@@ -136,28 +162,56 @@ function StatusContent() {
   useEffect(() => {
     setColumnPreferencesLoaded(false);
     setColumnOrder(DEFAULT_COLUMN_ORDER);
-    const storedOrder = window.localStorage.getItem(columnOrderStorageKey);
+    setVisibleColumns(DEFAULT_COLUMN_ORDER);
+    const storedPreferences = window.localStorage.getItem(columnPreferencesStorageKey);
 
-    if (storedOrder) {
+    if (storedPreferences) {
       try {
-        const parsedOrder = JSON.parse(storedOrder);
-        if (isValidColumnOrder(parsedOrder)) setColumnOrder(parsedOrder);
+        const parsedPreferences = JSON.parse(storedPreferences);
+        if (isValidColumnPreferences(parsedPreferences)) {
+          setColumnOrder(parsedPreferences.order);
+          setVisibleColumns(parsedPreferences.visible);
+        } else {
+          window.localStorage.removeItem(columnPreferencesStorageKey);
+        }
       } catch {
-        window.localStorage.removeItem(columnOrderStorageKey);
+        window.localStorage.removeItem(columnPreferencesStorageKey);
       }
     }
 
     setColumnPreferencesLoaded(true);
-  }, [columnOrderStorageKey]);
+  }, [columnPreferencesStorageKey]);
 
   useEffect(() => {
     if (!columnPreferencesLoaded) return;
-    window.localStorage.setItem(columnOrderStorageKey, JSON.stringify(columnOrder));
-  }, [columnOrder, columnOrderStorageKey, columnPreferencesLoaded]);
+    const preferences: ColumnPreferences = {
+      order: columnOrder,
+      visible: visibleColumns,
+    };
+    window.localStorage.setItem(columnPreferencesStorageKey, JSON.stringify(preferences));
+  }, [columnOrder, columnPreferencesLoaded, columnPreferencesStorageKey, visibleColumns]);
 
   function openDetails(status: PrinterOperationalStatus) {
     setSelectedStatus(status);
     setDetailsOpen(true);
+  }
+
+  function toggleColumnVisibility(column: ColumnKey, checked: boolean) {
+    if (!checked && visibleColumns.length === 1) {
+      toast.error("Mantenha pelo menos uma coluna visível.");
+      return;
+    }
+    setVisibleColumns((current) =>
+      checked
+        ? columnOrder.filter((candidate) => candidate === column || current.includes(candidate))
+        : current.filter((candidate) => candidate !== column),
+    );
+  }
+
+  function restoreDefaultColumns() {
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    setVisibleColumns(DEFAULT_COLUMN_ORDER);
+    toast.success("Colunas restauradas para o padrão.");
   }
 
   function handleColumnPointerDown(event: PointerEvent<HTMLSpanElement>, column: ColumnKey) {
@@ -167,19 +221,24 @@ function StatusContent() {
     event.currentTarget.setPointerCapture(event.pointerId);
     draggedColumnRef.current = column;
     setDraggedColumn(column);
+    setDragOverColumn(column);
+    setDragPosition({ x: event.clientX, y: event.clientY });
   }
 
   function handleColumnPointerMove(event: PointerEvent<HTMLSpanElement>) {
     if (!draggedColumnRef.current) return;
 
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>(
-      "[data-column-key]",
-    );
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-column-key]");
     const targetColumn = target?.dataset.columnKey as ColumnKey | undefined;
     if (!targetColumn || !DEFAULT_COLUMN_ORDER.includes(targetColumn)) return;
+    const bounds = target?.getBoundingClientRect();
 
     dragOverColumnRef.current = targetColumn;
     setDragOverColumn(targetColumn);
+    setDropSide(bounds && event.clientX > bounds.left + bounds.width / 2 ? "after" : "before");
+    setDragPosition({ x: event.clientX, y: event.clientY });
   }
 
   function handleColumnPointerUp(event: PointerEvent<HTMLSpanElement>) {
@@ -194,7 +253,7 @@ function StatusContent() {
       setColumnOrder((currentOrder) => {
         const nextOrder = currentOrder.filter((column) => column !== sourceColumn);
         const targetIndex = nextOrder.indexOf(targetColumn);
-        nextOrder.splice(targetIndex, 0, sourceColumn);
+        nextOrder.splice(targetIndex + (dropSide === "after" ? 1 : 0), 0, sourceColumn);
         return nextOrder;
       });
     }
@@ -207,26 +266,12 @@ function StatusContent() {
     dragOverColumnRef.current = null;
     setDraggedColumn(null);
     setDragOverColumn(null);
+    setDropSide("before");
+    setDragPosition(null);
   }
 
   return (
-    <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
-      <section className="rounded-lg border border-border/70 bg-card px-6 py-6 shadow-[var(--shadow-card)]">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-primary">Impressoras</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Status</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Central de consulta do estado atual e das orientações operacionais.
-            </p>
-          </div>
-          <Button type="button" variant="outline" onClick={loadStatuses} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Atualizar
-          </Button>
-        </div>
-      </section>
-
+    <div className="mx-auto flex max-w-[1540px] flex-col gap-4">
       <StatusSummaryCards summary={summary} loading={loading} />
 
       {error && (
@@ -237,6 +282,47 @@ function StatusContent() {
       )}
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
+        <div className="flex min-h-14 items-center justify-end border-b border-border/70 px-3 py-2.5 sm:px-4">
+          <TooltipProvider>
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Selecionar colunas da tabela"
+                    >
+                      <Columns3 className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Selecionar colunas</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Colunas visíveis</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {columnOrder.map((column) => (
+                  <DropdownMenuCheckboxItem
+                    key={column}
+                    checked={visibleColumns.includes(column)}
+                    onCheckedChange={(checked) => toggleColumnVisibility(column, checked === true)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {columnLabels[column]}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={restoreDefaultColumns}>
+                  <RotateCcw className="h-4 w-4" />
+                  Restaurar padrão
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TooltipProvider>
+        </div>
+
         {loading ? (
           <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -251,30 +337,45 @@ function StatusContent() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto p-4">
+          <div className="max-w-full touch-pan-x overflow-x-auto overscroll-x-contain p-2 sm:p-3">
             <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
-                  {columnOrder.map((column) => (
+                  {displayedColumns.map((column) => (
                     <TableHead
                       key={column}
                       data-column-key={column}
                       aria-label={`${columnLabels[column]}. Arraste para mudar a posição da coluna.`}
                       className={cn(
-                        "select-none transition-colors",
-                        draggedColumn === column && "opacity-40",
-                        dragOverColumn === column && draggedColumn !== column && "bg-primary/10",
+                        "relative select-none transition-[background-color,box-shadow,color,opacity] duration-150",
+                        draggedColumn === column &&
+                          "bg-primary/12 text-foreground opacity-80 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_38%,transparent)]",
+                        dragOverColumn === column && draggedColumn !== column && "bg-primary/8",
+                        dragOverColumn === column &&
+                          draggedColumn !== column &&
+                          dropSide === "before" &&
+                          "before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-primary",
+                        dragOverColumn === column &&
+                          draggedColumn !== column &&
+                          dropSide === "after" &&
+                          "after:absolute after:inset-y-1 after:right-0 after:w-0.5 after:rounded-full after:bg-primary",
                       )}
                     >
                       <span
-                        className="inline-flex touch-none cursor-grab items-center gap-1.5 active:cursor-grabbing"
+                        className={cn(
+                          "inline-flex touch-none items-center gap-1.5 rounded-sm px-1 py-1 transition-colors hover:bg-primary/10 hover:text-foreground",
+                          draggedColumn === column ? "cursor-grabbing" : "cursor-grab",
+                        )}
                         title="Arraste para mudar a posição da coluna"
                         onPointerDown={(event) => handleColumnPointerDown(event, column)}
                         onPointerMove={handleColumnPointerMove}
                         onPointerUp={handleColumnPointerUp}
                         onPointerCancel={clearColumnDrag}
                       >
-                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden="true" />
+                        <GripVertical
+                          className="h-3.5 w-3.5 text-muted-foreground/70"
+                          aria-hidden="true"
+                        />
                         {columnLabels[column]}
                       </span>
                     </TableHead>
@@ -300,7 +401,7 @@ function StatusContent() {
                       }
                     }}
                   >
-                    {columnOrder.map((column) => renderStatusCell(status, column))}
+                    {displayedColumns.map((column) => renderStatusCell(status, column))}
                   </TableRow>
                 ))}
               </TableBody>
@@ -313,6 +414,11 @@ function StatusContent() {
         status={selectedStatus}
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
+      />
+
+      <ColumnDragPreview
+        label={draggedColumn ? columnLabels[draggedColumn] : null}
+        position={dragPosition}
       />
     </div>
   );
@@ -333,7 +439,10 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
         <TableCell key={column} className="max-w-[260px] whitespace-normal">
           <span className="inline-flex items-start gap-2">
             <span
-              className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", alertDotStyles[status.nivel_alerta])}
+              className={cn(
+                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                alertDotStyles[status.nivel_alerta],
+              )}
               aria-hidden="true"
             />
             <span>{status.mensagem_alerta ?? "-"}</span>
@@ -357,11 +466,28 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
     case "ip":
       return <TableCell key={column}>{status.ip_address}</TableCell>;
     case "updatedAt":
-      return <TableCell key={column}>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>;
+      return (
+        <TableCell key={column}>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>
+      );
   }
 }
 
-function isValidColumnOrder(value: unknown): value is ColumnKey[] {
+function isValidColumnPreferences(value: unknown): value is ColumnPreferences {
+  if (!value || typeof value !== "object") return false;
+  const preferences = value as Partial<ColumnPreferences>;
+  return (
+    isCompleteColumnOrder(preferences.order) &&
+    Array.isArray(preferences.visible) &&
+    preferences.visible.length > 0 &&
+    preferences.visible.every(
+      (column): column is ColumnKey =>
+        typeof column === "string" && DEFAULT_COLUMN_ORDER.includes(column as ColumnKey),
+    ) &&
+    new Set(preferences.visible).size === preferences.visible.length
+  );
+}
+
+function isCompleteColumnOrder(value: unknown): value is ColumnKey[] {
   return (
     Array.isArray(value) &&
     value.length === DEFAULT_COLUMN_ORDER.length &&

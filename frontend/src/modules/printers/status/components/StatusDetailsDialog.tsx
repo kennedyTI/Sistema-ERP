@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Activity, Loader2, Printer } from "lucide-react";
+import { Activity, Loader2 } from "lucide-react";
 
+import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
 import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
@@ -19,18 +20,6 @@ import {
 import { ScrollArea } from "@/shared/ui/scroll-area";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
-
-const PRINTER_IMAGE_BASE_URL = "/static/imgs/printers";
-
-const printerImageFiles: Record<string, string> = {
-  DCPL1632W: "DCP-L1632W.png",
-  DCPL2540DW: "DCP-L2540DW.png",
-  IRC3326I: "IR-C3326I.png",
-  K4350: "K-4350.png",
-  MFP4303: "MFP-4303.png",
-  MFP4303HP: "MFP-4303HP.png",
-  T2530: "T-2530.png",
-};
 
 const statusLabels = {
   desconhecido: "Desconhecido",
@@ -95,35 +84,39 @@ export function StatusDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-5xl overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Detalhes da impressora</DialogTitle>
-          <DialogDescription>
-            Consulta operacional e eventos recentes. Nenhuma alteração pode ser feita nesta tela.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="h-[min(92dvh,780px)] max-w-[1180px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <div className="border-b border-border px-4 py-3.5 pr-14 sm:px-5 sm:py-4">
+          <DialogHeader>
+            <DialogTitle>Detalhes da impressora</DialogTitle>
+            <DialogDescription>
+              Consulta operacional e eventos recentes. Nenhuma alteração pode ser feita nesta tela.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
         {!current ? null : (
-          <ScrollArea className="max-h-[76vh] pr-4">
-            <div className="space-y-6">
-              <div className="grid gap-5 lg:grid-cols-[180px_1fr]">
-                <PrinterModelImage model={current.model} machineName={current.machine_name} />
+          <ScrollArea className="min-h-0">
+            <div className="space-y-4 px-4 py-3.5 sm:px-5 sm:py-4">
+              <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <PrinterModelImage
+                  imageUrl={current.url_imagem}
+                  model={current.model}
+                  equipmentName={current.machine_name}
+                />
 
                 <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Badge variant="outline">{statusLabels[current.status_operacional]}</Badge>
-                    <span className="inline-flex items-center gap-2 text-sm capitalize">
-                      <span className={cn("h-2.5 w-2.5 rounded-full", alertDotStyles[current.nivel_alerta])} />
-                      {current.nivel_alerta}
-                    </span>
-                  </div>
                   <div>
-                    <h3 className="text-xl font-semibold">{current.machine_name}</h3>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">
+                      Nome da máquina
+                    </p>
+                    <h3 className="mt-1 text-xl font-semibold">{current.machine_name}</h3>
                     <p className="mt-1 text-sm text-muted-foreground">{current.ip_address}</p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Detail label="Alerta" value={current.mensagem_alerta} />
-                    <Detail label="Mensagem" value={current.mensagem_operador} />
+                  <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <Detail label="Fabricante" value={current.manufacturer} />
+                    <Detail label="Modelo" value={current.model} />
+                    <Detail label="Setor" value={current.sector} />
+                    <Detail label="Centro de custo" value={current.cost_center} />
                   </div>
                 </div>
               </div>
@@ -145,18 +138,52 @@ export function StatusDetailsDialog({
               <Separator />
 
               <section>
-                <h3 className="text-sm font-semibold">Informações da impressora</h3>
-                <div className="mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <Detail label="Local" value={current.sector} />
-                  <Detail label="Fabricante" value={current.manufacturer} />
-                  <Detail label="Modelo" value={current.model} />
-                  <Detail label="Centro de custo" value={current.cost_center} />
-                  <Detail label="Última atualização" value={formatFullDateTime(current.ultima_verificacao_em)} />
-                  <Detail label="Último sucesso" value={formatFullDateTime(current.ultimo_sucesso_em)} />
-                  <Detail label="Última falha" value={formatFullDateTime(current.ultima_falha_em)} />
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold">Estado operacional</h3>
+                </div>
+                <div className="mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">
+                      Status operacional
+                    </p>
+                    <Badge variant="outline" className="mt-2">
+                      {statusLabels[current.status_operacional]}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">
+                      Alerta operacional
+                    </p>
+                    <span className="mt-2 inline-flex items-center gap-2 text-sm capitalize">
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          alertDotStyles[current.nivel_alerta],
+                        )}
+                      />
+                      {current.nivel_alerta}
+                    </span>
+                  </div>
+                  <Detail label="Mensagem de alerta" value={current.mensagem_alerta} />
+                  <Detail label="Mensagem operacional" value={current.mensagem_operador} />
+                  <Detail
+                    label="Última atualização"
+                    value={formatFullDateTime(current.ultima_verificacao_em)}
+                  />
+                  <Detail
+                    label="Último sucesso"
+                    value={formatFullDateTime(current.ultimo_sucesso_em)}
+                  />
+                  <Detail
+                    label="Última falha"
+                    value={formatFullDateTime(current.ultima_falha_em)}
+                  />
                   <Detail
                     label="Tempo de resposta"
-                    value={current.tempo_resposta_ms === null ? null : `${current.tempo_resposta_ms} ms`}
+                    value={
+                      current.tempo_resposta_ms === null ? null : `${current.tempo_resposta_ms} ms`
+                    }
                   />
                   <Detail label="Origem" value={current.origem} />
                 </div>
@@ -179,11 +206,16 @@ export function StatusDetailsDialog({
                   <h3 className="text-sm font-semibold">Últimos logs</h3>
                 </div>
                 {logs.length === 0 ? (
-                  <p className="mt-3 text-sm text-muted-foreground">Nenhum evento operacional registrado.</p>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Nenhum evento operacional registrado.
+                  </p>
                 ) : (
                   <div className="mt-3 divide-y divide-border rounded-lg border border-border">
                     {logs.map((log) => (
-                      <div key={log.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center">
+                      <div
+                        key={log.id}
+                        className="grid gap-2 px-4 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center"
+                      >
                         <div>
                           <p className="text-sm font-medium">{formatEventType(log.tipo_evento)}</p>
                           <p className="text-xs text-muted-foreground">{log.origem}</p>
@@ -194,7 +226,9 @@ export function StatusDetailsDialog({
                             {formatTransition(log.status_anterior, log.status_novo)}
                           </p>
                         </div>
-                        <time className="text-xs text-muted-foreground">{formatFullDateTime(log.verificado_em)}</time>
+                        <time className="text-xs text-muted-foreground">
+                          {formatFullDateTime(log.verificado_em)}
+                        </time>
                       </div>
                     ))}
                   </div>
@@ -206,46 +240,6 @@ export function StatusDetailsDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function PrinterModelImage({
-  model,
-  machineName,
-}: {
-  model: string | null;
-  machineName: string;
-}) {
-  const [imageUnavailable, setImageUnavailable] = useState(false);
-  const imageFile = model ? printerImageFiles[normalizeModelName(model)] : null;
-
-  useEffect(() => {
-    setImageUnavailable(false);
-  }, [imageFile]);
-
-  if (!imageFile || imageUnavailable) {
-    return (
-      <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/35 px-4 text-center">
-        <Printer className="h-10 w-10 text-muted-foreground" />
-        <p className="mt-3 text-sm font-medium">Imagem não disponível</p>
-        <p className="mt-1 text-xs text-muted-foreground">{model ?? "Modelo não informado"}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-3">
-      <img
-        src={`${PRINTER_IMAGE_BASE_URL}/${imageFile}`}
-        alt={`Modelo ${model} da impressora ${machineName}`}
-        className="max-h-40 w-full object-contain"
-        onError={() => setImageUnavailable(true)}
-      />
-    </div>
-  );
-}
-
-function normalizeModelName(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {

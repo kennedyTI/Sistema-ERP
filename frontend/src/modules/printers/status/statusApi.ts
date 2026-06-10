@@ -10,6 +10,7 @@ export interface PrinterOperationalStatus {
   ip_address: string;
   manufacturer: string | null;
   model: string | null;
+  url_imagem: string | null;
   sector: string | null;
   cost_center: string | null;
   status_operacional: OperationalStatus;
@@ -63,7 +64,9 @@ async function requestStatusApi<T>(path: string): Promise<T> {
   const payload = (await response.json()) as ApiEnvelope<T>;
 
   if (!response.ok || !payload.success) {
-    throw new Error(payload.errors?.[0] ?? payload.message ?? "Nao foi possivel consultar os status.");
+    throw new Error(
+      payload.errors?.[0] ?? payload.message ?? "Nao foi possivel consultar os status.",
+    );
   }
 
   return payload.data;

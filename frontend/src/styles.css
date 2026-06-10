@@ -48,7 +48,9 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --shadow-elegant: 0 14px 36px -18px color-mix(in oklab, var(--industria-blue) 44%, transparent);
-  --shadow-card: 0 1px 2px 0 color-mix(in oklab, var(--industria-blue-deep) 8%, transparent), 0 14px 28px -22px color-mix(in oklab, var(--industria-blue) 28%, transparent);
+  --shadow-card:
+    0 1px 2px 0 color-mix(in oklab, var(--industria-blue-deep) 8%, transparent),
+    0 14px 28px -22px color-mix(in oklab, var(--industria-blue) 28%, transparent);
 }
 
 :root {
@@ -157,37 +159,82 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    font-size: 15px;
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     background-image:
-      radial-gradient(circle at top right, color-mix(in oklab, var(--industria-blue-soft) 72%, transparent), transparent 34rem),
-      radial-gradient(circle at bottom left, color-mix(in oklab, var(--industria-orange) 8%, transparent), transparent 32rem),
-      linear-gradient(180deg, color-mix(in oklab, var(--industria-white) 72%, transparent), transparent 18rem);
+      radial-gradient(
+        circle at top right,
+        color-mix(in oklab, var(--industria-blue-soft) 72%, transparent),
+        transparent 34rem
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in oklab, var(--industria-orange) 8%, transparent),
+        transparent 32rem
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--industria-white) 72%, transparent),
+        transparent 18rem
+      );
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   .dark body {
     background-image:
-      radial-gradient(circle at top right, color-mix(in oklab, var(--industria-blue-bright) 18%, transparent), transparent 34rem),
-      radial-gradient(circle at bottom left, color-mix(in oklab, var(--industria-orange) 10%, transparent), transparent 32rem),
-      linear-gradient(180deg, color-mix(in oklab, var(--industria-blue-card) 70%, transparent), transparent 20rem);
+      radial-gradient(
+        circle at top right,
+        color-mix(in oklab, var(--industria-blue-bright) 18%, transparent),
+        transparent 34rem
+      ),
+      radial-gradient(
+        circle at bottom left,
+        color-mix(in oklab, var(--industria-orange) 10%, transparent),
+        transparent 32rem
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--industria-blue-card) 70%, transparent),
+        transparent 20rem
+      );
+  }
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 16px;
   }
 }
 
 /* Subtle pulse for critical / offline indicators */
 @keyframes industria-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 .animate-soft-pulse {
   animation: industria-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes industria-blink-row {
-  0%, 100% { background-color: transparent; }
-  50% { background-color: color-mix(in oklab, var(--danger) 8%, transparent); }
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: color-mix(in oklab, var(--danger) 8%, transparent);
+  }
 }
 .row-critical {
   animation: industria-blink-row 2.4s ease-in-out infinite;
@@ -213,7 +260,8 @@
 }
 
 @keyframes industria-card-float {
-  0%, 100% {
+  0%,
+  100% {
     translate: 0 0;
   }
   50% {
@@ -224,7 +272,9 @@
 @media (prefers-reduced-motion: reduce) {
   .login-floating-card {
     animation: none;
-    transition: border-color 160ms ease, box-shadow 160ms ease;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease;
     will-change: auto;
   }
 

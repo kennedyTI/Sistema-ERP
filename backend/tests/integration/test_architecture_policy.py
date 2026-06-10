@@ -107,10 +107,49 @@ class CleanBasePolicyTest(TestCase):
         self.assertNotIn("Solicitar toner", status_page + details_dialog)
         self.assertIn("Resposta técnica", details_dialog)
         self.assertIn("Últimos logs", details_dialog)
-        self.assertIn('"/static/imgs/printers"', details_dialog)
+        self.assertIn("url_imagem", details_dialog)
+        self.assertNotIn('"/static/imgs/printers"', details_dialog)
         self.assertIn("PrinterModelImage", details_dialog)
         self.assertIn("Droplet", summary_cards)
         self.assertNotIn("PackageSearch", summary_cards)
+
+    def test_telas_operacionais_mantem_cards_primeiro_e_modais_responsivos(self):
+        machines_page = (
+            PROJECT_ROOT / "frontend/src/modules/printers/machines/MachinesPage.tsx"
+        ).read_text(encoding="utf-8")
+        status_page = (
+            PROJECT_ROOT / "frontend/src/modules/printers/status/StatusPage.tsx"
+        ).read_text(encoding="utf-8")
+        machine_dialog = (
+            PROJECT_ROOT
+            / "frontend/src/modules/printers/machines/components/MachineDetailsDialog.tsx"
+        ).read_text(encoding="utf-8")
+        status_dialog = (
+            PROJECT_ROOT
+            / "frontend/src/modules/printers/status/components/StatusDetailsDialog.tsx"
+        ).read_text(encoding="utf-8")
+        model_image = (
+            PROJECT_ROOT / "frontend/src/modules/printers/shared/PrinterModelImage.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            machines_page.index("<MachinesSummaryCards"),
+            machines_page.index("<Table"),
+        )
+        self.assertLess(
+            status_page.index("<StatusSummaryCards"),
+            status_page.index("<Table"),
+        )
+        self.assertNotIn("Atualizar", machines_page)
+        self.assertNotIn("Atualizar", status_page)
+        self.assertNotIn("<h1", machines_page)
+        self.assertNotIn("<h1", status_page)
+        self.assertIn("92dvh", machine_dialog)
+        self.assertIn("92dvh", status_dialog)
+        self.assertIn("280px", machine_dialog)
+        self.assertIn("280px", status_dialog)
+        self.assertIn("Imagem não disponível", model_image)
+        self.assertIn("object-contain", model_image)
 
     def test_backend_de_maquinas_mantem_contratos_em_portugues(self):
         schemas = (

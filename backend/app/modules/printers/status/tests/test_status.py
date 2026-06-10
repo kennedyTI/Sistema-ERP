@@ -38,7 +38,7 @@ class PrinterStatusApiTest(TestCase):
         self.db.close()
         app.dependency_overrides.clear()
 
-    def _create_machine(self):
+    def _create_machine(self, *, image_url=None):
         response = self.client.post(
             "/api/v2/printers/machines",
             headers=auth_headers(printers_machines=True),
@@ -52,10 +52,14 @@ class PrinterStatusApiTest(TestCase):
             },
         )
         self.assertEqual(response.status_code, 201)
+        if image_url:
+            model = self.db.query(PrinterModel).one()
+            model.url_imagem = image_url
+            self.db.commit()
         return response.json()["dados"]["maquina"]
 
     def test_nova_maquina_recebe_status_inicial(self):
-        machine = self._create_machine()
+        machine = self._create_machine(image_url="/static/imgs/printers/modelo-exemplo.png")
 
         response = self.client.get(
             f"/api/v2/printers/status/{machine['id']}",
@@ -67,6 +71,7 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["machine_name"], "Impressora Status")
         self.assertEqual(data["manufacturer"], "Fabricante Exemplo")
         self.assertEqual(data["model"], "Modelo Exemplo")
+        self.assertEqual(data["url_imagem"], "/static/imgs/printers/modelo-exemplo.png")
         self.assertEqual(data["status_operacional"], "desconhecido")
         self.assertEqual(data["nivel_alerta"], "cinza")
         self.assertEqual(data["mensagem_operador"], "Aguardando primeira verificacao.")

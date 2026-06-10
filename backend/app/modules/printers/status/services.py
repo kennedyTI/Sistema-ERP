@@ -41,6 +41,7 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
         ip_address=machine.ip_address,
         manufacturer=machine.manufacturer,
         model=machine.model,
+        url_imagem=machine.printer_model.url_imagem if machine.printer_model else None,
         sector=machine.sector,
         cost_center=machine.cost_center,
         status_operacional=status.status_operacional,
