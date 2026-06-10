@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,6 +10,7 @@ from backend.app.core.database import get_db
 from backend.app.main import app
 from backend.app.modules.audit.orm import AuditLog
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
+from backend.app.modules.printers.machines.services import get_machine_for_update
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.tests.auth_helpers import auth_headers
 
@@ -244,6 +246,21 @@ class PrinterMachinesApiTest(TestCase):
             conflict.json()["erros"]["atualizado_em"],
             ["Registro desatualizado."],
         )
+
+    def test_edicao_bloqueia_registro_durante_validacao_de_concorrencia(self):
+        machine = PrinterMachine(id=10, name="Impressora", ip_address="192.168.10.25")
+        query = MagicMock()
+        query.options.return_value = query
+        query.filter.return_value = query
+        query.with_for_update.return_value = query
+        query.one_or_none.return_value = machine
+        db = MagicMock()
+        db.query.return_value = query
+
+        result = get_machine_for_update(db, machine.id)
+
+        self.assertIs(result, machine)
+        query.with_for_update.assert_called_once_with()
 
     def test_edicao_recusa_modelo_inexistente(self):
         machine = self._create_machine()

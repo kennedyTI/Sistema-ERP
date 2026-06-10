@@ -69,6 +69,22 @@ def get_machine(db: Session, machine_id: int) -> PrinterMachine:
     return machine
 
 
+def get_machine_for_update(db: Session, machine_id: int) -> PrinterMachine:
+    machine = (
+        db.query(PrinterMachine)
+        .options(
+            joinedload(PrinterMachine.printer_model),
+            joinedload(PrinterMachine.status_operacional_atual),
+        )
+        .filter(PrinterMachine.id == machine_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if machine is None:
+        raise MachineNotFoundError
+    return machine
+
+
 def machine_to_read(machine: PrinterMachine) -> MaquinaRead:
     model = machine.printer_model
     return MaquinaRead(
@@ -292,7 +308,7 @@ def update_machine(
     *,
     changed_by: str,
 ) -> PrinterMachine:
-    machine = get_machine(db, machine_id)
+    machine = get_machine_for_update(db, machine_id)
     expected_updated_at = _normalize_timestamp(payload.atualizado_em)
     current_updated_at = _normalize_timestamp(machine.updated_at)
     if expected_updated_at != current_updated_at:
