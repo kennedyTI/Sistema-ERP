@@ -10,6 +10,8 @@ def make_user(
     admin: bool = False,
     printers: bool = False,
     printers_dashboard: bool = False,
+    printers_status: bool = False,
+    printers_status_manage: bool = False,
     printers_machines: bool = False,
     printers_paper: bool = False,
 ) -> PortalUser:
@@ -23,6 +25,8 @@ def make_user(
             can_access_admin=admin,
             can_access_printers=printers,
             can_access_printers_dashboard=printers_dashboard,
+            can_access_printers_status=printers_status,
+            can_manage_printers_status=printers_status_manage,
             can_access_printers_machines=printers_machines,
             can_access_printers_paper=printers_paper,
         ),

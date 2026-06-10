@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "backend.app.modules.audit.apps.AuditConfig",
     "backend.app.modules.backoffice.apps.BackofficeModuleConfig",
     "backend.app.modules.printers.machines.apps.PrinterMachinesConfig",
+    "backend.app.modules.printers.status.apps.PrinterStatusConfig",
 ]
 
 
@@ -113,6 +114,7 @@ MIGRATION_MODULES = {
     "audit": None,
     "portal_backoffice": None,
     "printer_machines": None,
+    "printer_status": None,
 }
 
 

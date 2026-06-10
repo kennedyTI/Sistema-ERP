@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.database import get_db
 from backend.app.main import app
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
+from backend.app.modules.printers.status.models import StatusImpressora
 from backend.tests.auth_helpers import auth_headers
 
 
@@ -31,6 +32,7 @@ class PrinterMachinesApiTest(TestCase):
         )
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
+        StatusImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
 
@@ -81,6 +83,9 @@ class PrinterMachinesApiTest(TestCase):
         self.assertEqual(created["type"], "laser")
         self.assertEqual(created["color_mode"], "mono")
         self.assertTrue(created["is_active"])
+        initial_status = self.db.query(StatusImpressora).filter_by(maquina_id=created["id"]).one()
+        self.assertEqual(initial_status.status_operacional, "desconhecido")
+        self.assertEqual(initial_status.nivel_alerta, "cinza")
 
         list_response = self.client.get(
             "/api/v2/printers/machines",

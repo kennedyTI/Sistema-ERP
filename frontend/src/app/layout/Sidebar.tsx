@@ -1,5 +1,5 @@
 ﻿import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ExternalLink, Files, Home, LayoutDashboard, LogOut, Printer, UserRound } from "lucide-react";
+import { Activity, ExternalLink, Files, Home, LayoutDashboard, LogOut, Printer, UserRound } from "lucide-react";
 
 import {
   Sidebar,
@@ -33,6 +33,12 @@ const printerModuleItem = {
 } as const;
 
 const printerItems = [
+  {
+    title: "Status",
+    url: "/impressoras/status",
+    icon: Activity,
+    permission: "can_access_printers_status",
+  },
   {
     title: "Máquinas",
     url: "/impressoras/maquinas",

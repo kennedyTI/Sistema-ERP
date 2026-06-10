@@ -113,6 +113,8 @@ class PortalPermissionsTest(TestCase):
         self.assertTrue(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertTrue(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
 
@@ -123,6 +125,8 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertTrue(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
 
@@ -133,7 +137,9 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_access_admin)
         self.assertTrue(permissions.can_access_printers)
         self.assertTrue(permissions.can_access_printers_dashboard)
-        self.assertTrue(permissions.can_access_printers_machines)
+        self.assertTrue(permissions.can_access_printers_status)
+        self.assertFalse(permissions.can_manage_printers_status)
+        self.assertFalse(permissions.can_access_printers_machines)
         self.assertFalse(permissions.can_access_printers_paper)
 
     def test_integracao_protheus_nao_acessa_portal_visual(self):

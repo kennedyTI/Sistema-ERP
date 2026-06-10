@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/shared/components/ThemeToggle";
 const titles: Record<string, { title: string; sub: string }> = {
   "/inicio": { title: "Inicio", sub: "Base v2 do Portal industria" },
   "/impressoras/dashboard": { title: "Dashboard", sub: "Módulo Impressoras" },
+  "/impressoras/status": { title: "Status", sub: "Módulo Impressoras" },
   "/impressoras/maquinas": { title: "Máquinas", sub: "Módulo Impressoras" },
   "/impressoras/papel": { title: "Papel", sub: "Módulo Impressoras" },
 };

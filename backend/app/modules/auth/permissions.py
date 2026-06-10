@@ -18,6 +18,8 @@ def portal_permissions_for_groups(groups: list[str], *, is_superuser: bool = Fal
             can_access_admin=True,
             can_access_printers=True,
             can_access_printers_dashboard=True,
+            can_access_printers_status=True,
+            can_manage_printers_status=True,
             can_access_printers_machines=True,
             can_access_printers_paper=True,
         )
@@ -27,6 +29,8 @@ def portal_permissions_for_groups(groups: list[str], *, is_superuser: bool = Fal
             can_access_portal=True,
             can_access_printers=True,
             can_access_printers_dashboard=True,
+            can_access_printers_status=True,
+            can_manage_printers_status=True,
             can_access_printers_machines=True,
             can_access_printers_paper=True,
         )
@@ -36,7 +40,7 @@ def portal_permissions_for_groups(groups: list[str], *, is_superuser: bool = Fal
             can_access_portal=True,
             can_access_printers=True,
             can_access_printers_dashboard=True,
-            can_access_printers_machines=True,
+            can_access_printers_status=True,
         )
 
     return PortalPermissions()

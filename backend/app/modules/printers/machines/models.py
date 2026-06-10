@@ -40,6 +40,17 @@ class PrinterMachine(Base):
     updated_at = Column(DateTime, nullable=False, default=now_sao_paulo, onupdate=now_sao_paulo)
 
     printer_model = relationship("PrinterModel", back_populates="machines")
+    status_operacional_atual = relationship(
+        "StatusImpressora",
+        back_populates="maquina",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    logs_operacionais = relationship(
+        "LogImpressora",
+        back_populates="maquina",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def manufacturer(self) -> str | None:
