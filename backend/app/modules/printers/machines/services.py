@@ -77,7 +77,9 @@ def get_machine_for_update(db: Session, machine_id: int) -> PrinterMachine:
             joinedload(PrinterMachine.status_operacional_atual),
         )
         .filter(PrinterMachine.id == machine_id)
-        .with_for_update()
+        # PostgreSQL rejects FOR UPDATE on nullable rows introduced by the
+        # joined relationships. Lock only the machine being edited.
+        .with_for_update(of=PrinterMachine)
         .one_or_none()
     )
     if machine is None:
