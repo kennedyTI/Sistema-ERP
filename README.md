@@ -1,297 +1,88 @@
 # Sistema ERP v2
 
-Sistema ERP modular desenvolvido com foco em arquitetura limpa, autenticação centralizada, administração via Django Admin, frontend moderno e execução em containers Docker com proxy HTTPS.
+Sistema ERP modular desenvolvido para demonstrar uma arquitetura corporativa moderna, com backend em FastAPI, administração via Django Admin, autenticação centralizada, permissões por grupos, frontend React/Vite e execução em containers Docker com proxy HTTPS.
 
-O projeto foi estruturado para servir como base evolutiva para módulos corporativos, como usuários, permissões, estoque, compras, manutenção, relatórios e integrações futuras.
+A versão atual publicada é a **v2.3.0 — Máquinas e Status Operacional**.
 
-Registro da versão atual:
-[v2.3.0 - Máquinas e Status Operacional](docs/releases/v2.3.0-maquinas-e-status-operacional.md).
+Registro detalhado da release: [docs/releases/v2.3.0-maquinas-e-status-operacional.md](docs/releases/v2.3.0-maquinas-e-status-operacional.md).
 
 ---
 
 ## Visão geral
 
-O Sistema ERP v2 possui uma base institucional e modular composta por:
+O Sistema ERP v2 foi estruturado como uma base evolutiva para módulos corporativos. A aplicação possui separação clara entre frontend, API, administração interna e banco de dados.
 
-* Frontend em React/Vite;
-* Backend em FastAPI;
-* Django Admin para administração interna;
-* Autenticação com Django Auth + JWT;
-* Permissões por grupos;
-* Banco de dados PostgreSQL;
-* Proxy reverso Nginx com HTTPS;
-* Docker Compose para orquestração dos serviços;
-* Estrutura preparada para evolução por módulos.
+A plataforma já contém:
+
+- autenticação com Django Auth + JWT;
+- administração interna via Django Admin;
+- permissões administradas por grupos;
+- API FastAPI versionada em `/api/v2`;
+- frontend React/Vite com rotas protegidas;
+- infraestrutura Docker Compose;
+- proxy reverso Nginx com HTTPS local;
+- módulo Impressoras em evolução incremental.
+
+O módulo Impressoras é o primeiro domínio operacional do sistema. Ele já possui cadastro de máquinas, status operacional, permissões granulares, imagens de modelos, auditoria cadastral e interface responsiva.
+
+---
+
+## Problema resolvido
+
+O projeto resolve a necessidade de criar uma base ERP modular, segura e evolutiva, capaz de receber novos domínios sem acoplar regras de negócio à interface ou ao banco de forma improvisada.
+
+No módulo Impressoras, a versão atual resolve problemas como:
+
+- cadastro centralizado de máquinas;
+- separação entre status cadastral e status operacional;
+- consulta operacional somente de máquinas ativas;
+- proteção contra edição manual de status e logs operacionais;
+- controle de permissões pelo Django Admin;
+- edição cadastral com validação por campo;
+- controle de concorrência por `atualizado_em`;
+- auditoria de edição e ativação/inativação;
+- interface responsiva para desktop, notebook, tablet e celular.
+
+---
+
+## Principais funcionalidades
+
+### Plataforma
+
+- Login com JWT;
+- rota protegida para usuários autenticados;
+- grupos e permissões gerenciados pelo Django Admin;
+- Admin separado da API principal;
+- proxy HTTPS local;
+- build e execução via Docker Compose;
+- testes automatizados de backend.
 
 ### Módulo Impressoras
 
-O módulo Impressoras passa a existir como um módulo futuro dentro do Sistema ERP, sem alterar a identidade institucional do produto.
-
-Nesta fase, a fundacao inclui:
-
-* estrutura modular no backend e no frontend;
-* paginas placeholder de Dashboard e Papel;
-* cadastro inicial de Maquinas com persistencia;
-* status operacional atual das impressoras;
-* linha do tempo de eventos operacionais de cada impressora;
-* menu condicionado por permissões;
-* API CRUD de maquinas em `/api/v2/printers/machines`;
-* API de status em `/api/v2/printers/status`;
-* tela inicial de listagem, criacao, edicao e ativacao/inativacao de maquinas;
-* tela de consulta operacional em `/impressoras/status`;
-* endpoints de desenvolvimento para Dashboard e Papel.
-
-Status e logs operacionais são somente leitura no portal, na API pública e no
-Django Admin. Monitoramento automático, SNMP, toner, alertas complexos, Celery
-e Redis não fazem parte desta etapa.
-
-### Etapa 3 - Status operacional das impressoras
-
-A Etapa 3 separa o cadastro de máquinas da consulta operacional:
-
-* `Máquinas` continua responsável por criar, editar, ativar e inativar cadastros;
-* `Status` apresenta a foto atual do estado operacional;
-* `status_impressoras` mantém um único status atual por máquina;
-* `logs_impressoras` registra somente eventos do domínio Impressoras;
-* novas máquinas recebem status inicial `desconhecido`, alerta `cinza`,
-  orientação `Aguardando primeira verificação` e origem `sistema`;
-* status e logs operacionais não possuem endpoint público de escrita e não
-  podem ser adicionados, editados ou excluídos pelo Django Admin.
-
-A tela `/impressoras/status` funciona como Central de Operação inicial:
-
-* cards de Total, Online, Offline, Com alerta e Substituir toner;
-* tabela priorizada por alerta vermelho, amarelo, cinza e verde;
-* colunas Status, Alerta, Mensagem, Local, Máquina, IP e Atualizado em;
-* modal somente de consulta com cadastro, tempos, origem, resposta técnica e
-  últimos logs da impressora.
-
-O card `Substituir toner` utiliza temporariamente uma busca textual por
-`substituir toner` em `mensagem_alerta`. Isso não representa monitoramento de
-toner nem integração com Protheus ou GLPI.
-
-O Dashboard real permanece planejado para uma etapa posterior, quando houver
-dados operacionais suficientes.
-
-### Backend avançado de Máquinas
-
-A API de Máquinas utiliza contratos em português e mantém a listagem completa,
-sem paginação, incluindo cadastros ativos e inativos.
-
-Endpoints disponíveis:
-
-* `GET /api/v2/printers/machines`: lista todas as máquinas;
-* `GET /api/v2/printers/machines/summary`: retorna totais, ativos, inativos,
-  fabricantes e modelos cadastrados;
-* `GET /api/v2/printers/machines/{id}/details`: retorna cadastro, modelo,
-  `url_imagem`, status operacional resumido, logs somente leitura e ações
-  permitidas;
-* `PATCH /api/v2/printers/machines/{id}`: atualiza dados cadastrais com
-  validação por campo e concorrência por `atualizado_em`;
-* `PATCH /api/v2/printers/machines/{id}/status`: altera apenas o status
-  cadastral Ativo/Inativo e retorna o resumo atualizado.
-
-Alterações cadastrais e toggles são transacionais e registrados em
-`audit_logs`, incluindo usuário, valores anteriores, valores novos e campos
-alterados.
-
-As permissões funcionais são administradas pelo Django Auth:
-
-* `impressoras.ver_dashboard`;
-* `impressoras.ver_status`;
-* `impressoras.ver_maquinas`;
-* `impressoras.criar_maquinas`;
-* `impressoras.editar_maquinas`;
-* `impressoras.alternar_status_maquinas`;
-* `impressoras.ver_papel`.
-
-O comando idempotente `python manage.py seed_admin_groups` cria as permissões e
-as atribui aos grupos oficiais. O endpoint `/api/v2/auth/me` expõe o contrato
-`permissoes.impressoras` para o frontend.
-
-### Experiência frontend da tela Máquinas
-
-A tela `/impressoras/maquinas` consome exclusivamente os contratos reais da
-API v2 e apresenta:
-
-* cards de total, ativas, inativas, fabricantes e modelos cadastrados;
-* tabela sem paginação com máquinas ativas e inativas;
-* seleção de colunas visíveis e reordenação por arraste no cabeçalho;
-* preferências de ordem e visibilidade salvas no navegador por usuário;
-* linhas clicáveis que abrem um único modal de detalhes e edição;
-* imagem do modelo pelo campo `url_imagem`, com fallback visual;
-* toggle cadastral Ativa/Inativa que atualiza a linha e os cards sem reload;
-* erros de validação por campo e conflito de concorrência por `atualizado_em`;
-* botões condicionados pelas permissões retornadas em
-  `permissoes.impressoras` e pelas ações retornadas no endpoint de detalhes.
-
-O status cadastral Ativa/Inativa continua separado do status operacional.
-Alterações cadastrais não permitem editar status, alertas ou logs operacionais.
-
-### Padrão visual do módulo Impressoras
-
-As telas Máquinas e Status compartilham o mesmo padrão de densidade, cards,
-tabelas, imagens e modais grandes:
-
-* cards integrados ao fundo do tema claro ou escuro;
-* tabelas com altura de linha uniforme e melhor aproveitamento horizontal;
-* colunas configuráveis e reordenáveis com preview e indicação de destino;
-* preferências de colunas persistidas por usuário no navegador;
-* modais grandes com rolagem interna, cabeçalho e rodapé de ações fixos;
-* fechamento pelo botão X; o rodapé contém apenas ações do fluxo;
-* área de imagem padronizada com o fallback `Imagem não disponível`.
-
-Máquinas e Status usam os cards como primeiro bloco do conteúdo. O título e o
-contexto ficam no cabeçalho global da aplicação, sem duplicação dentro da
-página e sem botão manual de atualização. Em telas menores, os cards se
-reorganizam, as tabelas mantêm rolagem horizontal própria e os modais usam a
-altura disponível do dispositivo sem criar overflow horizontal na página.
-
-O campo `url_imagem` de `printers_models` é a fonte oficial das imagens nos
-endpoints de Máquinas e Status. Caminhos públicos locais podem apontar para
-`/static/imgs/printers/<arquivo>`, desde que o arquivo exista e responda HTTP
-200 pelo proxy. O frontend não deduz nomes nem monta caminhos por modelo.
-
-O modal Adicionar máquina preserva o contrato de criação atual, que recebe
-fabricante e modelo em texto. A seleção por catálogo e a prévia de imagem na
-criação dependem de um endpoint futuro específico para modelos.
+- menu condicionado por permissões;
+- tela Dashboard placeholder;
+- tela Papel placeholder;
+- cadastro de Máquinas;
+- cards de resumo cadastral;
+- listagem completa, sem paginação;
+- máquinas ativas e inativas na tela Máquinas;
+- status operacional apenas para máquinas ativas;
+- modal único de consulta e edição;
+- toggle Ativo/Inativo sem reload;
+- validação por campo;
+- conflito de concorrência por `atualizado_em`;
+- imagens de modelos por `url_imagem`;
+- fallback visual `Imagem não disponível`;
+- colunas configuráveis e reordenáveis;
+- preferências de colunas por usuário;
+- feedback visual no arraste de colunas;
+- responsividade mobile.
 
 ---
 
-## Tecnologias utilizadas
+## Arquitetura
 
-### Backend
-
-* Python
-* FastAPI
-* Django Admin
-* Django Auth
-* SQLAlchemy / Alembic
-* PostgreSQL
-* JWT
-* Pytest
-
-### Frontend
-
-* React
-* Vite
-* TypeScript
-* Tailwind CSS
-* Componentes UI modulares
-
-### Infraestrutura
-
-* Docker
-* Docker Compose
-* Nginx
-* HTTPS com certificado self-signed para desenvolvimento local
-
----
-
-## Estrutura de pastas
-
-```text
-sistema_erp/
-├── backend/
-│   ├── app/
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   ├── database.py
-│   │   │   ├── security.py
-│   │   │   ├── auth_dependencies.py
-│   │   │   ├── response.py
-│   │   │   └── ...
-│   │   │
-│   │   ├── modules/
-│   │   │   ├── auth/
-│   │   │   │   ├── api.py
-│   │   │   │   ├── schemas.py
-│   │   │   │   ├── services.py
-│   │   │   │   └── ...
-│   │   │   │
-│   │   │   ├── backoffice/
-│   │   │   │   ├── groups.py
-│   │   │   │   ├── permissions.py
-│   │   │   │   ├── services.py
-│   │   │   │   └── management/
-│   │   │   │
-│   │   │   ├── audit/
-│   │   │   │   ├── models.py
-│   │   │   │   ├── services.py
-│   │   │   │   └── ...
-│   │   │   │
-│   │   │   └── printers/
-│   │   │       ├── dashboard/
-│   │   │       ├── machines/
-│   │   │       ├── paper/
-│   │   │       └── status/
-│   │   │
-│   │   ├── shared/
-│   │   │   ├── constants.py
-│   │   │   ├── dates.py
-│   │   │   ├── validators.py
-│   │   │   └── ...
-│   │   │
-│   │   ├── migrations/
-│   │   └── main.py
-│   │
-│   └── backoffice/
-│       ├── manage.py
-│       ├── settings.py
-│       ├── urls.py
-│       └── wsgi.py
-│
-├── frontend/
-│   ├── public/
-│   └── src/
-│       ├── app/
-│       │   ├── layout/
-│       │   ├── providers.tsx
-│       │   └── router.tsx
-│       │
-│       ├── modules/
-│       │   ├── auth/
-│       │   │   ├── LoginPage.tsx
-│       │   │   ├── RequireAuth.tsx
-│       │   │   ├── authApi.ts
-│       │   │   └── components/
-│       │   │
-│       │   ├── home/
-│       │   │   └── HomePage.tsx
-│       │   │
-│       │   └── printers/
-│       │       ├── dashboard/
-│       │       ├── machines/
-│       │       ├── paper/
-│       │       └── status/
-│       │
-│       └── shared/
-│           ├── components/
-│           ├── hooks/
-│           ├── lib/
-│           └── ui/
-│
-├── docker/
-│   └── nginx/
-│       ├── nginx.conf
-│       ├── conf.d/
-│       │   └── sistema_erp.conf
-│       └── certs/
-│           ├── README.md
-│           ├── localhost.crt
-│           └── localhost.key
-│
-├── docker-compose.yml
-├── .env.example
-├── .env.docker.example
-└── README.md
-```
-
----
-
-## Arquitetura dos containers
-
-O projeto utiliza Docker Compose para executar os serviços principais.
+O projeto utiliza uma arquitetura modular com separação entre camadas de apresentação, API, administração e persistência.
 
 ```text
 Usuário
@@ -303,7 +94,7 @@ frontend / api / admin
 postgres
 ```
 
-### Serviços
+### Serviços Docker
 
 | Serviço                  | Função                                   |
 | ------------------------ | ---------------------------------------- |
@@ -314,61 +105,104 @@ postgres
 | `sistema_erp_postgres`   | Banco PostgreSQL                         |
 | `sistema_erp_migrations` | Execução das migrations e seeds iniciais |
 
+### Regras arquiteturais importantes
+
+- O frontend não decide permissões sozinho; ele obedece às permissões retornadas pelo backend.
+- O Django Admin e o banco centralizam a configuração de grupos e permissões.
+- Tabelas e colunas novas do banco devem ser criadas em português.
+- Código-fonte pode permanecer em inglês.
+- API e textos visíveis ao usuário devem permanecer em português daqui para frente.
+- Status e logs operacionais de Impressoras são somente leitura por Admin/API manual.
+- Máquinas inativas aparecem em Máquinas, mas não aparecem em Status.
+
 ---
 
-## Rotas principais
-
-### Frontend
-
-| Rota                     | Descrição                                |
-| ------------------------ | ---------------------------------------- |
-| `/login`                 | Tela de autenticação                     |
-| `/inicio`                | Tela inicial do sistema                  |
-| `/impressoras/dashboard` | Placeholder do dashboard de impressoras |
-| `/impressoras/status`    | Consulta do status operacional atual    |
-| `/impressoras/maquinas`  | Cadastro inicial de maquinas            |
-| `/impressoras/papel`     | Placeholder de papel                    |
-| `/admin/`                | Acesso ao Django Admin via proxy         |
+## Tecnologias utilizadas
 
 ### Backend
 
-| Rota                                      | Método  | Descrição                             |
-| ----------------------------------------- | ------- | ------------------------------------- |
-| `/api/v2/auth/login`                      | `POST`  | Autenticação do usuário               |
-| `/api/v2/auth/me`                         | `GET`   | Dados do usuário autenticado          |
-| `/api/v2/auth/logout`                     | `POST`  | Encerramento da sessão/token          |
-| `/api/v2/printers/dashboard`              | `GET`   | Status inicial do dashboard           |
-| `/api/v2/printers/machines`               | `GET`   | Lista maquinas cadastradas            |
-| `/api/v2/printers/machines`               | `POST`  | Cadastra maquina                      |
-| `/api/v2/printers/machines/summary`       | `GET`   | Resumo cadastral das maquinas         |
-| `/api/v2/printers/machines/{id}`          | `GET`   | Detalha maquina                       |
-| `/api/v2/printers/machines/{id}/details`  | `GET`   | Dados completos para o modal          |
-| `/api/v2/printers/machines/{id}`          | `PATCH` | Atualiza maquina                      |
-| `/api/v2/printers/machines/{id}/status`   | `PATCH` | Ativa ou inativa maquina              |
-| `/api/v2/printers/status`                 | `GET`   | Lista o status atual das impressoras  |
-| `/api/v2/printers/status/summary`         | `GET`   | Resumo para os cards operacionais     |
-| `/api/v2/printers/status/{id}`            | `GET`   | Consulta o status de uma impressora   |
-| `/api/v2/printers/status/{id}/logs`       | `GET`   | Lista os últimos eventos operacionais |
-| `/api/v2/printers/paper`                  | `GET`   | Status inicial do submódulo Papel     |
+- Python;
+- FastAPI;
+- Django Admin;
+- Django Auth;
+- SQLAlchemy;
+- Alembic;
+- PostgreSQL;
+- JWT;
+- Pytest.
+
+### Frontend
+
+- React;
+- Vite;
+- TypeScript;
+- Tailwind CSS;
+- componentes UI modulares;
+- Sonner para feedback visual.
+
+### Infraestrutura
+
+- Docker;
+- Docker Compose;
+- Nginx;
+- HTTPS local com certificado self-signed.
 
 ---
 
-## Permissões e grupos
+## Estrutura do projeto
 
-O sistema utiliza grupos para controlar acesso ao portal e ao Django Admin.
-
-| Grupo                 | Acesso                                                      |
-| --------------------- | ----------------------------------------------------------- |
-| `Equipe Técnica`      | Início, Impressoras, Dashboard, Status, Máquinas, Papel e Admin |
-| `Gestor`              | Início, Impressoras, Dashboard, Status, Máquinas e Papel       |
-| `Operador`            | Início, Impressoras, Dashboard e Status                        |
-| `Integração Protheus` | Sem acesso ao portal visual                                 |
+```text
+sistema_erp/
+├── backend/
+│   ├── app/
+│   │   ├── core/
+│   │   ├── migrations/
+│   │   ├── modules/
+│   │   │   ├── audit/
+│   │   │   ├── auth/
+│   │   │   ├── backoffice/
+│   │   │   └── printers/
+│   │   │       ├── dashboard/
+│   │   │       ├── machines/
+│   │   │       ├── paper/
+│   │   │       └── status/
+│   │   ├── shared/
+│   │   └── main.py
+│   ├── backoffice/
+│   └── scripts/
+│
+├── frontend/
+│   ├── public/
+│   │   └── static/imgs/printers/
+│   └── src/
+│       ├── app/
+│       ├── modules/
+│       │   ├── auth/
+│       │   ├── home/
+│       │   └── printers/
+│       │       ├── dashboard/
+│       │       ├── machines/
+│       │       ├── paper/
+│       │       ├── shared/
+│       │       └── status/
+│       ├── routes/
+│       └── shared/
+│
+├── docker/
+│   └── nginx/
+├── docs/
+│   └── releases/
+├── docker-compose.yml
+├── Dockerfile
+├── manage.py
+└── README.md
+```
 
 ---
 
-## Configuração de ambiente
+## Como executar localmente
 
-Copie os arquivos de exemplo antes de iniciar o projeto:
+Copie os arquivos de exemplo antes de iniciar:
 
 ```bash
 cp .env.example .env
@@ -376,7 +210,7 @@ cp .env.docker.example .env.docker
 cp backend/.env.example backend/.env
 ```
 
-No Windows PowerShell, copie com:
+No Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
@@ -384,88 +218,9 @@ Copy-Item .env.docker.example .env.docker
 Copy-Item backend/.env.example backend/.env
 ```
 
-Revise os valores conforme o ambiente.
+Revise os valores conforme o ambiente local.
 
----
-
-## Portas locais
-
-Para evitar conflito com serviços locais que possam usar as portas 80 e 443, o ambiente de desenvolvimento utiliza:
-
-| Serviço     | Porta  |
-| ----------- | ------ |
-| HTTP local  | `8080` |
-| HTTPS local | `8443` |
-
-Acesso local:
-
-```text
-http://localhost:8080
-https://localhost:8443/login
-https://localhost:8443/inicio
-https://localhost:8443/admin/
-https://localhost:8443/api/v2/auth/me
-https://localhost:8443/impressoras/dashboard
-https://localhost:8443/impressoras/status
-https://localhost:8443/impressoras/maquinas
-https://localhost:8443/impressoras/papel
-```
-
-As portas externas podem ser alteradas no `.env.docker`:
-
-```env
-NGINX_HTTP_PORT=8080
-NGINX_HTTPS_PORT=8443
-```
-
-O Nginx continua ouvindo nas portas internas `80` e `443`. O acesso HTTP em
-`http://localhost:8080` redireciona para `https://localhost:8443`.
-
-Em homologação ou produção, recomenda-se usar:
-
-```env
-NGINX_HTTP_PORT=80
-NGINX_HTTPS_PORT=443
-```
-
----
-
-## Certificado HTTPS local
-
-O proxy espera os arquivos `docker/nginx/certs/localhost.crt` e
-`docker/nginx/certs/localhost.key`. Esses arquivos não são versionados.
-
-Para desenvolvimento, eles podem ser certificados self-signed criados
-localmente. Um exemplo com OpenSSL:
-
-```bash
-openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
-  -keyout docker/nginx/certs/localhost.key \
-  -out docker/nginx/certs/localhost.crt \
-  -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-```
-
-Por isso, o navegador pode exibir um aviso de segurança ao acessar:
-
-```text
-https://localhost:8443
-```
-
-Esse comportamento é esperado.
-
-Em homologação ou produção, substitua o certificado de desenvolvimento por um certificado interno oficial fornecido pela equipe de infraestrutura/TI.
-Certificados reais e chaves privadas nunca devem entrar no Git.
-
-O HTTPS termina no `sistema_erp_proxy`; a comunicação interna entre Nginx,
-frontend, API e Admin permanece HTTP. Frontend, API e Admin ficam disponíveis
-sob o mesmo domínio.
-
----
-
-## Como rodar o projeto com Docker
-
-Suba todos os serviços:
+Suba os serviços:
 
 ```bash
 docker compose --env-file .env.docker up -d --build
@@ -481,18 +236,15 @@ Acesse:
 
 ```text
 https://localhost:8443/login
+https://localhost:8443/inicio
+https://localhost:8443/admin/
+https://localhost:8443/impressoras/dashboard
+https://localhost:8443/impressoras/status
+https://localhost:8443/impressoras/maquinas
+https://localhost:8443/impressoras/papel
 ```
 
-Para validar com `curl`, pode ser necessário usar `-k` por causa do certificado
-self-signed:
-
-```bash
-curl -k https://localhost:8443/api/v2/auth/me
-```
-
----
-
-## Como parar o projeto
+Para parar:
 
 ```bash
 docker compose --env-file .env.docker down
@@ -504,49 +256,82 @@ Para parar e remover volumes locais:
 docker compose --env-file .env.docker down -v
 ```
 
-Use `down -v` com cuidado, pois ele remove os dados do banco local.
+Use `down -v` com cuidado, pois ele remove dados locais do banco.
 
 ---
 
-## Criar superusuário do Django Admin
+## Docker
 
-Com os containers em execução:
+### Portas locais
+
+| Serviço     | Porta  |
+| ----------- | ------ |
+| HTTP local  | `8080` |
+| HTTPS local | `8443` |
+
+O acesso HTTP redireciona para HTTPS:
+
+```text
+http://localhost:8080 → https://localhost:8443
+```
+
+As portas externas podem ser alteradas no `.env.docker`:
+
+```env
+NGINX_HTTP_PORT=8080
+NGINX_HTTPS_PORT=8443
+```
+
+### Certificado HTTPS local
+
+O proxy espera os arquivos:
+
+```text
+docker/nginx/certs/localhost.crt
+docker/nginx/certs/localhost.key
+```
+
+Esses arquivos não são versionados.
+
+Exemplo de certificado local self-signed:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout docker/nginx/certs/localhost.key \
+  -out docker/nginx/certs/localhost.crt \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+O navegador pode exibir aviso de segurança por se tratar de certificado local. Em homologação ou produção, use certificado oficial da infraestrutura.
+
+### Comandos úteis
+
+Criar superusuário do Django Admin:
 
 ```bash
 docker compose --env-file .env.docker exec admin python manage.py createsuperuser
 ```
 
-Depois acesse:
-
-```text
-https://localhost:8443/admin/
-```
-
----
-
-## Rodar testes do backend
-
-Dentro do container da API:
+Rodar testes:
 
 ```bash
 docker compose --env-file .env.docker exec api pytest -q
 ```
 
-Compile os arquivos Python:
-
-```bash
-docker compose --env-file .env.docker exec api python -m compileall -q backend
-```
-
-Verifique o Django:
+Verificar Django:
 
 ```bash
 docker compose --env-file .env.docker exec admin python manage.py check
 ```
 
----
+Compilar Python:
 
-## Rodar build do frontend
+```bash
+docker compose --env-file .env.docker exec api python -m compileall -q backend
+```
+
+Build do frontend:
 
 ```bash
 docker compose --env-file .env.docker run --rm frontend npm run build
@@ -554,185 +339,225 @@ docker compose --env-file .env.docker run --rm frontend npm run build
 
 ---
 
-## Fluxo Git recomendado
+## Autenticação e permissões
 
-Este projeto utiliza um fluxo profissional com branches, tags e commits padronizados.
+O sistema utiliza Django Auth como fonte de usuários, grupos e permissões. O frontend consome as permissões retornadas por `/api/v2/auth/me` e exibe menus, rotas e botões conforme o que o backend autoriza.
 
-### Branches principais
+### Grupos principais
 
-| Branch      | Uso                               |
-| ----------- | --------------------------------- |
-| `main`      | Versão estável                    |
-| `develop`   | Desenvolvimento da próxima versão |
-| `feature/*` | Novas funcionalidades             |
-| `release/*` | Preparação de versões             |
-| `hotfix/*`  | Correções urgentes                |
+| Grupo                 | Acesso esperado                                                |
+| --------------------- | -------------------------------------------------------------- |
+| `Equipe Técnica`      | Início, Impressoras, Dashboard, Status, Máquinas, Papel e Admin |
+| `Gestor`              | Início, Impressoras, Dashboard, Status, Máquinas e Papel        |
+| `Operador`            | Início, Impressoras, Dashboard e Status                        |
+| `Integração Protheus` | Sem acesso ao portal visual                                    |
 
-### Exemplo de criação da base
+### Permissões do módulo Impressoras
+
+- `impressoras.ver_dashboard`;
+- `impressoras.ver_status`;
+- `impressoras.ver_maquinas`;
+- `impressoras.criar_maquinas`;
+- `impressoras.editar_maquinas`;
+- `impressoras.alternar_status_maquinas`;
+- `impressoras.ver_papel`.
+
+O comando idempotente abaixo cria e atualiza os grupos/permissões oficiais:
 
 ```bash
-git init
-git add .
-git commit -m "chore: initialize Sistema ERP v2 base"
-git branch -M main
-git tag -a v2.0.0-base -m "Sistema ERP v2 base modular institucional"
-git checkout -b develop
+docker compose --env-file .env.docker exec admin python manage.py seed_admin_groups
 ```
 
-### Criar nova funcionalidade
+### Contrato de permissões
 
-```bash
-git checkout develop
-git checkout -b feature/modulo-usuarios
-```
+O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 
-Após concluir:
-
-```bash
-git add .
-git commit -m "feat(users): add user module skeleton"
-git checkout develop
-git merge --no-ff feature/modulo-usuarios
-git branch -d feature/modulo-usuarios
-```
-
-### Criar release
-
-```bash
-git checkout develop
-git checkout -b release/v2.1.0
-```
-
-Após ajustes finais:
-
-```bash
-git checkout main
-git merge --no-ff release/v2.1.0
-git tag -a v2.1.0 -m "Release v2.1.0"
-git checkout develop
-git merge --no-ff release/v2.1.0
-git branch -d release/v2.1.0
-```
-
-### Hotfix
-
-```bash
-git checkout main
-git checkout -b hotfix/fix-login-redirect
-```
-
-Após corrigir:
-
-```bash
-git add .
-git commit -m "fix(auth): correct login redirect behind proxy"
-git checkout main
-git merge --no-ff hotfix/fix-login-redirect
-git tag -a v2.0.1 -m "Hotfix v2.0.1"
-git checkout develop
-git merge --no-ff hotfix/fix-login-redirect
-git branch -d hotfix/fix-login-redirect
+```json
+{
+  "permissoes": {
+    "impressoras": {
+      "ver_dashboard": true,
+      "ver_status": true,
+      "ver_maquinas": true,
+      "criar_maquinas": true,
+      "editar_maquinas": true,
+      "alternar_status_maquinas": true,
+      "ver_papel": true
+    }
+  }
+}
 ```
 
 ---
 
-## Convenção de commits
+## Roadmap
 
-O projeto segue o padrão Conventional Commits.
+### Etapas do módulo Impressoras
 
-Exemplos:
+| Etapa | Descrição | Status |
+| ----- | --------- | ------ |
+| Etapa 1 | Fundação do módulo Impressoras | Concluída |
+| Etapa 2 | Cadastro de Máquinas | Concluída |
+| Etapa 3 | Status e Dashboard | Parcial: Status concluído; Dashboard real pendente |
+| Etapa 4 | Papel, Toner e Histórico | Não iniciada |
+| Etapa 5 | Monitoramento automático, SNMP, Redis/Celery e Alertas | Não iniciada |
+
+### Próximas frentes planejadas
+
+- Dashboard real do módulo Impressoras;
+- catálogo próprio de modelos de impressora;
+- Papel;
+- Toner;
+- histórico operacional ampliado;
+- alertas;
+- integração Protheus;
+- integração GLPI;
+- monitoramento automático com SNMP;
+- Redis/Celery para rotinas assíncronas;
+- assistente Telegram em etapa futura.
+
+### Branches planejadas para evolução futura
+
+As próximas features podem seguir a nomenclatura abaixo, quando os respectivos escopos forem iniciados:
 
 ```text
-feat: adiciona nova funcionalidade
-fix: corrige bug
-docs: altera documentação
-style: ajustes visuais ou formatação
-refactor: refatoração sem mudar comportamento
-test: adiciona ou ajusta testes
-build: alterações de build, Docker ou dependências
-chore: manutenção geral
-ci: ajustes de pipeline
+develop
+  feature/printers-dashboard-module
+  feature/paper-monitoring-module
+  feature/toner-monitoring-module
+  feature/alerts-module
+  feature/protheus-integration
+  feature/telegram-assistant
 ```
 
-Exemplos aplicados ao projeto:
-
-```text
-chore: initialize Sistema ERP v2 base
-build(docker): add nginx https proxy
-refactor(backend): organize modular architecture
-feat(auth): add django jwt login flow
-docs: document local https ports
-fix(proxy): adjust local https redirect port
-```
+Observação: as branches já entregues até a versão atual tiveram nomes incrementais diferentes, preservados no histórico Git.
 
 ---
 
-## Versionamento
+## Releases
 
-O projeto segue versionamento semântico:
+### Publicadas
 
-```text
-MAJOR.MINOR.PATCH
-```
+| Release | Descrição |
+| ------- | --------- |
+| `v2.0.0-base` | Base modular institucional |
+| `v2.1.0-modulo-impressoras-base` | Fundação do módulo Impressoras |
+| `v2.2.0-printers-machines-crud` | Cadastro inicial de máquinas |
+| `v2.3.0-maquinas-e-status-operacional` | Máquinas, status operacional e polimento visual |
 
-Exemplo:
+### Planejadas
 
-```text
-v2.0.0-base
-v2.0.1
-v2.1.0
-v3.0.0
-```
+| Release planejada | Escopo previsto |
+| ----------------- | --------------- |
+| `v2.4.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
+| `v2.5.0-suprimentos` | Papel, toner e histórico inicial |
+| `v2.6.0-alertas` | Alertas operacionais |
+| `v2.7.0-integracoes` | Protheus/GLPI e integrações corporativas |
 
-Critério sugerido:
-
-| Tipo    | Quando usar                                    |
-| ------- | ---------------------------------------------- |
-| `PATCH` | Correções pequenas                             |
-| `MINOR` | Nova funcionalidade compatível                 |
-| `MAJOR` | Mudança grande de arquitetura ou comportamento |
+As tags publicadas não devem ser reescritas. Ajustes documentais posteriores à publicação podem entrar em commits normais de documentação.
 
 ---
 
-## Checklist antes de cada commit importante
+## Screenshots
 
-Antes de realizar commits relevantes, execute:
+Pasta sugerida para imagens de documentação:
 
-```bash
-docker compose --env-file .env.docker ps -a
-docker compose --env-file .env.docker exec api pytest -q
-docker compose --env-file .env.docker exec api python -m compileall -q backend
-docker compose --env-file .env.docker exec admin python manage.py check
-docker compose --env-file .env.docker run --rm frontend npm run build
+```text
+docs/screenshots/
 ```
+
+Screenshots recomendados para o portfólio:
+
+- login;
+- tela inicial;
+- Máquinas;
+- modal de Máquinas;
+- Status operacional;
+- modal de Status;
+- Django Admin;
+- responsividade mobile.
+
+No momento, os screenshots ainda não estão versionados oficialmente.
 
 ---
 
-## Próximos módulos planejados
+## Status do projeto
 
-A base está preparada para receber módulos corporativos de forma incremental.
+Estado atual:
 
-Possíveis módulos futuros:
+```text
+Versão atual: v2.3.0-maquinas-e-status-operacional
+Etapa atual: Etapa 3 — Status e Dashboard
+Status da etapa: Status concluído; Dashboard real pendente
+```
 
-* Usuários e perfis avançados;
-* Estoque;
-* Compras;
-* Manutenção;
-* Relatórios;
-* Integrações corporativas;
-* Assistente via Telegram;
-* Módulos operacionais específicos por área.
+Validações da release v2.3.0:
+
+- 70 testes aprovados;
+- Django check sem problemas;
+- frontend build aprovado;
+- npm audit com 0 vulnerabilidades;
+- Docker e migrations funcionando;
+- login/me/logout retornando HTTP 200;
+- Máquinas e Status retornando HTTP 200;
+- HTTPS validado;
+- Status exibindo somente máquinas ativas;
+- interface validada em desktop, notebook, tablet e celular;
+- nenhum arquivo sensível rastreado.
+
+Limitações não bloqueantes conhecidas:
+
+- aviso antigo de chunks acima de 500 kB no build frontend;
+- uso de certificado self-signed em ambiente local;
+- Dashboard real ainda pendente;
+- Papel, Toner, Histórico, Alertas e Monitoramento Automático ainda não iniciados.
+
+---
+
+## Padrão de comentários
+
+O projeto adota comentários voltados para manutenção humana, seguindo o padrão herdado da v1.
+
+### Blocos de seção
+
+Python:
+
+```python
+# ---------------------------------------------------------------------
+# 📌 TÍTULO DA SEÇÃO
+# ---------------------------------------------------------------------
+# Explique a intenção do bloco, regra de negócio ou decisão técnica.
+```
+
+TypeScript/React:
+
+```tsx
+// -----------------------------------------------------------------------------
+// 📌 TÍTULO DA SEÇÃO
+// -----------------------------------------------------------------------------
+// Explique a intenção do bloco, regra de negócio ou decisão técnica.
+```
+
+### Diretrizes
+
+- Comentar regras de negócio, permissões, integrações e decisões técnicas.
+- Evitar comentários óbvios linha a linha.
+- Preferir comentários em português.
+- Manter docstrings em funções críticas do backend.
+- Preservar comentários de arquivos gerados apenas quando necessário.
+- Não comentar secrets, credenciais ou dados reais.
 
 ---
 
 ## Observações de segurança
 
-* Não versionar arquivos `.env` reais.
-* Não versionar certificados e chaves privadas reais.
-* Não usar certificado self-signed em produção.
-* Alterar senhas e secrets antes de homologação/produção.
-* Utilizar certificado interno oficial para ambientes corporativos.
-* Revisar permissões dos grupos antes de liberar acesso a usuários finais.
+- Não versionar arquivos `.env` reais.
+- Não versionar certificados e chaves privadas reais.
+- Não usar certificado self-signed em produção.
+- Alterar senhas e secrets antes de homologação/produção.
+- Utilizar certificado interno oficial para ambientes corporativos.
+- Revisar permissões dos grupos antes de liberar acesso a usuários finais.
+- Não versionar dados reais de impressoras, usuários ou infraestrutura.
 
 ---
 
