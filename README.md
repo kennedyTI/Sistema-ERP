@@ -4,6 +4,9 @@ Sistema ERP modular desenvolvido com foco em arquitetura limpa, autenticação c
 
 O projeto foi estruturado para servir como base evolutiva para módulos corporativos, como usuários, permissões, estoque, compras, manutenção, relatórios e integrações futuras.
 
+Registro da versão atual:
+[v2.3.0 - Máquinas e Status Operacional](docs/releases/v2.3.0-maquinas-e-status-operacional.md).
+
 ---
 
 ## Visão geral
