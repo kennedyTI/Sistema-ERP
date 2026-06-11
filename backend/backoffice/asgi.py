@@ -1,7 +1,7 @@
 ﻿"""
 Arquivo: backend/backoffice/asgi.py
 
-DescriÃ§Ã£o:
+Descrição:
 ASGI do Django Admin.
 """
 

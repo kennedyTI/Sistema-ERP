@@ -1,7 +1,7 @@
 ﻿"""
 Arquivo: backend/backoffice/urls.py
 
-DescriÃ§Ã£o:
+Descrição:
 Mapeamento de rotas do Django Admin.
 """
 
@@ -12,8 +12,10 @@ from django.urls import path
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ CAMINHO DO ADMIN
+# 📌 CAMINHO DO ADMIN
 # ---------------------------------------------------------------------
+# O prefixo configurável permite publicar o Admin atrás do mesmo proxy sem
+# acoplar as URLs internas do Django à porta exposta no ambiente local.
 ADMIN_PATH = os.getenv("DJANGO_ADMIN_PATH", "admin/").strip("/")
 
 urlpatterns = [
