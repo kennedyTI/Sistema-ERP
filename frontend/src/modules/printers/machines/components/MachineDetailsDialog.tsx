@@ -212,6 +212,8 @@ export function MachineDetailsDialog({
       sector: cleanOptional(form.sector),
       cost_center: cleanOptional(form.cost_center),
       notes: cleanOptional(form.notes),
+      // O backend compara esta versão com a linha bloqueada e retorna 409
+      // quando outra edição foi salva depois da abertura do modal.
       updated_at: currentMachine.updated_at,
     };
 
@@ -277,6 +279,8 @@ export function MachineDetailsDialog({
     }
   }
 
+  // A interface exige concordância entre a sessão e as ações devolvidas para
+  // o registro; esconder botões não substitui a autorização feita pela API.
   const detailsCanEdit = Boolean(canEdit && details?.actions.can_edit);
   const detailsCanToggle = Boolean(canToggle && details?.actions.can_toggle_status);
 

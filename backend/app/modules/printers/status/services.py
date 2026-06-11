@@ -15,6 +15,11 @@ class PrinterStatusNotFoundError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------
+# 📌 STATUS INICIAL DA MÁQUINA
+# ---------------------------------------------------------------------
+# Toda máquina nasce com uma fotografia operacional neutra. Isso permite que a
+# consulta permaneça consistente antes de existir monitoramento automático.
 def create_initial_status(db: Session, machine_id: int, *, origem: str = "sistema") -> StatusImpressora:
     current = db.query(StatusImpressora).filter(StatusImpressora.maquina_id == machine_id).one_or_none()
     if current is not None:
@@ -57,6 +62,11 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
     )
 
 
+# ---------------------------------------------------------------------
+# 📌 CENTRAL OPERACIONAL SOMENTE PARA MÁQUINAS ATIVAS
+# ---------------------------------------------------------------------
+# A inativação preserva cadastro e histórico, mas remove a máquina das listas
+# e dos totais operacionais. Máquinas inativas continuam visíveis em Máquinas.
 def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
     statuses = (
         db.query(StatusImpressora)
@@ -83,6 +93,7 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
         online=sum(status.status_operacional == "online" for status in statuses),
         offline=sum(status.status_operacional == "offline" for status in statuses),
         com_alerta=sum(status.nivel_alerta in {"amarelo", "vermelho"} for status in statuses),
+        # Regra transitória até existir um domínio próprio para suprimentos.
         substituir_toner=sum(
             "substituir toner" in (status.mensagem_alerta or "").casefold()
             for status in statuses

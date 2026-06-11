@@ -74,6 +74,11 @@ interface ColumnPreferences {
   visible: ColumnKey[];
 }
 
+// -----------------------------------------------------------------------------
+// 📌 PREFERÊNCIAS DA CENTRAL OPERACIONAL
+// -----------------------------------------------------------------------------
+// Cada usuário organiza a própria tabela sem alterar o contrato ou a ordenação
+// dos demais usuários. Dados incompatíveis são removidos no carregamento.
 const COLUMN_PREFERENCES_STORAGE_KEY = "sistema-erp-printer-status-columns";
 
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
@@ -129,6 +134,7 @@ function StatusContent() {
   );
 
   const sortedStatuses = useMemo(
+    // Alertas críticos permanecem no topo independentemente da ordem recebida.
     () =>
       [...statuses].sort(
         (current, next) =>
@@ -214,6 +220,9 @@ function StatusContent() {
     toast.success("Colunas restauradas para o padrão.");
   }
 
+  // ---------------------------------------------------------------------------
+  // 📌 REORDENAÇÃO COMPATÍVEL COM MOUSE E TOQUE
+  // ---------------------------------------------------------------------------
   function handleColumnPointerDown(event: PointerEvent<HTMLSpanElement>, column: ColumnKey) {
     if (event.button !== 0) return;
 

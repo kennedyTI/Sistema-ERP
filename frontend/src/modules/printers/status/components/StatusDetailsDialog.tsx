@@ -49,6 +49,11 @@ export function StatusDetailsDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // 📌 MODAL ESTRITAMENTE CONSULTIVO
+  // ---------------------------------------------------------------------------
+  // Detalhe e logs são carregados em paralelo. O flag active evita atualizar
+  // estado após fechar o modal ou trocar rapidamente de impressora.
   useEffect(() => {
     if (!open || !status) return;
 

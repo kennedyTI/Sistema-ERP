@@ -7,6 +7,11 @@ from backend.app.core.database import Base
 from backend.app.core.timezone import now_sao_paulo
 
 
+# ---------------------------------------------------------------------
+# 📌 FOTOGRAFIA OPERACIONAL ATUAL
+# ---------------------------------------------------------------------
+# A restrição única garante um único estado corrente por máquina. Mudanças
+# históricas pertencem a LogImpressora, não a novas linhas nesta tabela.
 class StatusImpressora(Base):
     __tablename__ = "status_impressoras"
     __table_args__ = (
@@ -31,6 +36,11 @@ class StatusImpressora(Base):
     maquina = relationship("PrinterMachine", back_populates="status_operacional_atual")
 
 
+# ---------------------------------------------------------------------
+# 📌 LINHA DO TEMPO OPERACIONAL
+# ---------------------------------------------------------------------
+# Os logs registram transições e evidências sem substituir o status atual.
+# Esta tabela é consultiva no portal e no Django Admin.
 class LogImpressora(Base):
     __tablename__ = "logs_impressoras"
 

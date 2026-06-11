@@ -69,6 +69,11 @@ def get_machine(db: Session, machine_id: int) -> PrinterMachine:
     return machine
 
 
+# ---------------------------------------------------------------------
+# 📌 CONCORRÊNCIA NA EDIÇÃO
+# ---------------------------------------------------------------------
+# A linha da máquina é bloqueada durante alterações para impedir que duas
+# gravações concorrentes produzam auditoria ou estado cadastral inconsistentes.
 def get_machine_for_update(db: Session, machine_id: int) -> PrinterMachine:
     machine = (
         db.query(PrinterMachine)
@@ -77,8 +82,8 @@ def get_machine_for_update(db: Session, machine_id: int) -> PrinterMachine:
             joinedload(PrinterMachine.status_operacional_atual),
         )
         .filter(PrinterMachine.id == machine_id)
-        # PostgreSQL rejects FOR UPDATE on nullable rows introduced by the
-        # joined relationships. Lock only the machine being edited.
+        # O PostgreSQL rejeita FOR UPDATE nas linhas opcionais dos joins.
+        # Por isso, somente o cadastro principal da máquina recebe o lock.
         .with_for_update(of=PrinterMachine)
         .one_or_none()
     )
@@ -203,6 +208,12 @@ def _get_model(db: Session, model_id: int) -> PrinterModel:
     return model
 
 
+# ---------------------------------------------------------------------
+# 📌 COMPATIBILIDADE DO CONTRATO DE CRIAÇÃO
+# ---------------------------------------------------------------------
+# Enquanto o frontend ainda aceita fabricante e modelo em texto, este fluxo
+# reutiliza o catálogo existente ou cria o modelo correspondente. Quando o
+# catálogo ganhar endpoint próprio, o contrato deve convergir para modelo_id.
 def _get_or_create_legacy_model(db: Session, payload: MaquinaCreate) -> PrinterModel:
     if payload.modelo_id is not None:
         return _get_model(db, payload.modelo_id)
@@ -254,6 +265,11 @@ def _normalize_timestamp(value: datetime) -> datetime:
     return value
 
 
+# ---------------------------------------------------------------------
+# 📌 TRANSAÇÕES E AUDITORIA CADASTRAL
+# ---------------------------------------------------------------------
+# Cadastro, status inicial e audit_log precisam confirmar ou falhar juntos.
+# O commit permanece nesta camada para preservar essa unidade transacional.
 def create_machine(
     db: Session,
     payload: MaquinaCreate,
@@ -311,6 +327,8 @@ def update_machine(
     changed_by: str,
 ) -> PrinterMachine:
     machine = get_machine_for_update(db, machine_id)
+    # atualizado_em funciona como trava otimista além do lock no banco: uma
+    # tela desatualizada recebe conflito em vez de sobrescrever outra edição.
     expected_updated_at = _normalize_timestamp(payload.atualizado_em)
     current_updated_at = _normalize_timestamp(machine.updated_at)
     if expected_updated_at != current_updated_at:
@@ -396,6 +414,8 @@ def update_machine_status(
     *,
     changed_by: str,
 ) -> ResultadoToggleMaquina:
+    # Ativo/Inativo é estado cadastral. Ele não altera o status operacional,
+    # mas controla se a máquina pode aparecer na Central de Status.
     machine = get_machine(db, machine_id)
     old_data = _machine_snapshot(machine)
 

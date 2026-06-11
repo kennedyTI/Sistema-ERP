@@ -74,6 +74,8 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  // O menu reflete permissões vindas da API; ele melhora a navegação, mas a
+  // proteção efetiva das páginas e endpoints continua no backend.
   const visibleItems = items.filter((item) => hasPermission(item.permission as PortalPermissionKey));
   const visiblePrinterItems = printerItems.filter((item) => hasPermission(item.permission as PortalPermissionKey));
   const canAccessPrintersModule =

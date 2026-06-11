@@ -31,6 +31,11 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Token de autenticacao invalido ou expirado.") from exc
 
 
+# ---------------------------------------------------------------------
+# 📌 AUTORIZAÇÃO E RASTREABILIDADE DE NEGATIVAS
+# ---------------------------------------------------------------------
+# A API sempre nega o acesso mesmo se o registro de auditoria falhar. A
+# auditoria é best effort para não transformar uma falha de log em liberação.
 def require_permission(permission_key: str) -> Callable:
     def dependency(
         request: Request,
@@ -61,6 +66,8 @@ def require_permission(permission_key: str) -> Callable:
 
 
 def require_printer_permission(permission_key: str) -> Callable:
+    # O contrato aninhado de Impressoras é a fonte das ações granulares. As
+    # permissões legadas abaixo permanecem apenas para compatibilidade de rota.
     def dependency(
         request: Request,
         user: PortalUser = Depends(get_current_user),

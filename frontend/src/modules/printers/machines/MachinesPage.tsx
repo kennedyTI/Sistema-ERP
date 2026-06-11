@@ -57,6 +57,11 @@ interface ColumnPreferences {
   visible: ColumnKey[];
 }
 
+// -----------------------------------------------------------------------------
+// 📌 PREFERÊNCIAS DE COLUNAS POR USUÁRIO
+// -----------------------------------------------------------------------------
+// Ordem e visibilidade são locais ao navegador e separadas pelo username.
+// Preferências inválidas são descartadas para não quebrar novas versões.
 const COLUMN_PREFERENCES_STORAGE_KEY = "sistema-erp-printer-machines-columns";
 
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
@@ -303,6 +308,11 @@ function MachinesContent() {
     toast.success("Colunas restauradas para o padrão.");
   }
 
+  // ---------------------------------------------------------------------------
+  // 📌 REORDENAÇÃO COMPATÍVEL COM MOUSE E TOQUE
+  // ---------------------------------------------------------------------------
+  // Pointer Events e pointer capture mantêm o arraste funcional também em
+  // dispositivos móveis, sem depender da API HTML5 de drag and drop.
   function handleColumnPointerDown(event: PointerEvent<HTMLSpanElement>, column: ColumnKey) {
     if (event.button !== 0) return;
     event.preventDefault();

@@ -32,6 +32,8 @@ export function RequireAuth({
 
   if (!user) return null;
 
+  // A rota permanece montada apenas para usuários autenticados e autorizados.
+  // Esta barreira visual não substitui a checagem equivalente nos endpoints.
   if (!hasPermission(permission)) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">

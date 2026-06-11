@@ -33,6 +33,11 @@ def _model_snapshot(obj):
     return data
 
 
+# ---------------------------------------------------------------------
+# 📌 AUDITORIA DAS ALTERAÇÕES FEITAS PELO ADMIN
+# ---------------------------------------------------------------------
+# O snapshot anterior é capturado antes do save/delete. Se a gravação do log
+# falhar, a operação administrativa continua e o usuário recebe um aviso.
 class AuditLogAdminMixin:
     audit_source = "django_admin"
 
@@ -101,6 +106,7 @@ class AuditLogAdminMixin:
 
 
 class ReadOnlyAdminMixin:
+    # Dados operacionais e logs não podem ganhar atalhos de escrita pelo Admin.
     def has_add_permission(self, request):
         return False
 

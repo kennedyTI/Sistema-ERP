@@ -6,6 +6,11 @@ from backend.app.modules.audit.admin import ReadOnlyAdminMixin
 from backend.app.modules.printers.status.django_models import PrinterLogAdminModel, PrinterStatusAdminModel
 
 
+# ---------------------------------------------------------------------
+# 📌 STATUS OPERACIONAL SOMENTE PARA CONSULTA
+# ---------------------------------------------------------------------
+# O mixin bloqueia inclusão, alteração e exclusão inclusive para superusuários.
+# Escritas futuras devem ocorrer apenas pelo fluxo operacional auditável.
 @admin.register(PrinterStatusAdminModel)
 class PrinterStatusAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
