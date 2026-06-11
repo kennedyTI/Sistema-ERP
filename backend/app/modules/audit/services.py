@@ -16,6 +16,11 @@ from sqlalchemy.orm import Session
 from backend.app.modules.audit.orm import AuditLog
 
 
+# ---------------------------------------------------------------------
+# 📌 UNIDADE TRANSACIONAL DA AUDITORIA
+# ---------------------------------------------------------------------
+# Este serviço apenas adiciona o registro à sessão. O chamador controla o
+# commit para que ação de negócio e auditoria sejam confirmadas em conjunto.
 def create_audit_log(
     db: Session,
     table_name: str,

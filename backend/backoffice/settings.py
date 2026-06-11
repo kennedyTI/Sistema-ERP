@@ -1,13 +1,13 @@
 ﻿"""
 Arquivo: backend/backoffice/settings.py
 
-DescriÃ§Ã£o:
-ConfiguraÃ§Ã£o do Django Admin separado do motor FastAPI.
+Descrição:
+Configuração do Django Admin separado do motor FastAPI.
 
 Responsabilidades:
 - Conectar no mesmo PostgreSQL do sistema
-- Carregar variÃ¡veis do .env existente
-- Preparar ambiente para admin local e futura dockerizaÃ§Ã£o
+- Carregar variáveis do .env existente
+- Preparar ambiente para admin local e futura dockerização
 """
 
 import os
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ DIRETÃ“RIOS DO PROJETO
+# 📌 DIRETÓRIOS DO PROJETO
 # ---------------------------------------------------------------------
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -26,14 +26,14 @@ ENV_PATH = BACKEND_DIR / ".env"
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ CARREGA .ENV
+# 📌 CARREGAMENTO DO AMBIENTE
 # ---------------------------------------------------------------------
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH)
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ FUNÃ‡ÃƒO DE PARSE DO DATABASE_URL
+# 📌 CONVERSÃO DA DATABASE_URL PARA O DJANGO
 # ---------------------------------------------------------------------
 def build_database_config(database_url: str) -> dict:
     parsed = urlparse(database_url)
@@ -65,7 +65,7 @@ def build_database_config(database_url: str) -> dict:
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ CONFIGURAÃ‡Ã•ES GERAIS
+# 📌 CONFIGURAÇÕES GERAIS
 # ---------------------------------------------------------------------
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
@@ -91,7 +91,7 @@ USE_X_FORWARDED_HOST = True
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ APPS INSTALADOS
+# 📌 APLICAÇÕES INSTALADAS
 # ---------------------------------------------------------------------
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -109,8 +109,10 @@ INSTALLED_APPS = [
 
 
 # ---------------------------------------------------------------------
-# PAINEL ADMINISTRATIVO SEM OWNERSHIP DO SCHEMA OPERACIONAL
+# 📌 PAINEL ADMINISTRATIVO SEM OWNERSHIP DO SCHEMA OPERACIONAL
 # ---------------------------------------------------------------------
+# Os models operacionais são espelhos de tabelas geridas pelo Alembic. O
+# Django Admin não deve tentar criar migrations para esses aplicativos.
 MIGRATION_MODULES = {
     "audit": None,
     "portal_backoffice": None,
@@ -121,7 +123,7 @@ MIGRATION_MODULES = {
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ MIDDLEWARE
+# 📌 MIDDLEWARE
 # ---------------------------------------------------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -135,7 +137,7 @@ MIDDLEWARE = [
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ URLS / WSGI / ASGI
+# 📌 URLS / WSGI / ASGI
 # ---------------------------------------------------------------------
 ROOT_URLCONF = "backend.backoffice.urls"
 WSGI_APPLICATION = "backend.backoffice.wsgi.application"
@@ -143,7 +145,7 @@ ASGI_APPLICATION = "backend.backoffice.asgi.application"
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ TEMPLATES
+# 📌 TEMPLATES
 # ---------------------------------------------------------------------
 TEMPLATES = [
     {
@@ -163,7 +165,7 @@ TEMPLATES = [
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ BANCO DE DADOS
+# 📌 BANCO DE DADOS
 # ---------------------------------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -176,7 +178,7 @@ DATABASES = {
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ I18N / TZ
+# 📌 INTERNACIONALIZAÇÃO E FUSO HORÁRIO
 # ---------------------------------------------------------------------
 LANGUAGE_CODE = "pt-br"
 TIME_ZONE = os.getenv(
@@ -188,14 +190,14 @@ USE_TZ = False
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ STATIC
+# 📌 ARQUIVOS ESTÁTICOS
 # ---------------------------------------------------------------------
 STATIC_URL = "/static/"
 STATIC_ROOT = BACKEND_DIR / "staticfiles"
 
 
 # ---------------------------------------------------------------------
-# ðŸ“Œ DEFAULTS
+# 📌 PADRÕES DO DJANGO
 # ---------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -1,7 +1,7 @@
 ﻿"""
 Arquivo: backend/backoffice/wsgi.py
 
-DescriÃ§Ã£o:
+Descrição:
 WSGI do Django Admin.
 """
 
