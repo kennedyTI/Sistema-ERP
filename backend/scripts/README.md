@@ -61,3 +61,24 @@ Confirme que o arquivo local esta ignorado:
 git check-ignore -v backend/scripts/seed_printer_machines.local.json
 git ls-files "backend/scripts/*.local.json" "backend/scripts/*.local.csv" "backend/scripts/*.local.xlsx"
 ```
+
+## Seed oficial de regras de alertas
+
+O script `seed_printer_alert_rules.py` sincroniza as regras oficiais da Rules
+Engine na tabela `regras_alertas_impressoras`. Ele nao recebe arquivos locais,
+nao contem dados de equipamentos e pode ser executado repetidamente sem
+duplicar registros.
+
+Execucao no host:
+
+```powershell
+python backend/scripts/seed_printer_alert_rules.py
+```
+
+Execucao via container:
+
+```powershell
+docker compose --env-file .env.docker exec api python backend/scripts/seed_printer_alert_rules.py
+```
+
+O servico `migrations` tambem executa este seed depois do Alembic.

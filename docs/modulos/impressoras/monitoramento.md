@@ -83,14 +83,78 @@ docker compose --env-file .env.docker exec celery-worker \
   printers_connectivity_one --args='[1]'
 ```
 
+## Etapa 3.5.2.0 - Backend de regras de alertas
+
+Esta microetapa porta para a arquitetura modular da v2 a base conceitual de
+alertas consolidada na v1. Ela adiciona somente a configuração e a classificação
+de mensagens; nenhuma coleta periódica ou atualização operacional é executada.
+
+### Tabela de regras
+
+O Alembic administra a tabela `regras_alertas_impressoras`, com os campos:
+
+- `id`;
+- `codigo`;
+- `descricao`;
+- `severidade`;
+- `tipo_regra`;
+- `padrao`;
+- `prioridade`;
+- `ativo`;
+- `criado_em`;
+- `atualizado_em`.
+
+O seed oficial é idempotente: cria as 16 regras iniciais quando ausentes e
+atualiza seus campos controlados quando já existem. A execução ocorre no serviço
+de migrations e também pode ser feita manualmente:
+
+```bash
+python backend/scripts/seed_printer_alert_rules.py
+```
+
+### Rules Engine
+
+A classificação normaliza acentos, caixa e espaços, ignora regras inativas e
+ordena por menor prioridade. Empates são resolvidos pelo código da regra.
+
+Os tipos aceitos são:
+
+- `contains`;
+- `equals`;
+- `regex`.
+
+As severidades persistidas continuam compatíveis com a v1:
+
+- `green`;
+- `low`;
+- `medium`;
+- `high`.
+
+Na apresentação visual futura, `green` será convertido em verde, `low` e
+`medium` em amarelo, e `high` em vermelho. Essa conversão ainda não integra a
+tela Status.
+
+Quando nenhuma regra reconhece a mensagem, a Rules Engine retorna `unknown`,
+com severidade `medium`, e preserva a mensagem original para diagnóstico.
+
+As regras podem ser consultadas e administradas pelo Django Admin conforme as
+permissões padrão. A Equipe Técnica recebe as permissões administrativas; o
+grupo Operador não recebe permissão de edição.
+
 ## Fora do escopo
 
-Esta etapa não implementa alertas de cinco minutos, toner, papel, coleta rica,
-dashboard, Protheus, Telegram ou tabela detalhada de tentativas.
+As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
+toner, papel, coleta rica, dashboard, Protheus, Telegram ou tabela detalhada de
+tentativas. Também não foram criadas as tabelas de alertas ativos e histórico.
 
 ## Próximas etapas
 
-- 3.5.2: alertas e estado da máquina em cinco minutos;
+- criar `alertas_impressoras`;
+- criar `historico_alertas_impressoras`;
+- implementar a task de alertas em cinco minutos;
+- implementar a cascata SNMP para HTML;
+- suportar múltiplos alertas ativos;
+- calcular a classificação geral da máquina;
 - 3.5.3: coleta rica em 60 minutos;
 - 3.5.4: papel, toner e históricos;
 - 3.5.5: dashboard.

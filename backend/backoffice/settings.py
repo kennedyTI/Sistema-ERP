@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     "backend.app.modules.printers.apps.PrintersConfig",
     "backend.app.modules.printers.machines.apps.PrinterMachinesConfig",
     "backend.app.modules.printers.status.apps.PrinterStatusConfig",
+    "backend.app.modules.printers.monitoring.state.apps.PrinterAlertRulesConfig",
 ]
 
 
@@ -119,6 +120,7 @@ MIGRATION_MODULES = {
     "impressoras": None,
     "printer_machines": None,
     "printer_status": None,
+    "printer_alert_rules": None,
 }
 
 
