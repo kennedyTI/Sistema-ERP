@@ -93,7 +93,9 @@ class PrinterLogAdminModel(models.Model):
     criado_em = models.DateTimeField("CRIADO EM")
 
     class Meta:
-        app_label = "printer_status"
+        # O log operacional pertence visualmente ao cadastro de Impressoras no
+        # Admin. A tabela continua gerida pelo Alembic e permanece somente leitura.
+        app_label = "printer_machines"
         managed = False
         db_table = "logs_impressoras"
         verbose_name = "Log de impressora"
