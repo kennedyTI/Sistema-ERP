@@ -78,6 +78,7 @@ class AdminPolicyTest(TestCase):
         admin = PrinterLogAdmin(PrinterLogAdminModel, AdminSite())
         request = RequestStub()
 
+        self.assertEqual(PrinterLogAdminModel._meta.app_label, "printer_machines")
         self.assertIsInstance(admin, ReadOnlyAdminMixin)
         self.assertFalse(admin.has_add_permission(request))
         self.assertFalse(admin.has_change_permission(request))
@@ -116,7 +117,7 @@ class AdminGroupsPolicyTest(TestCase):
             permissions["printer_status"],
             {
                 "view_printerstatusadminmodel",
-                "view_printerlogadminmodel",
+                "view_printerstatushistoryadminmodel",
             },
         )
 

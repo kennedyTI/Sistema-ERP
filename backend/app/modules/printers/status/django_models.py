@@ -21,6 +21,12 @@ class PrinterStatusAdminModel(models.Model):
     ultimo_sucesso_em = models.DateTimeField("ULTIMO SUCESSO", null=True, blank=True)
     ultima_falha_em = models.DateTimeField("ULTIMA FALHA", null=True, blank=True)
     tempo_resposta_ms = models.IntegerField("TEMPO DE RESPOSTA (MS)", null=True, blank=True)
+    metodo_confirmacao = models.CharField(
+        "METODO DE CONFIRMACAO",
+        max_length=20,
+        null=True,
+        blank=True,
+    )
     origem = models.CharField("ORIGEM", max_length=40)
     resposta_bruta = models.TextField("RESPOSTA BRUTA", null=True, blank=True)
     criado_em = models.DateTimeField("CRIADO EM", null=True, blank=True)
@@ -35,6 +41,35 @@ class PrinterStatusAdminModel(models.Model):
 
     def __str__(self):
         return f"{self.maquina} - {self.status_operacional}"
+
+
+class PrinterStatusHistoryAdminModel(models.Model):
+    id = models.AutoField(primary_key=True)
+    maquina = models.ForeignKey(
+        PrinterMachineAdminModel,
+        db_column="maquina_id",
+        on_delete=models.DO_NOTHING,
+        related_name="historico_status_confirmado",
+    )
+    status_anterior = models.CharField("STATUS ANTERIOR", max_length=20)
+    status_novo = models.CharField("STATUS NOVO", max_length=20)
+    metodo_confirmacao = models.CharField("METODO DE CONFIRMACAO", max_length=20)
+    codigo_evento = models.CharField("CODIGO DO EVENTO", max_length=40)
+    descricao_evento = models.CharField("DESCRICAO DO EVENTO", max_length=255)
+    detalhes = models.JSONField("DETALHES")
+    latencia_ms = models.IntegerField("LATENCIA (MS)", null=True, blank=True)
+    verificado_em = models.DateTimeField("VERIFICADO EM")
+    criado_em = models.DateTimeField("CRIADO EM")
+
+    class Meta:
+        app_label = "printer_status"
+        managed = False
+        db_table = "historico_status_impressoras"
+        verbose_name = "Historico de status de impressora"
+        verbose_name_plural = "Historico de status de impressoras"
+
+    def __str__(self):
+        return f"{self.maquina} - {self.status_anterior} -> {self.status_novo}"
 
 
 class PrinterLogAdminModel(models.Model):
@@ -58,7 +93,9 @@ class PrinterLogAdminModel(models.Model):
     criado_em = models.DateTimeField("CRIADO EM")
 
     class Meta:
-        app_label = "printer_status"
+        # O log operacional pertence visualmente ao cadastro de Impressoras no
+        # Admin. A tabela continua gerida pelo Alembic e permanece somente leitura.
+        app_label = "printer_machines"
         managed = False
         db_table = "logs_impressoras"
         verbose_name = "Log de impressora"

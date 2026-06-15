@@ -23,6 +23,21 @@ services:
     networks:
       - portal_industria_net
 
+  redis:
+    image: redis:8.0-alpine
+    container_name: portal_industria_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - portal_industria_net
+
   migrations:
     build:
       context: .
@@ -92,6 +107,69 @@ services:
     networks:
       - portal_industria_net
 
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal_industria_celery_worker
+    restart: unless-stopped
+    user: "10001:10001"
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    command: >
+      celery -A backend.app.core.celery_app.celery_app worker
+      --loglevel=info
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A backend.app.core.celery_app.celery_app inspect ping --timeout=5 | grep -q pong",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - .:/app
+    networks:
+      - portal_industria_net
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portal_industria_celery_beat
+    restart: unless-stopped
+    user: "10001:10001"
+    env_file:
+      - .env.docker
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      celery-worker:
+        condition: service_healthy
+    command: >
+      celery -A backend.app.core.celery_app.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    volumes:
+      - .:/app
+    networks:
+      - portal_industria_net
+
   frontend:
     build:
       context: .
@@ -150,4 +228,5 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
   frontend_node_modules:

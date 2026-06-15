@@ -170,7 +170,7 @@ def read_machine_details(
     status_read = None
     if status is not None:
         status_read = StatusOperacionalResumo(
-            status=status.status_operacional,
+            status="online" if status.status_operacional == "online" else "offline",
             alerta=status.mensagem_alerta,
             mensagem=status.mensagem_operador,
             ultima_verificacao_em=status.ultima_verificacao_em,

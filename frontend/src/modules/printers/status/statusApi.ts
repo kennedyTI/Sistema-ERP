@@ -1,7 +1,8 @@
 import { getStoredToken } from "@/modules/auth/authStorage";
 import { buildApiUrl } from "@/shared/lib/api-url";
 
-export type OperationalStatus = "desconhecido" | "online" | "offline" | "erro";
+export type OperationalStatus = "online" | "offline";
+export type ConfirmationMethod = "icmp" | "tcp" | "snmp" | "html" | "fallback";
 export type AlertLevel = "cinza" | "verde" | "amarelo" | "vermelho";
 
 export interface PrinterOperationalStatus {
@@ -21,6 +22,7 @@ export interface PrinterOperationalStatus {
   ultimo_sucesso_em: string | null;
   ultima_falha_em: string | null;
   tempo_resposta_ms: number | null;
+  metodo_confirmacao: ConfirmationMethod | null;
   origem: "sistema" | "manual" | "seed" | "futuro_snmp";
   resposta_bruta: string | null;
 }

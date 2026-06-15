@@ -52,6 +52,11 @@ class PrinterMachine(Base):
         back_populates="maquina",
         cascade="all, delete-orphan",
     )
+    historico_status = relationship(
+        "HistoricoStatusImpressora",
+        back_populates="maquina",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def manufacturer(self) -> str | None:

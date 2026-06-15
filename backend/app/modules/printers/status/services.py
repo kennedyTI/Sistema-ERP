@@ -49,7 +49,7 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
         url_imagem=machine.printer_model.url_imagem if machine.printer_model else None,
         sector=machine.sector,
         cost_center=machine.cost_center,
-        status_operacional=status.status_operacional,
+        status_operacional="online" if status.status_operacional == "online" else "offline",
         nivel_alerta=status.nivel_alerta,
         mensagem_alerta=status.mensagem_alerta,
         mensagem_operador=status.mensagem_operador,
@@ -57,6 +57,7 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
         ultimo_sucesso_em=status.ultimo_sucesso_em,
         ultima_falha_em=status.ultima_falha_em,
         tempo_resposta_ms=status.tempo_resposta_ms,
+        metodo_confirmacao=status.metodo_confirmacao,
         origem=status.origem,
         resposta_bruta=status.resposta_bruta,
     )
@@ -91,7 +92,7 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
     return PrinterStatusSummary(
         total_impressoras=len(statuses),
         online=sum(status.status_operacional == "online" for status in statuses),
-        offline=sum(status.status_operacional == "offline" for status in statuses),
+        offline=sum(status.status_operacional != "online" for status in statuses),
         com_alerta=sum(status.nivel_alerta in {"amarelo", "vermelho"} for status in statuses),
         # Regra transitória até existir um domínio próprio para suprimentos.
         substituir_toner=sum(
