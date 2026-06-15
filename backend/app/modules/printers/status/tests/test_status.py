@@ -72,7 +72,7 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["manufacturer"], "Fabricante Exemplo")
         self.assertEqual(data["model"], "Modelo Exemplo")
         self.assertEqual(data["url_imagem"], "/static/imgs/printers/modelo-exemplo.png")
-        self.assertEqual(data["status_operacional"], "desconhecido")
+        self.assertEqual(data["status_operacional"], "offline")
         self.assertEqual(data["nivel_alerta"], "cinza")
         self.assertEqual(data["mensagem_operador"], "Aguardando primeira verificacao.")
         self.assertEqual(data["origem"], "sistema")
@@ -127,7 +127,7 @@ class PrinterStatusApiTest(TestCase):
         )
         self.assertEqual(summary_response.status_code, 200)
         self.assertEqual(summary_response.json()["data"]["total_impressoras"], 1)
-        self.assertEqual(summary_response.json()["data"]["offline"], 0)
+        self.assertEqual(summary_response.json()["data"]["offline"], 1)
         self.assertEqual(summary_response.json()["data"]["com_alerta"], 0)
 
     def test_resumo_operacional_calcula_cards(self):

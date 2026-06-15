@@ -22,10 +22,16 @@ import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
 
 const statusLabels = {
-  desconhecido: "Desconhecido",
   online: "Online",
   offline: "Offline",
-  erro: "Erro",
+} as const;
+
+const methodLabels = {
+  icmp: "ICMP",
+  tcp: "TCP",
+  snmp: "SNMP",
+  html: "HTML/HTTP",
+  fallback: "Fallback",
 } as const;
 
 const alertDotStyles = {
@@ -188,6 +194,14 @@ export function StatusDetailsDialog({
                     label="Tempo de resposta"
                     value={
                       current.tempo_resposta_ms === null ? null : `${current.tempo_resposta_ms} ms`
+                    }
+                  />
+                  <Detail
+                    label="Método de confirmação"
+                    value={
+                      current.metodo_confirmacao
+                        ? methodLabels[current.metodo_confirmacao]
+                        : null
                     }
                   />
                   <Detail label="Origem" value={current.origem} />

@@ -154,7 +154,7 @@ class PrinterMachinesApiTest(TestCase):
         data = response.json()["dados"]
         self.assertEqual(data["maquina"]["url_imagem"], self.model.url_imagem)
         self.assertEqual(data["modelo_dados"]["modelo"], self.model.name)
-        self.assertEqual(data["status_operacional"]["status"], "desconhecido")
+        self.assertEqual(data["status_operacional"]["status"], "offline")
         self.assertEqual(data["logs_recentes"][0]["mensagem"], "Evento ficticio")
         self.assertEqual(
             data["acoes"],

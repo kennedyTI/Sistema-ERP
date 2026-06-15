@@ -21,6 +21,7 @@ A plataforma já contém:
 - frontend React/Vite com rotas protegidas;
 - infraestrutura Docker Compose;
 - proxy reverso Nginx com HTTPS local;
+- Redis e Celery para conectividade assíncrona de impressoras;
 - módulo Impressoras em evolução incremental.
 
 O módulo Impressoras é o primeiro domínio operacional do sistema. Ele já possui cadastro de máquinas, status operacional, permissões granulares, imagens de modelos, auditoria cadastral e interface responsiva.
@@ -67,6 +68,9 @@ No módulo Impressoras, a versão atual resolve problemas como:
 - listagem completa, sem paginação;
 - máquinas ativas e inativas na tela Máquinas;
 - status operacional apenas para máquinas ativas;
+- conectividade automática a cada 60 segundos;
+- confirmação em cascata por ICMP, TCP, SNMP e HTML/HTTP;
+- histórico de mudanças confirmadas online/offline;
 - modal único de consulta e edição;
 - toggle Ativo/Inativo sem reload;
 - validação por campo;
@@ -104,6 +108,9 @@ postgres
 | `sistema_erp_admin`      | Django Admin                             |
 | `sistema_erp_postgres`   | Banco PostgreSQL                         |
 | `sistema_erp_migrations` | Execução das migrations e seeds iniciais |
+| `portal_industria_redis` | Broker, cache transitório e locks de conectividade |
+| `portal_industria_celery_worker` | Execução das coletas de conectividade |
+| `portal_industria_celery_beat` | Agendamento do ciclo global de 60 segundos |
 
 ### Regras arquiteturais importantes
 
@@ -130,6 +137,9 @@ postgres
 - PostgreSQL;
 - JWT;
 - Pytest.
+- Redis;
+- Celery;
+- PySNMP.
 
 ### Frontend
 
@@ -400,7 +410,11 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 | Etapa 2 | Cadastro de Máquinas | Concluída |
 | Etapa 3 | Status e Dashboard | Parcial: Status concluído; Dashboard real pendente |
 | Etapa 4 | Papel, Toner e Histórico | Não iniciada |
-| Etapa 5 | Monitoramento automático, SNMP, Redis/Celery e Alertas | Não iniciada |
+| Etapa 3.5.1 | Conectividade 60s com Redis/Celery e histórico confirmado | Em desenvolvimento |
+| Etapa 3.5.2 | Alertas e estado da máquina em 5min | Não iniciada |
+| Etapa 3.5.3 | Coleta rica em 60min | Não iniciada |
+| Etapa 3.5.4 | Papel, toner e históricos | Não iniciada |
+| Etapa 3.5.5 | Dashboard operacional | Não iniciada |
 
 ### Próximas frentes planejadas
 
@@ -412,8 +426,8 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 - alertas;
 - integração Protheus;
 - integração GLPI;
-- monitoramento automático com SNMP;
-- Redis/Celery para rotinas assíncronas;
+- alertas operacionais em ciclos de cinco minutos;
+- coleta rica de informações em ciclos de 60 minutos;
 - assistente Telegram em etapa futura.
 
 ### Branches planejadas para evolução futura

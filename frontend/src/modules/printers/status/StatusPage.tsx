@@ -32,17 +32,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shar
 import { cn } from "@/shared/lib/utils";
 
 const statusLabels: Record<OperationalStatus, string> = {
-  desconhecido: "Desconhecido",
   online: "Online",
   offline: "Offline",
-  erro: "Erro",
 };
 
 const statusStyles: Record<OperationalStatus, string> = {
-  desconhecido: "border-muted-foreground/30 bg-muted text-muted-foreground",
   online: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
   offline: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
-  erro: "border-orange-500/30 bg-orange-500/12 text-orange-700 dark:text-orange-300",
 };
 
 const alertPriority: Record<AlertLevel, number> = {

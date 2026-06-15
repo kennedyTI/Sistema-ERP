@@ -6,9 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
-StatusOperacional = Literal["desconhecido", "online", "offline", "erro"]
+StatusOperacional = Literal["online", "offline"]
 NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
 OrigemStatus = Literal["sistema", "manual", "seed", "futuro_snmp"]
+MetodoConfirmacao = Literal["icmp", "tcp", "snmp", "html", "fallback"]
 
 
 class PrinterStatusRead(BaseModel):
@@ -30,6 +31,7 @@ class PrinterStatusRead(BaseModel):
     ultimo_sucesso_em: datetime | None = None
     ultima_falha_em: datetime | None = None
     tempo_resposta_ms: int | None = None
+    metodo_confirmacao: MetodoConfirmacao | None = None
     origem: OrigemStatus
     resposta_bruta: str | None = None
 
