@@ -7,4 +7,4 @@ class PrinterAlertRulesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "backend.app.modules.printers.monitoring.state"
     label = "printer_alert_rules"
-    verbose_name = "Configuracao de impressoras"
+    verbose_name = "Alertas de impressoras"
