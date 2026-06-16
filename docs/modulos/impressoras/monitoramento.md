@@ -239,13 +239,78 @@ modelo da maquina
 As configuracoes podem ser administradas no Django Admin pela Equipe Tecnica.
 O grupo Operador nao recebe permissoes administrativas para OIDs.
 
+## Etapa 3.5.2.1a - Diagnostico SNMP real dos alertas
+
+Esta etapa adiciona um script manual para descobrir, com evidencia de rede real,
+como cada modelo entrega alertas brutos via SNMP. O objetivo e responder se a
+metrica `alert_raw` funciona como um GET unico ou se algum modelo exige WALK em
+uma base de alertas para enxergar multiplos alertas ativos.
+
+O script fica em:
+
+```bash
+backend/pyteste/diagnostico_snmp_alertas.py
+```
+
+Ele nao roda automaticamente no `pytest` e nao faz parte da coleta operacional.
+Para evitar execucao acidental em impressoras reais, sem `--confirmar` ele faz
+apenas dry-run:
+
+```bash
+python backend/pyteste/diagnostico_snmp_alertas.py
+```
+
+Execucao real, quando a rede e a community SNMP estiverem disponiveis:
+
+```bash
+python backend/pyteste/diagnostico_snmp_alertas.py --confirmar
+python backend/pyteste/diagnostico_snmp_alertas.py --confirmar --modelo "Brother DCP-L1632W"
+python backend/pyteste/diagnostico_snmp_alertas.py --confirmar --maquina-id 12
+```
+
+O script descobre dinamicamente os modelos com OID ativo `alert_raw` em
+`oids_snmp_impressoras` e seleciona, por padrao, uma maquina ativa por modelo.
+Antes de consultar SNMP, ele verifica se a maquina esta online reaproveitando a
+cascata de conectividade da 3.5.1. Maquinas offline ou sem maquina ativa sao
+registradas como ignoradas.
+
+Consultas comparadas:
+
+- GET no OID `alert_raw` configurado;
+- WALK em `prtAlertDescription` (`1.3.6.1.2.1.43.18.1.1.8`);
+- WALK em `hrPrinterStatus` (`1.3.6.1.2.1.25.3.5.1.1`);
+- WALK em `hrPrinterDetectedErrorState` (`1.3.6.1.2.1.25.3.5.1.2`).
+
+Cada valor SNMP e salvo em forma bruta, incluindo tipo, string, `repr`, tamanho,
+hex quando houver bytes e decodificacoes possiveis. A Rules Engine nao e usada
+como transformacao principal nesta etapa.
+
+Arquivos gerados por execucao confirmada:
+
+```text
+tmp/diagnosticos/snmp_alertas/diagnostico_snmp_alertas_YYYYMMDD_HHMMSS.json
+tmp/diagnosticos/snmp_alertas/diagnostico_snmp_alertas_YYYYMMDD_HHMMSS.md
+```
+
+A pasta `tmp/` e ignorada pelo Git. Os relatorios podem conter IPs, nomes de
+maquinas e valores brutos retornados pelos equipamentos; por isso nao devem ser
+versionados. O script sanitiza a community SNMP e nao registra senhas,
+credenciais, tokens, cookies ou headers sensiveis.
+
+O resultado deste diagnostico deve orientar a 3.5.2.2:
+
+- manter GET para modelos em que `alert_raw` seja suficiente;
+- introduzir modo WALK para modelos em que `prtAlertDescription` exponha
+  multiplos alertas uteis.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
 toner, papel, coleta rica, dashboard, Protheus, Telegram ou tabela detalhada de
 tentativas. A etapa 3.5.2.1 tambem nao implementa fallback HTML/HTTP de
 alertas, endpoint publico, frontend, coleta real SNMP ou tabelas de alertas
-ativos e historico.
+ativos e historico. A etapa 3.5.2.1a tambem nao altera modelagem, nao adiciona
+`modo_consulta` e nao grava resultado operacional no banco.
 
 ## Próximas etapas
 
