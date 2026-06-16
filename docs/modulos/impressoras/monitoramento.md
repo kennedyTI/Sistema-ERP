@@ -141,18 +141,119 @@ As regras podem ser consultadas e administradas pelo Django Admin conforme as
 permissões padrão. A Equipe Técnica recebe as permissões administrativas; o
 grupo Operador não recebe permissão de edição.
 
+## Etapa 3.5.2.1 - Configuracao SNMP/OIDs
+
+Esta microetapa porta da v1 a base de configuracao de OIDs por modelo e
+metrica. A entrega prepara a proxima etapa de alertas via SNMP, mas ainda nao
+consulta equipamentos reais, nao cria alertas ativos e nao altera a tela Status.
+
+### Tabela de configuracao
+
+O Alembic administra a tabela `configuracoes_oids_impressoras`, com os campos:
+
+- `id`;
+- `modelo_id`;
+- `chave_metrica`;
+- `oid`;
+- `tipo_valor`;
+- `versao_snmp`;
+- `ativo`;
+- `criado_em`;
+- `atualizado_em`.
+
+`modelo_id` referencia a tabela existente `printers_models`. Nao foi criada
+nenhuma tabela paralela de modelos.
+
+A constraint unica `modelo_id + chave_metrica` evita duplicidade. Tambem foram
+criados indices para `modelo_id`, `chave_metrica`, `ativo` e para a combinacao
+`modelo_id + chave_metrica`.
+
+### Seed idempotente
+
+O seed oficial sincroniza OIDs seguros para os modelos auditados na v1:
+
+- Brother DCP-L1632W;
+- Brother DCP-L2540DW;
+- Canon IR-C3326I;
+- HP MFP-4303;
+- Samsung K-4350.
+
+As metricas iniciais sao:
+
+- `alert_raw`;
+- `name`;
+- `location`;
+- `page_count_total`.
+
+Na v1 havia o alias historico `page_count` apontando para o mesmo contador de
+`page_count_total`. Na v2 desta microetapa foi mantida apenas a chave canonica
+`page_count_total`, para respeitar a constraint por modelo e metrica sem criar
+duplicidade.
+
+Se um modelo do seed ainda nao existir no banco local, a linha e ignorada e a
+execucao continua. O seed nao contem IPs, nomes de maquinas, community SNMP,
+dados reais ou arquivos locais.
+
+Os OIDs privados de toner abaixo seguem fora do seed ativo porque foram
+invalidados na auditoria da v1:
+
+- `DCP-L1632W / toner_black`:
+  `1.3.6.1.4.1.2435.2.3.9.4.2.1.5.5.52.31.1.2.1`;
+- `DCP-L2540DW / toner_black`:
+  `1.3.6.1.4.1.2435.2.3.9.4.2.1.3.3.1.11.0`.
+
+Execucao manual:
+
+```bash
+python backend/scripts/seed_printer_snmp_oids.py
+```
+
+### Service interno
+
+O service `backend.app.modules.printers.monitoring.snmp.oids` permite:
+
+- buscar OID ativo por `modelo_id + chave_metrica`;
+- listar OIDs ativos de um modelo;
+- ignorar OIDs inativos;
+- retornar `None` quando a metrica nao existe.
+
+Exemplo de uso futuro:
+
+```python
+oid_config = get_active_oid_for_model(
+    db,
+    model_id=model_id,
+    metric_key="alert_raw",
+)
+```
+
+O fluxo planejado para a proxima etapa sera:
+
+```text
+modelo da maquina
+-> buscar OID ativo alert_raw
+-> tentar SNMP
+-> aplicar regras_alertas_impressoras
+```
+
+As configuracoes podem ser administradas no Django Admin pela Equipe Tecnica.
+O grupo Operador nao recebe permissoes administrativas para OIDs.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
 toner, papel, coleta rica, dashboard, Protheus, Telegram ou tabela detalhada de
-tentativas. Também não foram criadas as tabelas de alertas ativos e histórico.
+tentativas. A etapa 3.5.2.1 tambem nao implementa fallback HTML/HTTP de
+alertas, endpoint publico, frontend, coleta real SNMP ou tabelas de alertas
+ativos e historico.
 
 ## Próximas etapas
 
 - criar `alertas_impressoras`;
 - criar `historico_alertas_impressoras`;
 - implementar a task de alertas em cinco minutos;
-- implementar a cascata SNMP para HTML;
+- implementar a coleta SNMP de `alert_raw`;
+- implementar fallback HTML/HTTP posterior;
 - suportar múltiplos alertas ativos;
 - calcular a classificação geral da máquina;
 - 3.5.3: coleta rica em 60 minutos;

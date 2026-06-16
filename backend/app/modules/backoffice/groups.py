@@ -23,6 +23,7 @@ GROUPS = {
             "impressoras": PERMISSOES_EQUIPE_TECNICA,
             "printer_machines": "all",
             "printer_alert_rules": "all",
+            "printer_snmp_oids": "all",
             "printer_status": {
                 "view_printerstatusadminmodel",
                 "view_printerstatushistoryadminmodel",

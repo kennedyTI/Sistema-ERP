@@ -54,6 +54,7 @@ services:
       sh -c "python docker/scripts/create_schemas.py
       && alembic -c backend/alembic.ini upgrade head
       && python backend/scripts/seed_printer_alert_rules.py
+      && python backend/scripts/seed_printer_snmp_oids.py
       && python manage.py migrate --noinput
       && python manage.py seed_admin_groups"
     volumes:

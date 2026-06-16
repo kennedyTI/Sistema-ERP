@@ -114,6 +114,7 @@ class AdminGroupsPolicyTest(TestCase):
         self.assertEqual(permissions["impressoras"], PERMISSOES_EQUIPE_TECNICA)
         self.assertEqual(permissions["printer_machines"], "all")
         self.assertEqual(permissions["printer_alert_rules"], "all")
+        self.assertEqual(permissions["printer_snmp_oids"], "all")
         self.assertEqual(
             permissions["printer_status"],
             {

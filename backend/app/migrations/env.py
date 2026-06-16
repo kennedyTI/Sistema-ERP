@@ -11,6 +11,7 @@ from backend.app.core.database import Base, DATABASE_URL, OPERATIONS_SCHEMA
 from backend.app.modules.audit.orm import AuditLog  # noqa: F401
 from backend.app.modules.audit.orm import Log  # noqa: F401
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel  # noqa: F401
+from backend.app.modules.printers.monitoring.snmp.models import PrinterSnmpOid  # noqa: F401
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule  # noqa: F401
 from backend.app.modules.printers.status.models import (  # noqa: F401
     HistoricoStatusImpressora,

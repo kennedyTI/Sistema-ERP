@@ -82,3 +82,28 @@ docker compose --env-file .env.docker exec api python backend/scripts/seed_print
 ```
 
 O servico `migrations` tambem executa este seed depois do Alembic.
+
+## Seed oficial de configuracoes SNMP/OIDs
+
+O script `seed_printer_snmp_oids.py` sincroniza os OIDs seguros iniciais na
+tabela `configuracoes_oids_impressoras`. Ele usa somente modelo e fabricante,
+nao recebe arquivos locais, nao executa coleta em equipamentos reais e nao
+armazena community SNMP, IPs ou dados sensiveis.
+
+O seed e idempotente: cria OIDs ausentes por `modelo_id + chave_metrica`,
+atualiza campos controlados quando ja existem e ignora modelos que ainda nao
+foram cadastrados localmente.
+
+Execucao no host:
+
+```powershell
+python backend/scripts/seed_printer_snmp_oids.py
+```
+
+Execucao via container:
+
+```powershell
+docker compose --env-file .env.docker exec api python backend/scripts/seed_printer_snmp_oids.py
+```
+
+O servico `migrations` executa este seed depois do seed de regras de alertas.
