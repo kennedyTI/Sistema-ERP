@@ -149,7 +149,7 @@ consulta equipamentos reais, nao cria alertas ativos e nao altera a tela Status.
 
 ### Tabela de configuracao
 
-O Alembic administra a tabela `configuracoes_oids_impressoras`, com os campos:
+O Alembic administra a tabela `oids_snmp_impressoras`, com os campos:
 
 - `id`;
 - `modelo_id`;

@@ -102,7 +102,7 @@ class PrinterSnmpOidSeedTest(TestCase):
     def test_modelo_declara_tabela_colunas_constraints_e_indices(self):
         self.assertEqual(
             PrinterSnmpOid.__tablename__,
-            "configuracoes_oids_impressoras",
+            "oids_snmp_impressoras",
         )
         self.assertEqual(
             set(PrinterSnmpOid.__table__.columns.keys()),
@@ -119,16 +119,16 @@ class PrinterSnmpOidSeedTest(TestCase):
             },
         )
         self.assertIn(
-            "uq_configuracoes_oids_impressoras_modelo_metrica",
+            "uq_oids_snmp_impressoras_modelo_metrica",
             {constraint.name for constraint in PrinterSnmpOid.__table__.constraints},
         )
         self.assertEqual(
             {index.name for index in PrinterSnmpOid.__table__.indexes},
             {
-                "ix_configuracoes_oids_impressoras_modelo_id",
-                "ix_configuracoes_oids_impressoras_chave_metrica",
-                "ix_configuracoes_oids_impressoras_ativo",
-                "ix_configuracoes_oids_impressoras_modelo_metrica",
+                "ix_oids_snmp_impressoras_modelo_id",
+                "ix_oids_snmp_impressoras_chave_metrica",
+                "ix_oids_snmp_impressoras_ativo",
+                "ix_oids_snmp_impressoras_modelo_metrica",
             },
         )
 
@@ -335,10 +335,10 @@ class PrinterSnmpOidAdminTest(TestCase):
         technical_request = RequestStub(
             PermissionUserStub(
                 {
-                    "printer_snmp_oids.add_printersnmpoidadminmodel",
-                    "printer_snmp_oids.change_printersnmpoidadminmodel",
-                    "printer_snmp_oids.delete_printersnmpoidadminmodel",
-                    "printer_snmp_oids.view_printersnmpoidadminmodel",
+                    "printer_machines.add_printersnmpoidadminmodel",
+                    "printer_machines.change_printersnmpoidadminmodel",
+                    "printer_machines.delete_printersnmpoidadminmodel",
+                    "printer_machines.view_printersnmpoidadminmodel",
                 }
             )
         )
@@ -350,5 +350,10 @@ class PrinterSnmpOidAdminTest(TestCase):
         self.assertFalse(model_admin.has_delete_permission(operator_request))
         self.assertEqual(
             PrinterSnmpOidAdminModel._meta.db_table,
-            "configuracoes_oids_impressoras",
+            "oids_snmp_impressoras",
+        )
+        self.assertEqual(PrinterSnmpOidAdminModel._meta.app_label, "printer_machines")
+        self.assertEqual(
+            PrinterSnmpOidAdminModel._meta.verbose_name_plural,
+            "OIDs_SNMP_IMPRESSORAS",
         )

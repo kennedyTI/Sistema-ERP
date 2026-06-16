@@ -46,11 +46,11 @@ class PrinterSnmpOidAdminModel(models.Model):
     atualizado_em = models.DateTimeField("ATUALIZADO EM")
 
     class Meta:
-        app_label = "printer_snmp_oids"
+        app_label = "printer_machines"
         managed = False
-        db_table = "configuracoes_oids_impressoras"
-        verbose_name = "Configuracao de OID SNMP"
-        verbose_name_plural = "Configuracoes de OIDs SNMP"
+        db_table = "oids_snmp_impressoras"
+        verbose_name = "OID_SNMP_IMPRESSORA"
+        verbose_name_plural = "OIDs_SNMP_IMPRESSORAS"
         unique_together = (("modelo", "chave_metrica"),)
 
     def __str__(self):

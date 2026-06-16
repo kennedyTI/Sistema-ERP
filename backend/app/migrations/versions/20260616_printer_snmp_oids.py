@@ -17,7 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "configuracoes_oids_impressoras",
+        "oids_snmp_impressoras",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("modelo_id", sa.Integer(), nullable=False),
         sa.Column("chave_metrica", sa.String(length=80), nullable=False),
@@ -54,64 +54,64 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "chave_metrica IN ('alert_raw', 'name', 'location', 'page_count_total')",
-            name="ck_configuracoes_oids_impressoras_chave_metrica",
+            name="ck_oids_snmp_impressoras_chave_metrica",
         ),
         sa.CheckConstraint(
             "tipo_valor IN ('string', 'integer', 'counter', 'gauge', 'boolean')",
-            name="ck_configuracoes_oids_impressoras_tipo_valor",
+            name="ck_oids_snmp_impressoras_tipo_valor",
         ),
         sa.CheckConstraint(
             "versao_snmp IN ('1', '2c')",
-            name="ck_configuracoes_oids_impressoras_versao_snmp",
+            name="ck_oids_snmp_impressoras_versao_snmp",
         ),
         sa.ForeignKeyConstraint(
             ["modelo_id"],
             ["printers_models.id"],
-            name="fk_configuracoes_oids_impressoras_modelo_id",
+            name="fk_oids_snmp_impressoras_modelo_id",
         ),
         sa.UniqueConstraint(
             "modelo_id",
             "chave_metrica",
-            name="uq_configuracoes_oids_impressoras_modelo_metrica",
+            name="uq_oids_snmp_impressoras_modelo_metrica",
         ),
     )
     op.create_index(
-        "ix_configuracoes_oids_impressoras_modelo_id",
-        "configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_modelo_id",
+        "oids_snmp_impressoras",
         ["modelo_id"],
     )
     op.create_index(
-        "ix_configuracoes_oids_impressoras_chave_metrica",
-        "configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_chave_metrica",
+        "oids_snmp_impressoras",
         ["chave_metrica"],
     )
     op.create_index(
-        "ix_configuracoes_oids_impressoras_ativo",
-        "configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_ativo",
+        "oids_snmp_impressoras",
         ["ativo"],
     )
     op.create_index(
-        "ix_configuracoes_oids_impressoras_modelo_metrica",
-        "configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_modelo_metrica",
+        "oids_snmp_impressoras",
         ["modelo_id", "chave_metrica"],
     )
 
 
 def downgrade() -> None:
     op.drop_index(
-        "ix_configuracoes_oids_impressoras_modelo_metrica",
-        table_name="configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_modelo_metrica",
+        table_name="oids_snmp_impressoras",
     )
     op.drop_index(
-        "ix_configuracoes_oids_impressoras_ativo",
-        table_name="configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_ativo",
+        table_name="oids_snmp_impressoras",
     )
     op.drop_index(
-        "ix_configuracoes_oids_impressoras_chave_metrica",
-        table_name="configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_chave_metrica",
+        table_name="oids_snmp_impressoras",
     )
     op.drop_index(
-        "ix_configuracoes_oids_impressoras_modelo_id",
-        table_name="configuracoes_oids_impressoras",
+        "ix_oids_snmp_impressoras_modelo_id",
+        table_name="oids_snmp_impressoras",
     )
-    op.drop_table("configuracoes_oids_impressoras")
+    op.drop_table("oids_snmp_impressoras")

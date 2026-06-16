@@ -31,30 +31,30 @@ def _sql_values(values: tuple[str, ...]) -> str:
 # A tabela define quais OIDs ativos podem ser usados por modelo e metrica.
 # Ela nao executa coleta, nao armazena leitura e nao representa historico.
 class PrinterSnmpOid(Base):
-    __tablename__ = "configuracoes_oids_impressoras"
+    __tablename__ = "oids_snmp_impressoras"
     __table_args__ = (
         UniqueConstraint(
             "modelo_id",
             "chave_metrica",
-            name="uq_configuracoes_oids_impressoras_modelo_metrica",
+            name="uq_oids_snmp_impressoras_modelo_metrica",
         ),
         CheckConstraint(
             f"chave_metrica IN ({_sql_values(ALLOWED_METRIC_KEYS)})",
-            name="ck_configuracoes_oids_impressoras_chave_metrica",
+            name="ck_oids_snmp_impressoras_chave_metrica",
         ),
         CheckConstraint(
             f"tipo_valor IN ({_sql_values(ALLOWED_VALUE_TYPES)})",
-            name="ck_configuracoes_oids_impressoras_tipo_valor",
+            name="ck_oids_snmp_impressoras_tipo_valor",
         ),
         CheckConstraint(
             f"versao_snmp IN ({_sql_values(ALLOWED_SNMP_VERSIONS)})",
-            name="ck_configuracoes_oids_impressoras_versao_snmp",
+            name="ck_oids_snmp_impressoras_versao_snmp",
         ),
-        Index("ix_configuracoes_oids_impressoras_modelo_id", "modelo_id"),
-        Index("ix_configuracoes_oids_impressoras_chave_metrica", "chave_metrica"),
-        Index("ix_configuracoes_oids_impressoras_ativo", "ativo"),
+        Index("ix_oids_snmp_impressoras_modelo_id", "modelo_id"),
+        Index("ix_oids_snmp_impressoras_chave_metrica", "chave_metrica"),
+        Index("ix_oids_snmp_impressoras_ativo", "ativo"),
         Index(
-            "ix_configuracoes_oids_impressoras_modelo_metrica",
+            "ix_oids_snmp_impressoras_modelo_metrica",
             "modelo_id",
             "chave_metrica",
         ),

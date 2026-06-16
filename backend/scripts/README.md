@@ -86,7 +86,7 @@ O servico `migrations` tambem executa este seed depois do Alembic.
 ## Seed oficial de configuracoes SNMP/OIDs
 
 O script `seed_printer_snmp_oids.py` sincroniza os OIDs seguros iniciais na
-tabela `configuracoes_oids_impressoras`. Ele usa somente modelo e fabricante,
+tabela `oids_snmp_impressoras`. Ele usa somente modelo e fabricante,
 nao recebe arquivos locais, nao executa coleta em equipamentos reais e nao
 armazena community SNMP, IPs ou dados sensiveis.
 
