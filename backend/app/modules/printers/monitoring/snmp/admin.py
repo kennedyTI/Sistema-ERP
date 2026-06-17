@@ -22,10 +22,11 @@ class PrinterSnmpOidAdmin(AuditLogAdminMixin, admin.ModelAdmin):
         "oid",
         "tipo_valor",
         "versao_snmp",
+        "modo_consulta",
         "ativo",
     )
     list_display_links = ("id", "modelo", "chave_metrica")
-    list_filter = ("modelo", "chave_metrica", "versao_snmp", "ativo")
+    list_filter = ("modelo", "chave_metrica", "versao_snmp", "modo_consulta", "ativo")
     search_fields = (
         "oid",
         "chave_metrica",

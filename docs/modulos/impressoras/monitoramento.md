@@ -157,6 +157,7 @@ O Alembic administra a tabela `oids_snmp_impressoras`, com os campos:
 - `oid`;
 - `tipo_valor`;
 - `versao_snmp`;
+- `modo_consulta`;
 - `ativo`;
 - `criado_em`;
 - `atualizado_em`.
@@ -215,7 +216,8 @@ O service `backend.app.modules.printers.monitoring.snmp.oids` permite:
 - buscar OID ativo por `modelo_id + chave_metrica`;
 - listar OIDs ativos de um modelo;
 - ignorar OIDs inativos;
-- retornar `None` quando a metrica nao existe.
+- retornar `None` quando a metrica nao existe;
+- serializar `modo_consulta` para uso interno futuro.
 
 Exemplo de uso futuro:
 
@@ -303,6 +305,65 @@ O resultado deste diagnostico deve orientar a 3.5.2.2:
 - introduzir modo WALK para modelos em que `prtAlertDescription` exponha
   multiplos alertas uteis.
 
+## Etapa 3.5.2.1b - Modo de consulta dos OIDs SNMP
+
+Esta microetapa adiciona o campo obrigatorio `modo_consulta` na tabela
+`oids_snmp_impressoras`. A decisao veio do diagnostico real da 3.5.2.1a, que
+mostrou que alguns modelos respondem bem com GET em um OID exato, enquanto
+outros precisam ou podem precisar de WALK para capturar multiplos alertas.
+
+Valores permitidos:
+
+- `get`: consulta um OID exato e espera um valor de origem;
+- `walk`: consulta uma base OID e pode retornar multiplos OIDs filhos.
+
+O valor padrao para registros existentes e `get`. As metricas escalares seguem
+sempre com `get`:
+
+- `name`;
+- `location`;
+- `page_count_total`.
+
+Para `alert_raw`, a configuracao inicial ficou:
+
+| Modelo | modo_consulta | Observacao |
+| --- | --- | --- |
+| Brother DCP-L1632W | `get` | GET suficiente no diagnostico |
+| Brother DCP-L2540DW | `walk` | WALK necessario para multiplos alertas |
+| Canon IR-C3326I | `walk` | WALK pode ser necessario; configurado por seguranca |
+| HP MFP-4303 | `get` | GET suficiente no diagnostico |
+| Samsung K-4350 | `get` | GET suficiente no diagnostico |
+
+Quando `alert_raw` usa `walk` com Printer-MIB, o OID salvo deve ser a base
+`1.3.6.1.2.1.43.18.1.1.8`, e nao uma instancia especifica como
+`1.3.6.1.2.1.43.18.1.1.8.1.1`. Para modelos configurados como `get`, o OID
+continua sendo o OID exato validado.
+
+Decisoes funcionais registradas para a 3.5.2.2:
+
+1. GET sera usado para metricas escalares.
+2. WALK sera usado quando o diagnostico indicar risco ou necessidade de
+   multiplos alertas.
+3. O service futuro deve retornar lista de alertas, mesmo quando a origem for
+   GET.
+4. Resposta vazia de alerta nao sera classificada automaticamente como
+   OK/verde.
+5. Resposta vazia sera tratada como cinza/inconclusivo na coleta futura.
+6. `unknown` sera cinza.
+7. `unknown` nao e falha de coleta.
+8. `unknown` representa mensagem recebida, mas nao catalogada em
+   `regras_alertas_impressoras`.
+9. Falha de coleta representa erro tecnico de comunicacao, timeout, OID
+   invalido, community invalida ou ausencia de resposta.
+10. Mensagem `unknown` devera ser registrada futuramente em
+    `historico_alertas_impressoras` quando aparecer pela primeira vez para
+    aquele modelo de maquina.
+
+A 3.5.2.2 ainda nao deve persistir alertas. Ela deve apenas coletar
+`alert_raw`, aplicar regras e devolver resultado operacional controlado. A
+persistencia em `alertas_impressoras` e `historico_alertas_impressoras` fica
+reservada para a 3.5.2.3.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -310,7 +371,9 @@ toner, papel, coleta rica, dashboard, Protheus, Telegram ou tabela detalhada de
 tentativas. A etapa 3.5.2.1 tambem nao implementa fallback HTML/HTTP de
 alertas, endpoint publico, frontend, coleta real SNMP ou tabelas de alertas
 ativos e historico. A etapa 3.5.2.1a tambem nao altera modelagem, nao adiciona
-`modo_consulta` e nao grava resultado operacional no banco.
+`modo_consulta` e nao grava resultado operacional no banco. A etapa 3.5.2.1b
+adiciona apenas a configuracao GET/WALK dos OIDs e nao implementa coleta
+oficial, Celery, frontend ou persistencia de alertas.
 
 ## Próximas etapas
 

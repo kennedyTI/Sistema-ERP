@@ -41,6 +41,11 @@ class PrinterSnmpOidAdminModel(models.Model):
         max_length=10,
         choices=(("1", "1"), ("2c", "2c")),
     )
+    modo_consulta = models.CharField(
+        "MODO CONSULTA",
+        max_length=10,
+        choices=(("get", "get"), ("walk", "walk")),
+    )
     ativo = models.BooleanField("ATIVO", default=True)
     criado_em = models.DateTimeField("CRIADO EM")
     atualizado_em = models.DateTimeField("ATUALIZADO EM")

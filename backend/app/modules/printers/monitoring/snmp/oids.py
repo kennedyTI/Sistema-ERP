@@ -50,5 +50,6 @@ def oid_to_dict(oid_config: PrinterSnmpOid) -> dict:
         "oid": oid_config.oid,
         "tipo_valor": oid_config.tipo_valor,
         "versao_snmp": oid_config.versao_snmp,
+        "modo_consulta": oid_config.modo_consulta,
         "ativo": oid_config.ativo,
     }

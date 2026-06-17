@@ -19,6 +19,7 @@ from backend.app.core.timezone import now_sao_paulo
 ALLOWED_METRIC_KEYS = ("alert_raw", "name", "location", "page_count_total")
 ALLOWED_VALUE_TYPES = ("string", "integer", "counter", "gauge", "boolean")
 ALLOWED_SNMP_VERSIONS = ("1", "2c")
+ALLOWED_QUERY_MODES = ("get", "walk")
 
 
 def _sql_values(values: tuple[str, ...]) -> str:
@@ -50,6 +51,10 @@ class PrinterSnmpOid(Base):
             f"versao_snmp IN ({_sql_values(ALLOWED_SNMP_VERSIONS)})",
             name="ck_oids_snmp_impressoras_versao_snmp",
         ),
+        CheckConstraint(
+            f"modo_consulta IN ({_sql_values(ALLOWED_QUERY_MODES)})",
+            name="ck_oids_snmp_impressoras_modo_consulta",
+        ),
         Index("ix_oids_snmp_impressoras_modelo_id", "modelo_id"),
         Index("ix_oids_snmp_impressoras_chave_metrica", "chave_metrica"),
         Index("ix_oids_snmp_impressoras_ativo", "ativo"),
@@ -70,6 +75,7 @@ class PrinterSnmpOid(Base):
     oid = Column(String(255), nullable=False)
     tipo_valor = Column(String(30), nullable=False, default="string")
     versao_snmp = Column(String(10), nullable=False, default="2c")
+    modo_consulta = Column(String(10), nullable=False, default="get")
     ativo = Column(Boolean, nullable=False, default=True)
     criado_em = Column(DateTime, nullable=False, default=now_sao_paulo)
     atualizado_em = Column(

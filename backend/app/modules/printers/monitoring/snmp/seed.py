@@ -18,11 +18,14 @@ from backend.app.modules.printers.status.models import (  # noqa: F401
 )
 from backend.app.modules.printers.monitoring.snmp.models import (
     ALLOWED_METRIC_KEYS,
+    ALLOWED_QUERY_MODES,
     ALLOWED_SNMP_VERSIONS,
     ALLOWED_VALUE_TYPES,
     PrinterSnmpOid,
 )
 
+
+PRT_ALERT_DESCRIPTION_BASE_OID = "1.3.6.1.2.1.43.18.1.1.8"
 
 INITIAL_SNMP_OIDS = (
     {
@@ -30,10 +33,14 @@ INITIAL_SNMP_OIDS = (
         "modelo": "DCP-L1632W",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.43.18.1.1.8.1.1", "string"),
-            "name": ("1.3.6.1.2.1.1.5.0", "string"),
-            "location": ("1.3.6.1.2.1.1.6.0", "string"),
-            "page_count_total": ("1.3.6.1.2.1.43.10.2.1.4.1.1", "counter"),
+            "alert_raw": ("1.3.6.1.2.1.43.18.1.1.8.1.1", "string", "get"),
+            "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
+            "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
+            "page_count_total": (
+                "1.3.6.1.2.1.43.10.2.1.4.1.1",
+                "counter",
+                "get",
+            ),
         },
     },
     {
@@ -41,10 +48,14 @@ INITIAL_SNMP_OIDS = (
         "modelo": "DCP-L2540DW",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.43.18.1.1.8.1.1", "string"),
-            "name": ("1.3.6.1.2.1.1.5.0", "string"),
-            "location": ("1.3.6.1.2.1.1.6.0", "string"),
-            "page_count_total": ("1.3.6.1.2.1.43.10.2.1.4.1.1", "counter"),
+            "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
+            "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
+            "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
+            "page_count_total": (
+                "1.3.6.1.2.1.43.10.2.1.4.1.1",
+                "counter",
+                "get",
+            ),
         },
     },
     {
@@ -52,10 +63,14 @@ INITIAL_SNMP_OIDS = (
         "modelo": "IR-C3326I",
         "versao_snmp": "1",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.43.18.1.1.8.1.1", "string"),
-            "name": ("1.3.6.1.2.1.1.5.0", "string"),
-            "location": ("1.3.6.1.2.1.1.6.0", "string"),
-            "page_count_total": ("1.3.6.1.2.1.43.10.2.1.4.1.1", "counter"),
+            "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
+            "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
+            "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
+            "page_count_total": (
+                "1.3.6.1.2.1.43.10.2.1.4.1.1",
+                "counter",
+                "get",
+            ),
         },
     },
     {
@@ -63,10 +78,14 @@ INITIAL_SNMP_OIDS = (
         "modelo": "MFP-4303",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string"),
-            "name": ("1.3.6.1.2.1.1.5.0", "string"),
-            "location": ("1.3.6.1.2.1.1.6.0", "string"),
-            "page_count_total": ("1.3.6.1.2.1.43.10.2.1.4.1.1", "counter"),
+            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string", "get"),
+            "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
+            "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
+            "page_count_total": (
+                "1.3.6.1.2.1.43.10.2.1.4.1.1",
+                "counter",
+                "get",
+            ),
         },
     },
     {
@@ -74,10 +93,14 @@ INITIAL_SNMP_OIDS = (
         "modelo": "K-4350",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string"),
-            "name": ("1.3.6.1.2.1.1.5.0", "string"),
-            "location": ("1.3.6.1.2.1.1.6.0", "string"),
-            "page_count_total": ("1.3.6.1.2.1.43.10.2.1.4.1.1", "counter"),
+            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string", "get"),
+            "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
+            "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
+            "page_count_total": (
+                "1.3.6.1.2.1.43.10.2.1.4.1.1",
+                "counter",
+                "get",
+            ),
         },
     },
 )
@@ -132,7 +155,8 @@ def iter_seed_entries(items: Iterable[dict] = INITIAL_SNMP_OIDS) -> list[dict]:
         versao_snmp = str(item.get("versao_snmp") or "2c").strip()
 
         for chave_metrica, metric_data in item["metricas"].items():
-            oid, tipo_valor = metric_data
+            oid, tipo_valor, *modo_consulta_data = metric_data
+            modo_consulta = modo_consulta_data[0] if modo_consulta_data else "get"
             entries.append(
                 {
                     "fabricante": fabricante,
@@ -141,6 +165,7 @@ def iter_seed_entries(items: Iterable[dict] = INITIAL_SNMP_OIDS) -> list[dict]:
                     "oid": str(oid).strip(),
                     "tipo_valor": str(tipo_valor).strip(),
                     "versao_snmp": versao_snmp,
+                    "modo_consulta": str(modo_consulta).strip(),
                     "ativo": True,
                 }
             )
@@ -154,6 +179,8 @@ def _validate_entry(entry: dict) -> None:
         raise ValueError(f"tipo_valor invalido: {entry['tipo_valor']}")
     if entry["versao_snmp"] not in ALLOWED_SNMP_VERSIONS:
         raise ValueError(f"versao_snmp invalida: {entry['versao_snmp']}")
+    if entry["modo_consulta"] not in ALLOWED_QUERY_MODES:
+        raise ValueError(f"modo_consulta invalido: {entry['modo_consulta']}")
     if not entry["oid"]:
         raise ValueError("oid ausente")
 
@@ -232,6 +259,7 @@ def seed_printer_snmp_oids(
             "oid": entry["oid"],
             "tipo_valor": entry["tipo_valor"],
             "versao_snmp": entry["versao_snmp"],
+            "modo_consulta": entry["modo_consulta"],
             "ativo": bool(entry.get("ativo", True)),
         }
 
