@@ -377,6 +377,99 @@ A 3.5.2.2 ainda nao deve persistir alertas. Ela deve apenas coletar
 persistencia em `alertas_impressoras` e `historico_alertas_impressoras` fica
 reservada para a 3.5.2.3.
 
+## Etapa 3.5.2.2 - Coleta SNMP de alert_raw
+
+Esta microetapa cria o service oficial de coleta SNMP de `alert_raw`. A coleta
+usa a configuracao existente em `oids_snmp_impressoras`, respeita
+`modo_consulta`, aplica a Rules Engine de `regras_alertas_impressoras` e retorna
+um resultado operacional em memoria. Ela ainda nao cria endpoint publico, nao
+altera a tela Status e nao persiste alertas.
+
+Fluxo da coleta:
+
+```text
+maquina ativa e online
+-> identifica modelo
+-> busca OID ativo alert_raw
+-> verifica modo_consulta
+-> executa SNMP GET ou WALK
+-> preserva retorno bruto
+-> aplica Rules Engine
+-> retorna lista de alertas normalizados
+-> calcula classificacao geral
+```
+
+O `alert_raw` da v2 usa `walk` na base `1.3.6.1.2.1.43.18.1.1.8`.
+Mesmo assim, o service respeita `modo_consulta` para manter o contrato tecnico:
+
+- `get`: retorna lista com 0 ou 1 item;
+- `walk`: retorna lista com 0, 1 ou varios itens.
+
+O retorno bruto preserva, quando disponivel:
+
+- `oid_retornado`;
+- `valor_original`;
+- `valor_repr`;
+- `tipo_snmp`;
+- `valor_bytes_hex`.
+
+Classificacao visual:
+
+| Severidade/regra | Classificacao |
+| --- | --- |
+| `green` | `verde` |
+| `low` / `medium` | `amarelo` |
+| `high` | `vermelho` |
+| `unknown` | `cinza` |
+| sem retorno util | `cinza` |
+
+Quando houver multiplos alertas, a classificacao geral usa a pior situacao
+conhecida:
+
+```text
+vermelho > amarelo > cinza > verde
+```
+
+Casos controlados:
+
+- `unknown`: a impressora respondeu uma mensagem, mas nenhuma regra catalogada
+  reconheceu o texto. O resultado e cinza e nao representa falha tecnica.
+- `sem_retorno_alerta`: SNMP respondeu, mas GET/WALK nao retornou valor util de
+  alerta. O resultado e cinza/inconclusivo e nao deve virar OK/verde
+  automaticamente.
+- falha tecnica: timeout, sem resposta, community invalida, OID invalido, erro
+  de conexao ou erro inesperado do cliente SNMP. A falha tecnica retorna
+  `sucesso=false` e nao vira `unknown`.
+
+Validacoes antes da coleta:
+
+- maquina inexistente;
+- maquina inativa;
+- maquina sem IP;
+- maquina sem modelo;
+- maquina sabidamente offline pelo status atual;
+- modelo sem OID ativo `alert_raw`.
+
+A community SNMP vem da configuracao de ambiente e nao e retornada em JSON,
+logs ou erros serializados. Detalhes tecnicos devem ser sanitizados.
+
+Persistencia:
+
+- esta etapa nao cria `alertas_impressoras`;
+- esta etapa nao cria `historico_alertas_impressoras`;
+- a persistencia fica para a 3.5.2.3.
+
+Na etapa futura, mensagens `unknown` deverao ser registradas em
+`historico_alertas_impressoras` somente quando aparecerem pela primeira vez para
+aquele modelo. A chave conceitual sera:
+
+```text
+modelo_id + mensagem_original_normalizada
+```
+
+O fallback HTML/HTTP autenticado fica para etapa posterior. As credenciais HTML
+deverao ser criptografadas no banco quando esse fallback for implementado.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -386,7 +479,10 @@ alertas, endpoint publico, frontend, coleta real SNMP ou tabelas de alertas
 ativos e historico. A etapa 3.5.2.1a tambem nao altera modelagem, nao adiciona
 `modo_consulta` e nao grava resultado operacional no banco. A etapa 3.5.2.1b
 adiciona apenas a configuracao GET/WALK dos OIDs e nao implementa coleta
-oficial, Celery, frontend ou persistencia de alertas.
+oficial, Celery, frontend ou persistencia de alertas. A etapa 3.5.2.2 cria
+apenas o service interno de coleta SNMP de `alert_raw`; ela nao cria task
+Celery, endpoint publico, frontend, fallback HTML/HTTP, toner, papel, dashboard
+ou persistencia de alertas.
 
 ## Próximas etapas
 
