@@ -15,6 +15,7 @@ class PrinterAlertRuleAdminModel(models.Model):
             ("low", "Low"),
             ("medium", "Medium"),
             ("high", "High"),
+            ("unknown", "Unknown"),
         ),
     )
     tipo_regra = models.CharField(

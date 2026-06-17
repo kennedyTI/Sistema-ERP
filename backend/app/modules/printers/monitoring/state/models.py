@@ -23,7 +23,7 @@ class PrinterAlertRule(Base):
     __tablename__ = "regras_alertas_impressoras"
     __table_args__ = (
         CheckConstraint(
-            "severidade IN ('green', 'low', 'medium', 'high')",
+            "severidade IN ('green', 'low', 'medium', 'high', 'unknown')",
             name="ck_regras_alertas_impressoras_severidade",
         ),
         CheckConstraint(

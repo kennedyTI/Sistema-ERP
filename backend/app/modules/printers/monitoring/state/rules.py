@@ -13,7 +13,7 @@ from backend.app.modules.printers.monitoring.state.models import PrinterAlertRul
 
 
 ALLOWED_RULE_TYPES = {"contains", "equals", "regex"}
-ALLOWED_SEVERITIES = {"green", "low", "medium", "high"}
+ALLOWED_SEVERITIES = {"green", "low", "medium", "high", "unknown"}
 
 
 # ---------------------------------------------------------------------

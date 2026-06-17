@@ -107,6 +107,7 @@ INSTALLED_APPS = [
     "backend.app.modules.printers.status.apps.PrinterStatusConfig",
     "backend.app.modules.printers.monitoring.snmp.apps.PrinterSnmpOidsConfig",
     "backend.app.modules.printers.monitoring.state.apps.PrinterAlertRulesConfig",
+    "backend.app.modules.printers.monitoring.alerts.apps.PrinterAlertsConfig",
 ]
 
 
@@ -123,6 +124,7 @@ MIGRATION_MODULES = {
     "printer_status": None,
     "printer_snmp_oids": None,
     "printer_alert_rules": None,
+    "printer_alerts": None,
 }
 
 

@@ -114,6 +114,8 @@ class AlertRuleSeedTest(TestCase):
                 "sleep",
                 "ok",
                 "unknown",
+                "sem_retorno_alerta",
+                "falha_coleta_alertas",
             },
         )
 
@@ -288,7 +290,7 @@ class AlertRulesEngineTest(TestCase):
         )
 
         self.assertEqual(result["codigo"], "unknown")
-        self.assertEqual(result["severidade"], "medium")
+        self.assertEqual(result["severidade"], "unknown")
         self.assertFalse(result["reconhecido"])
 
     def test_mensagem_original_e_preservada(self):

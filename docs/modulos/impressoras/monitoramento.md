@@ -104,7 +104,7 @@ O Alembic administra a tabela `regras_alertas_impressoras`, com os campos:
 - `criado_em`;
 - `atualizado_em`.
 
-O seed oficial é idempotente: cria as 16 regras iniciais quando ausentes e
+O seed oficial é idempotente: cria as 18 regras iniciais quando ausentes e
 atualiza seus campos controlados quando já existem. A execução ocorre no serviço
 de migrations e também pode ser feita manualmente:
 
@@ -128,14 +128,15 @@ As severidades persistidas continuam compatíveis com a v1:
 - `green`;
 - `low`;
 - `medium`;
-- `high`.
+- `high`;
+- `unknown`.
 
 Na apresentação visual futura, `green` será convertido em verde, `low` e
-`medium` em amarelo, e `high` em vermelho. Essa conversão ainda não integra a
-tela Status.
+`medium` em amarelo, `high` em vermelho e `unknown` em cinza. Essa conversão
+ainda não integra a tela Status.
 
 Quando nenhuma regra reconhece a mensagem, a Rules Engine retorna `unknown`,
-com severidade `medium`, e preserva a mensagem original para diagnóstico.
+com severidade `unknown`, e preserva a mensagem original para diagnóstico.
 
 As regras podem ser consultadas e administradas pelo Django Admin conforme as
 permissões padrão. A Equipe Técnica recebe as permissões administrativas; o
@@ -470,6 +471,220 @@ modelo_id + mensagem_original_normalizada
 O fallback HTML/HTTP autenticado fica para etapa posterior. As credenciais HTML
 deverao ser criptografadas no banco quando esse fallback for implementado.
 
+## Etapa 3.5.2.3 - Persistencia de alertas atuais e historico
+
+Esta microetapa adiciona a persistencia do resultado consolidado da coleta de
+alertas. Ela usa o retorno ja produzido por `collect_snmp_alerts_for_machine`,
+nao cria endpoint publico, nao cria frontend, nao cria task Celery e ainda nao
+implementa fallback HTML/HTTP.
+
+### Estado atual e historico
+
+Foram criadas duas tabelas fisicas:
+
+- `alertas_impressoras`: fotografia atual consolidada dos alertas da maquina;
+- `historico_alertas_impressoras`: eventos relevantes derivados da mudanca de
+  classificacao geral ou de unknown novo por modelo.
+
+A decisao segue o mesmo conceito de `historico_status_impressoras`: o historico
+nao registra toda tentativa de coleta. Ele registra somente transicoes
+confirmadas ou eventos que precisam de auditoria tecnica.
+
+### Tabela alertas_impressoras
+
+Campos principais:
+
+- `maquina_id`;
+- `regra_alerta_id`, obrigatorio;
+- `oid_snmp_id`, nullable para suportar HTML futuro;
+- `mensagem_original`;
+- `mensagem_original_normalizada`;
+- `origem_coleta`;
+- `metodo_confirmacao`;
+- `metodo_coleta`;
+- `oid_retornado`;
+- `chave_alerta`;
+- `verificado_em`;
+- `criado_em`;
+- `atualizado_em`.
+
+A constraint `UNIQUE(maquina_id, chave_alerta)` evita duplicidade e permite que
+o service sincronize alertas ativos sem apagar registros de outra origem por
+engano.
+
+### Tabela historico_alertas_impressoras
+
+Campos principais:
+
+- `maquina_id`;
+- `regra_alerta_id`;
+- `oid_snmp_id`;
+- `codigo_alerta`;
+- `severidade`;
+- `classificacao_anterior`;
+- `classificacao_nova`;
+- `origem_coleta`;
+- `metodo_confirmacao`;
+- `metodo_coleta`;
+- `oid_retornado`;
+- `chave_alerta`;
+- `mensagem_original`;
+- `mensagem_original_normalizada`;
+- `codigo_evento`;
+- `descricao_evento`;
+- `detalhes`;
+- `verificado_em`;
+- `criado_em`.
+
+O historico salva snapshot minimo da regra (`codigo_alerta` e `severidade`) para
+preservar o significado do evento mesmo se uma regra for editada futuramente.
+O campo `detalhes` e gerado pelo codigo e deve conter apenas dados sanitizados.
+
+Eventos permitidos nesta etapa:
+
+- `estado_inicial_alerta`;
+- `classificacao_alterada`;
+- `alerta_nao_catalogado`.
+
+### Valores controlados
+
+`origem_coleta` aceita:
+
+- `snmp`;
+- `html`;
+- `sistema`.
+
+`metodo_coleta` aceita:
+
+- `get`;
+- `walk`;
+- `html_autenticado`;
+- `cascata`.
+
+`metodo_confirmacao` aceita:
+
+- `snmp_get`;
+- `snmp_walk`;
+- `html_autenticado`;
+- `falha_cascata`.
+
+### Classificacao geral
+
+A classificacao geral continua usando a pior situacao conhecida:
+
+```text
+vermelho > amarelo > cinza > verde
+```
+
+Mapeamento visual:
+
+| Severidade/regra | Classificacao |
+| --- | --- |
+| `green` | `verde` |
+| `low` / `medium` | `amarelo` |
+| `high` | `vermelho` |
+| `unknown` | `cinza` |
+| `sem_retorno_alerta` | `cinza` |
+
+### Regra de historico
+
+O historico e criado quando a classificacao geral muda:
+
+- `verde` para `amarelo`, `vermelho` ou `cinza`;
+- `amarelo` para `vermelho`, `verde` ou `cinza`;
+- `vermelho` para `verde`, `amarelo` ou `cinza`;
+- `cinza` para `verde`, `amarelo` ou `vermelho`.
+
+Quando a classificacao geral nao muda, nenhum historico e criado.
+
+Na primeira coleta da maquina, `estado_inicial_alerta` e criado somente quando a
+classificacao inicial for `amarelo`, `vermelho` ou `cinza`. Primeira coleta
+`verde` nao gera historico para evitar ruido.
+
+### Unknown novo por modelo
+
+Quando uma mensagem `unknown` aparece pela primeira vez para um modelo de
+maquina, o service cria o evento `alerta_nao_catalogado`.
+
+A chave conceitual e:
+
+```text
+modelo da maquina + mensagem_original_normalizada
+```
+
+O `modelo_id` nao e salvo no historico. O service obtem o modelo pela propria
+maquina. A mesma mensagem unknown em outra maquina do mesmo modelo nao gera
+evento repetido; a mesma mensagem em modelo diferente gera um novo evento.
+
+### Regras tecnicas garantidas
+
+O seed de `regras_alertas_impressoras` garante de forma idempotente:
+
+- `unknown`, severidade `unknown`, classificacao visual cinza;
+- `sem_retorno_alerta`, severidade `unknown`, classificacao visual cinza;
+- `falha_coleta_alertas`, severidade `high`, classificacao visual vermelha.
+
+### Sincronizacao
+
+O service `sync_machine_alerts_from_collection_result` recebe o resultado
+consolidado da coleta, gera `chave_alerta`, atualiza ou insere os alertas atuais
+da maquina, remove alertas que desapareceram da coleta atual e cria historico
+apenas quando houver evento relevante.
+
+Para SNMP, o OID retornado e validado:
+
+- `get`: `oid_retornado` deve ser igual ao OID configurado;
+- `walk`: `oid_retornado` deve ser filho da base configurada.
+
+OID retornado fora da base esperada vira falha tecnica consolidada, e nao alerta
+normal.
+
+### Tentativas e lock
+
+Enquanto HTML ainda nao existe, o orquestrador interno
+`collect_and_sync_machine_alerts` faz no maximo duas tentativas SNMP por maquina.
+Se ambas falharem, persiste `falha_coleta_alertas` com:
+
+- `origem_coleta = sistema`;
+- `metodo_coleta = cascata`;
+- `metodo_confirmacao = falha_cascata`.
+
+O lock por maquina usa o mesmo padrao Redis do monitoramento:
+
+```text
+printers:lock:alerts:machine:{maquina_id}
+```
+
+Isso evita escrita concorrente e historico duplicado para a mesma maquina.
+
+Quando o fallback HTML existir, a regra planejada passa a ser:
+
+```text
+1 tentativa SNMP
+1 tentativa HTML autenticado
+falha_coleta_alertas apenas se ambas falharem
+```
+
+### Admin
+
+`ALERTAS_IMPRESSORAS` e `HISTORICO_ALERTAS_IMPRESSORAS` ficam no grupo
+`IMPRESSORAS` do Django Admin e sao somente leitura. O usuario pode consultar,
+mas nao criar, editar ou excluir manualmente.
+
+### Fora desta microetapa
+
+Esta etapa nao cria:
+
+- tabela `tentativas_coleta_impressoras`;
+- API publica;
+- task Celery de 5 minutos;
+- frontend;
+- fallback HTML/HTTP;
+- credenciais HTML;
+- toner;
+- papel;
+- dashboard.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -482,17 +697,15 @@ adiciona apenas a configuracao GET/WALK dos OIDs e nao implementa coleta
 oficial, Celery, frontend ou persistencia de alertas. A etapa 3.5.2.2 cria
 apenas o service interno de coleta SNMP de `alert_raw`; ela nao cria task
 Celery, endpoint publico, frontend, fallback HTML/HTTP, toner, papel, dashboard
-ou persistencia de alertas.
+ou persistencia de alertas. A etapa 3.5.2.3 cria a persistencia de alertas
+atuais e historico, mas nao cria API publica, task Celery, frontend, fallback
+HTML/HTTP, toner, papel ou dashboard.
 
 ## Próximas etapas
 
-- criar `alertas_impressoras`;
-- criar `historico_alertas_impressoras`;
 - implementar a task de alertas em cinco minutos;
-- implementar a coleta SNMP de `alert_raw`;
 - implementar fallback HTML/HTTP posterior;
-- suportar múltiplos alertas ativos;
-- calcular a classificação geral da máquina;
+- expor consultas publicas dos alertas quando houver necessidade de frontend;
 - 3.5.3: coleta rica em 60 minutos;
 - 3.5.4: papel, toner e históricos;
 - 3.5.5: dashboard.
