@@ -301,21 +301,28 @@ credenciais, tokens, cookies ou headers sensiveis.
 
 O resultado deste diagnostico deve orientar a 3.5.2.2:
 
-- manter GET para modelos em que `alert_raw` seja suficiente;
-- introduzir modo WALK para modelos em que `prtAlertDescription` exponha
-  multiplos alertas uteis.
+- usar o diagnostico real como evidencia tecnica;
+- tratar `alert_raw` como metrica potencialmente multipla;
+- consolidar, na 3.5.2.1b, o uso de WALK na base `prtAlertDescription` para
+  todos os modelos do seed.
 
 ## Etapa 3.5.2.1b - Modo de consulta dos OIDs SNMP
 
 Esta microetapa adiciona o campo obrigatorio `modo_consulta` na tabela
-`oids_snmp_impressoras`. A decisao veio do diagnostico real da 3.5.2.1a, que
-mostrou que alguns modelos respondem bem com GET em um OID exato, enquanto
-outros precisam ou podem precisar de WALK para capturar multiplos alertas.
+`oids_snmp_impressoras`. A decisao veio do diagnostico real da 3.5.2.1a e de
+uma regra arquitetural da v2: `alert_raw` nao deve ser tratado como valor unico.
+
+Mesmo que um modelo tenha retornado apenas um valor no diagnostico atual, isso
+nao garante que ele seja incapaz de expor multiplos alertas em outro momento.
+Um GET em um OID exato, como `1.3.6.1.2.1.43.18.1.1.8.1.1`, nao descobre um
+segundo alerta em um OID irmao, como `1.3.6.1.2.1.43.18.1.1.8.1.2`. Por isso,
+todas as impressoras devem ser consideradas potencialmente capazes de evoluir
+para multiplos alertas.
 
 Valores permitidos:
 
 - `get`: consulta um OID exato e espera um valor de origem;
-- `walk`: consulta uma base OID e pode retornar multiplos OIDs filhos.
+- `walk`: consulta uma base OID e pode retornar 0, 1 ou varios OIDs filhos.
 
 O valor padrao para registros existentes e `get`. As metricas escalares seguem
 sempre com `get`:
@@ -324,38 +331,44 @@ sempre com `get`:
 - `location`;
 - `page_count_total`.
 
-Para `alert_raw`, a configuracao inicial ficou:
+Estrategia final por metrica:
 
-| Modelo | modo_consulta | Observacao |
-| --- | --- | --- |
-| Brother DCP-L1632W | `get` | GET suficiente no diagnostico |
-| Brother DCP-L2540DW | `walk` | WALK necessario para multiplos alertas |
-| Canon IR-C3326I | `walk` | WALK pode ser necessario; configurado por seguranca |
-| HP MFP-4303 | `get` | GET suficiente no diagnostico |
-| Samsung K-4350 | `get` | GET suficiente no diagnostico |
+| Metrica | modo_consulta |
+| --- | --- |
+| `name` | `get` |
+| `location` | `get` |
+| `page_count_total` | `get` |
+| `alert_raw` | `walk` |
 
-Quando `alert_raw` usa `walk` com Printer-MIB, o OID salvo deve ser a base
-`1.3.6.1.2.1.43.18.1.1.8`, e nao uma instancia especifica como
-`1.3.6.1.2.1.43.18.1.1.8.1.1`. Para modelos configurados como `get`, o OID
-continua sendo o OID exato validado.
+Para `alert_raw`, como o modo e `walk`, o OID salvo deve ser a base da coluna de
+alertas `1.3.6.1.2.1.43.18.1.1.8`, e nao uma instancia especifica como
+`1.3.6.1.2.1.43.18.1.1.8.1.1`.
+
+O seed aplica essa regra a todos os modelos iniciais:
+
+- Brother DCP-L1632W;
+- Brother DCP-L2540DW;
+- Canon IR-C3326I;
+- HP MFP-4303;
+- Samsung K-4350.
 
 Decisoes funcionais registradas para a 3.5.2.2:
 
 1. GET sera usado para metricas escalares.
-2. WALK sera usado quando o diagnostico indicar risco ou necessidade de
-   multiplos alertas.
-3. O service futuro deve retornar lista de alertas, mesmo quando a origem for
-   GET.
-4. Resposta vazia de alerta nao sera classificada automaticamente como
+2. WALK sera usado para `alert_raw`.
+3. O service futuro deve retornar lista de alertas.
+4. Para GET, a futura coleta deve embrulhar o retorno em lista com 0 ou 1 item.
+5. Para WALK, a futura coleta pode retornar lista com 0, 1 ou varios itens.
+6. Resposta vazia de alerta nao sera classificada automaticamente como
    OK/verde.
-5. Resposta vazia sera tratada como cinza/inconclusivo na coleta futura.
-6. `unknown` sera cinza.
-7. `unknown` nao e falha de coleta.
-8. `unknown` representa mensagem recebida, mas nao catalogada em
+7. Resposta vazia sera tratada como cinza/inconclusivo na coleta futura.
+8. `unknown` sera cinza.
+9. `unknown` nao e falha de coleta.
+10. `unknown` representa mensagem recebida, mas nao catalogada em
    `regras_alertas_impressoras`.
-9. Falha de coleta representa erro tecnico de comunicacao, timeout, OID
+11. Falha de coleta representa erro tecnico de comunicacao, timeout, OID
    invalido, community invalida ou ausencia de resposta.
-10. Mensagem `unknown` devera ser registrada futuramente em
+12. Mensagem `unknown` devera ser registrada futuramente em
     `historico_alertas_impressoras` quando aparecer pela primeira vez para
     aquele modelo de maquina.
 

@@ -25,6 +25,8 @@ from backend.app.modules.printers.monitoring.snmp.models import (
 )
 
 
+# alert_raw usa WALK nesta base porque GET em instancia exata nao descobre
+# multiplos alertas abaixo da mesma coluna Printer-MIB.
 PRT_ALERT_DESCRIPTION_BASE_OID = "1.3.6.1.2.1.43.18.1.1.8"
 
 INITIAL_SNMP_OIDS = (
@@ -33,7 +35,7 @@ INITIAL_SNMP_OIDS = (
         "modelo": "DCP-L1632W",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.43.18.1.1.8.1.1", "string", "get"),
+            "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
             "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
             "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
             "page_count_total": (
@@ -78,7 +80,7 @@ INITIAL_SNMP_OIDS = (
         "modelo": "MFP-4303",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string", "get"),
+            "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
             "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
             "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
             "page_count_total": (
@@ -93,7 +95,7 @@ INITIAL_SNMP_OIDS = (
         "modelo": "K-4350",
         "versao_snmp": "2c",
         "metricas": {
-            "alert_raw": ("1.3.6.1.2.1.25.3.5.1.1.1", "string", "get"),
+            "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
             "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
             "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
             "page_count_total": (

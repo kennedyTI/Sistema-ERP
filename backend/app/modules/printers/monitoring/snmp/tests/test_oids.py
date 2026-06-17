@@ -38,12 +38,14 @@ from backend.app.modules.printers.monitoring.snmp.seed import (  # noqa: E402
 
 
 APP_ROOT = Path(__file__).resolve().parents[5]
+PROJECT_ROOT = APP_ROOT.parents[1]
 QUERY_MODE_MIGRATION = (
     APP_ROOT
     / "migrations"
     / "versions"
     / "20260617_printer_snmp_oids_query_mode.py"
 )
+MONITORING_DOC = PROJECT_ROOT / "docs" / "modulos" / "impressoras" / "monitoramento.md"
 
 
 def seed_entry(
@@ -276,8 +278,8 @@ class PrinterSnmpOidSeedTest(TestCase):
 
         self.assertEqual(result.updated, 1)
         self.db.refresh(row)
-        self.assertEqual(row.oid, "1.3.6.1.2.1.43.18.1.1.8.1.1")
-        self.assertEqual(row.modo_consulta, "get")
+        self.assertEqual(row.oid, PRT_ALERT_DESCRIPTION_BASE_OID)
+        self.assertEqual(row.modo_consulta, "walk")
         self.assertTrue(row.ativo)
 
     def test_seed_define_modo_consulta_das_metricas_escalares_como_get(self):
@@ -292,21 +294,21 @@ class PrinterSnmpOidSeedTest(TestCase):
                 )
                 self.assertEqual(row.modo_consulta, "get")
 
-    def test_seed_define_modo_consulta_de_alert_raw_por_modelo(self):
+    def test_seed_define_alert_raw_como_walk_em_todos_os_modelos(self):
         seed_printer_snmp_oids(self.db)
 
-        expected_modes = {
-            ("Brother", "DCP-L1632W"): ("get", "1.3.6.1.2.1.43.18.1.1.8.1.1"),
-            ("Brother", "DCP-L2540DW"): ("walk", PRT_ALERT_DESCRIPTION_BASE_OID),
-            ("Canon", "IR-C3326I"): ("walk", PRT_ALERT_DESCRIPTION_BASE_OID),
-            ("HP", "MFP-4303"): ("get", "1.3.6.1.2.1.25.3.5.1.1.1"),
-            ("Samsung", "K-4350"): ("get", "1.3.6.1.2.1.25.3.5.1.1.1"),
-        }
+        expected_models = (
+            ("Brother", "DCP-L1632W"),
+            ("Brother", "DCP-L2540DW"),
+            ("Canon", "IR-C3326I"),
+            ("HP", "MFP-4303"),
+            ("Samsung", "K-4350"),
+        )
 
-        for (manufacturer, model_name), (query_mode, oid) in expected_modes.items():
+        for manufacturer, model_name in expected_models:
             row = self._oid_row(manufacturer, model_name, "alert_raw")
-            self.assertEqual(row.modo_consulta, query_mode)
-            self.assertEqual(row.oid, oid)
+            self.assertEqual(row.modo_consulta, "walk")
+            self.assertEqual(row.oid, PRT_ALERT_DESCRIPTION_BASE_OID)
 
     def test_seed_ignora_modelo_inexistente_sem_quebrar(self):
         result = seed_printer_snmp_oids(
@@ -494,3 +496,17 @@ class PrinterSnmpOidAdminTest(TestCase):
             PrinterSnmpOidAdminModel._meta.verbose_name_plural,
             "OIDs_SNMP_IMPRESSORAS",
         )
+
+
+class PrinterSnmpOidDocumentationTest(TestCase):
+    def test_documentacao_prepara_todas_as_impressoras_para_multiplos_alertas(self):
+        text = MONITORING_DOC.read_text(encoding="utf-8").casefold()
+        normalized_text = " ".join(text.split())
+
+        self.assertIn(
+            "todas as impressoras devem ser consideradas potencialmente capazes "
+            "de evoluir para multiplos alertas",
+            normalized_text,
+        )
+        self.assertIn("walk sera usado para `alert_raw`", normalized_text)
+        self.assertNotIn("incapaz de multiplos alertas", normalized_text)
