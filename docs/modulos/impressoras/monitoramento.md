@@ -685,6 +685,154 @@ Esta etapa nao cria:
 - papel;
 - dashboard.
 
+## Etapa 3.5.2.4 - Agendamento Celery dos alertas
+
+Esta microetapa agenda a coleta e persistencia de alertas em Celery Beat. Ela
+nao altera API publica, frontend, tela Status, fallback HTML/HTTP, toner, papel
+ou dashboard.
+
+### Verificacao da task 60s
+
+A task de conectividade/status da etapa 3.5.1 ja existia e foi mantida sem
+redesenho:
+
+- task: `printers_connectivity_all`;
+- schedule Beat: `printers-connectivity-every-60-seconds`;
+- periodicidade padrao: `60` segundos;
+- variavel: `PRINTER_CONNECTIVITY_INTERVAL_SECONDS`;
+- broker/result backend: Redis;
+- lock global: `printers:lock:connectivity:global`;
+- lock por maquina: `printers:lock:connectivity:machine:{maquina_id}`.
+
+Ela processa apenas maquinas ativas, atualiza `status_impressoras` quando ha
+estado confirmado e grava `historico_status_impressoras` somente quando ha
+transicao confirmada. O estado `offline_suspeito` continua apenas no Redis.
+
+### Task de alertas 5min
+
+Foi adicionada a task:
+
+```text
+printers_alerts_all
+```
+
+Schedule Beat:
+
+```text
+printers-alerts-every-5-minutes
+```
+
+Periodicidade padrao:
+
+```text
+300 segundos
+```
+
+Variavel:
+
+```text
+PRINTER_ALERTS_INTERVAL_SECONDS=300
+```
+
+A task abre uma sessao de banco, obtem Redis, aplica lock global e chama
+`run_alerts_batch`, que por sua vez chama o orquestrador ja existente
+`collect_and_sync_machine_alerts`.
+
+### Maquinas elegiveis
+
+O lote considera somente maquinas:
+
+- ativas;
+- com IP;
+- com modelo;
+- com OID `alert_raw` ativo;
+- que nao estejam `offline` em `status_impressoras`, quando esse status atual
+  estiver disponivel.
+
+Maquinas sem IP, sem modelo, sem OID ou offline entram no resumo como ignoradas.
+
+### Locks
+
+O lote de alertas usa lock global:
+
+```text
+printers:lock:alerts:global
+```
+
+Cada maquina continua usando o lock por maquina criado na etapa 3.5.2.3:
+
+```text
+printers:lock:alerts:machine:{maquina_id}
+```
+
+Esses locks evitam execucoes sobrepostas, escrita concorrente e historico
+duplicado.
+
+### Falhas e resumo
+
+Falha em uma maquina nao interrompe o lote. O erro e registrado de forma
+sanitizada no resumo e a task continua na proxima maquina.
+
+Resumo retornado:
+
+- `total_maquinas`;
+- `processadas`;
+- `ignoradas`;
+- `sucesso`;
+- `falha`;
+- `resultados`.
+
+O resumo nao inclui community SNMP, credenciais, tokens, cookies, headers
+sensiveis ou HTML bruto.
+
+### Tentativas e HTML futuro
+
+Enquanto HTML ainda nao existe, o fluxo de alertas usa ate duas tentativas SNMP
+por maquina. Se ambas falharem, `falha_coleta_alertas` e persistida como falha
+tecnica consolidada.
+
+Quando HTML autenticado for implementado, a estrategia planejada sera:
+
+```text
+1 tentativa SNMP
+1 tentativa HTML autenticado
+falha_coleta_alertas apenas se ambas falharem
+```
+
+### Comandos uteis
+
+Verificar worker:
+
+```bash
+docker compose --env-file .env.docker logs celery-worker
+```
+
+Verificar Beat:
+
+```bash
+docker compose --env-file .env.docker logs celery-beat
+```
+
+Inspecionar tasks registradas:
+
+```bash
+docker compose --env-file .env.docker exec celery-worker \
+  celery -A backend.app.core.celery_app.celery_app inspect registered
+```
+
+Executar task manualmente:
+
+```bash
+docker compose --env-file .env.docker exec celery-worker \
+  celery -A backend.app.core.celery_app.celery_app call printers_alerts_all
+```
+
+### Fora desta microetapa
+
+Esta etapa nao implementa fallback HTML/HTTP, credenciais HTML, API publica,
+frontend, dashboard, toner, papel, coleta rica ou tabela
+`tentativas_coleta_impressoras`.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -699,11 +847,12 @@ apenas o service interno de coleta SNMP de `alert_raw`; ela nao cria task
 Celery, endpoint publico, frontend, fallback HTML/HTTP, toner, papel, dashboard
 ou persistencia de alertas. A etapa 3.5.2.3 cria a persistencia de alertas
 atuais e historico, mas nao cria API publica, task Celery, frontend, fallback
-HTML/HTTP, toner, papel ou dashboard.
+HTML/HTTP, toner, papel ou dashboard. A etapa 3.5.2.4 agenda a task Celery de
+alertas em cinco minutos, sem criar API publica, frontend, fallback HTML/HTTP,
+toner, papel ou dashboard.
 
 ## Próximas etapas
 
-- implementar a task de alertas em cinco minutos;
 - implementar fallback HTML/HTTP posterior;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - 3.5.3: coleta rica em 60 minutos;

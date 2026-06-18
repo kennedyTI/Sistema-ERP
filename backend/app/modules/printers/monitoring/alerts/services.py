@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from redis import Redis
@@ -26,8 +27,10 @@ from backend.app.modules.printers.monitoring.snmp.alert_collector import (
 from backend.app.modules.printers.monitoring.snmp.oids import get_active_oid_for_model
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.monitoring.state.rules import normalize_text
+from backend.app.modules.printers.status.models import StatusImpressora
 
 
+logger = logging.getLogger(__name__)
 TECHNICAL_RULE_CODES = {
     "unknown": "Alerta nao catalogado",
     "sem_retorno_alerta": "Nenhuma mensagem de alerta foi retornada pela impressora",
@@ -35,6 +38,13 @@ TECHNICAL_RULE_CODES = {
 }
 DEFAULT_ALERT_LOCK_TTL_SECONDS = 120
 SNMP_ALERT_MAX_ATTEMPTS = 2
+ALERT_BATCH_IGNORED_REASONS = {
+    "sem_ip",
+    "sem_modelo",
+    "offline",
+    "sem_oid_alert_raw",
+    "lock_ativo",
+}
 
 
 def _rule_by_code(db: Session, code: str) -> PrinterAlertRule:
@@ -520,3 +530,120 @@ def collect_and_sync_machine_alerts(
         raise
     finally:
         release_lock(lock_key, token, client=redis_client)
+
+
+def _skip_reason_for_alerts(db: Session, machine: PrinterMachine) -> str | None:
+    if not machine.ip_address:
+        return "sem_ip"
+    if machine.model_id is None:
+        return "sem_modelo"
+
+    status = (
+        db.query(StatusImpressora)
+        .filter(StatusImpressora.maquina_id == machine.id)
+        .one_or_none()
+    )
+    if status is not None and status.status_operacional == "offline":
+        return "offline"
+
+    oid_config = get_active_oid_for_model(
+        db,
+        model_id=machine.model_id,
+        metric_key="alert_raw",
+    )
+    if oid_config is None:
+        return "sem_oid_alert_raw"
+
+    return None
+
+
+def _safe_alert_task_result(result: dict[str, Any]) -> dict[str, Any]:
+    safe_keys = {
+        "maquina_id",
+        "processada",
+        "motivo",
+        "sincronizado",
+        "classificacao_anterior",
+        "classificacao_nova",
+        "alertas_atuais",
+        "historico_criado",
+        "unknown_historicos_criados",
+        "falha_tecnica_consolidada",
+        "tentativas_snmp",
+        "erro_codigo",
+    }
+    return {key: result[key] for key in safe_keys if key in result}
+
+
+def run_alerts_batch(
+    db: Session,
+    *,
+    redis_client: Redis,
+    settings: MonitoringSettings | None = None,
+    collector: Callable[..., dict[str, Any]] = collect_and_sync_machine_alerts,
+) -> dict[str, Any]:
+    """Processa alertas de maquinas ativas e elegiveis."""
+    config = settings or get_monitoring_settings()
+    machines = (
+        db.query(PrinterMachine)
+        .filter(PrinterMachine.is_active.is_(True))
+        .order_by(PrinterMachine.id.asc())
+        .all()
+    )
+    results: list[dict[str, Any]] = []
+
+    for machine in machines:
+        skip_reason = _skip_reason_for_alerts(db, machine)
+        if skip_reason is not None:
+            results.append(
+                {
+                    "maquina_id": machine.id,
+                    "processada": False,
+                    "motivo": skip_reason,
+                }
+            )
+            continue
+
+        try:
+            result = collector(
+                db,
+                machine_id=machine.id,
+                redis_client=redis_client,
+                settings=config,
+            )
+        except Exception:
+            db.rollback()
+            logger.exception("Falha ao sincronizar alertas da maquina id=%s", machine.id)
+            result = {
+                "maquina_id": machine.id,
+                "processada": False,
+                "motivo": "erro_processamento",
+            }
+
+        results.append(_safe_alert_task_result(result))
+
+    processadas = sum(result.get("processada") is True for result in results)
+    ignoradas = sum(
+        result.get("processada") is False
+        and result.get("motivo") in ALERT_BATCH_IGNORED_REASONS
+        for result in results
+    )
+    falha = sum(
+        result.get("motivo") == "erro_processamento"
+        or result.get("falha_tecnica_consolidada") is True
+        for result in results
+    )
+
+    return {
+        "total_maquinas": len(machines),
+        "processadas": processadas,
+        "ignoradas": ignoradas,
+        "sucesso": sum(
+            result.get("processada") is True
+            and result.get("sincronizado") is True
+            and result.get("falha_tecnica_consolidada") is not True
+            for result in results
+        ),
+        "falha": falha,
+        "resultados": results,
+    }
