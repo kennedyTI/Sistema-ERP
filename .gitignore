@@ -33,6 +33,7 @@ backend/.env.*
 backend/scripts/*.local.json
 backend/scripts/*.local.csv
 backend/scripts/*.local.xlsx
+backend/*.url
 
 # Logs
 *.log

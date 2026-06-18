@@ -1120,6 +1120,130 @@ SNMP + HTML falharam -> falha_coleta_alertas / vermelho.
 
 Esta microetapa nao ativa esse fluxo ainda.
 
+## Etapa 3.5.2.7 - Parser HTML da pagina de status por modelo
+
+Esta microetapa cria o parser interno da pagina HTML de status, com suporte
+inicial ao modelo Brother DCP-L1632W e a pagina `/home/status.html`. Ela apenas
+transforma o HTML autenticado recebido em um resultado normalizado em memoria.
+Nao ha persistencia, API publica, frontend, task Celery nova ou integracao na
+cascata SNMP -> HTML nesta etapa.
+
+### Entrada e saida
+
+O parser recebe uma string HTML ja obtida pelo cliente HTML seguro. Ele nao faz
+request HTTP, nao depende de IP, nao acessa banco e nao usa senha.
+
+A saida e um DTO interno com:
+
+- `sucesso`;
+- `modelo_nome`;
+- `fabricante`;
+- `mensagens_brutas`;
+- `mensagens_normalizadas`;
+- `estado_principal`;
+- `erro_codigo`;
+- `erro_detalhe_sanitizado`;
+- `metadados`.
+
+Exemplo de sucesso:
+
+```json
+{
+  "sucesso": true,
+  "modelo_nome": "DCP-L1632W",
+  "fabricante": "Brother",
+  "mensagens_brutas": ["Em espera"],
+  "mensagens_normalizadas": ["em espera"],
+  "estado_principal": "Em espera",
+  "erro_codigo": null,
+  "erro_detalhe_sanitizado": null,
+  "metadados": {
+    "parser": "brother_dcp_l1632w_status",
+    "origem": "html_status"
+  }
+}
+```
+
+Exemplo de falha controlada:
+
+```json
+{
+  "sucesso": false,
+  "mensagens_brutas": [],
+  "mensagens_normalizadas": [],
+  "estado_principal": null,
+  "erro_codigo": "html_status_nao_encontrado",
+  "erro_detalhe_sanitizado": "Estado da maquina nao encontrado no HTML de status."
+}
+```
+
+### Mensagens e normalizacao
+
+`mensagens_brutas` sempre e uma lista para manter compatibilidade com o fluxo
+futuro de multiplos alertas. Mesmo quando a pagina retorna apenas um estado
+principal, o resultado usa uma lista, por exemplo:
+
+```text
+["Em espera"]
+```
+
+`mensagens_normalizadas` reaproveita a normalizacao da Rules Engine atual,
+removendo diferencas de caixa, acentos, entidades HTML, quebras de linha e
+espacos duplicados:
+
+```text
+"Em espera" -> "em espera"
+```
+
+Nesta etapa o parser nao classifica a mensagem. A classificacao pela Rules
+Engine fica para a proxima microetapa de fallback HTML na cascata de alertas.
+
+### Registry de parsers
+
+Foi criado um registry/factory em:
+
+```text
+backend/app/modules/printers/monitoring/html_parsers/
+```
+
+Ele permite localizar o parser por fabricante/modelo usando:
+
+```python
+get_status_parser_for_model(model)
+parse_status_html_for_model(model, html)
+parse_html_status_response(model, html_client_response)
+```
+
+O primeiro parser registrado e `BrotherDcpL1632wStatusParser`. Modelos sem
+parser retornam erro controlado `html_status_parser_nao_configurado`.
+
+### Fixture sanitizada
+
+A fixture versionada fica em:
+
+```text
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_status.html
+```
+
+Ela contem apenas HTML sanitizado para teste. Nao possui IP real, senha, cookie,
+CSRF, Authorization, nome de empresa real ou dado interno sensivel.
+
+### Seguranca
+
+O parser nao registra logs, nao persiste HTML bruto e nao inclui HTML bruto ou
+segredos em erros serializados. Tambem nao acessa rede, banco ou task Celery.
+
+### Cascata futura
+
+A cascata planejada para a proxima etapa passa a ser:
+
+```text
+SNMP OK -> usa SNMP.
+SNMP falhou -> tenta HTML autenticado.
+HTML OK + parser OK -> usa mensagens HTML.
+SNMP + HTML/parser falharam -> falha_coleta_alertas / vermelho.
+```
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1141,11 +1265,15 @@ criptografadas por modelo para uso futuro do HTML autenticado, sem implementar
 login HTML, parser, fallback, API publica, frontend ou seeds de credenciais. A
 etapa 3.5.2.6 configura caminhos HTML por modelo e cria cliente interno
 basic/digest, mas ainda nao integra HTML na cascata de alertas, nao cria parser
-final, nao cria API publica, nao altera frontend e nao persiste HTML bruto.
+final, nao cria API publica, nao altera frontend e nao persiste HTML bruto. A
+etapa 3.5.2.7 cria apenas o parser HTML de status por modelo em memoria; ela
+nao integra HTML na cascata de alertas, nao cria tabela nova, nao cria
+credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao altera
+Celery, nao cria API publica, nao altera frontend e nao persiste HTML bruto.
 
 ## Próximas etapas
 
-- implementar fallback HTML/HTTP posterior usando credencial ativa do modelo;
+- integrar o fallback HTML autenticado na cascata de alertas;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - 3.5.3: coleta rica em 60 minutos;
 - 3.5.4: papel, toner e históricos;
