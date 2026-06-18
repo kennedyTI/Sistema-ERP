@@ -833,6 +833,119 @@ Esta etapa nao implementa fallback HTML/HTTP, credenciais HTML, API publica,
 frontend, dashboard, toner, papel, coleta rica ou tabela
 `tentativas_coleta_impressoras`.
 
+## Etapa 3.5.2.5 - Credenciais criptografadas para HTML autenticado
+
+Esta microetapa cria apenas a base segura para credenciais de coleta HTML
+autenticada. Ela nao executa login em paginas de impressoras, nao cria parser
+HTML, nao altera tasks, nao adiciona endpoint publico e nao muda frontend.
+
+### Escopo da credencial
+
+As credenciais ficam na tabela:
+
+```text
+credenciais_coleta_impressoras
+```
+
+O escopo e sempre por modelo de impressora:
+
+- `modelo_id` aponta para `printers_models`;
+- nao existe credencial por maquina;
+- nao existe coluna `maquina_id`;
+- nao existe coluna `fabricante`;
+- nao existe coluna `escopo`.
+
+Essa decisao evita duplicar senha por equipamento e prepara a futura cascata de
+coleta por modelo.
+
+### Tipos de autenticacao
+
+Os tipos aceitos sao controlados:
+
+```text
+basic
+digest
+form
+cookie
+```
+
+A tabela aceita no maximo uma credencial ativa por modelo por meio de indice
+unico parcial. Credenciais inativas duplicadas podem permanecer como historico
+administrativo.
+
+### Criptografia
+
+A senha real nunca e gravada em texto puro. O campo persistido e:
+
+```text
+senha_criptografada
+```
+
+A criptografia usa Fernet, da biblioteca `cryptography`, e depende da variavel:
+
+```text
+PRINTER_CREDENTIALS_SECRET_KEY
+```
+
+Os arquivos `.env.example`, `.env.docker.example` e `backend/.env.example`
+mantem apenas placeholder vazio. Segredos reais devem ser definidos somente no
+ambiente local, homologacao ou producao.
+
+Se a chave nao estiver configurada, operacoes sensiveis como criar, alterar,
+criptografar ou descriptografar senha falham de forma controlada. Consultas de
+metadados e listagem administrativa continuam seguras.
+
+### Admin
+
+`CREDENCIAIS_COLETA_IMPRESSORAS` fica no grupo `IMPRESSORAS` do Django Admin.
+
+A listagem exibe apenas metadados:
+
+- nome;
+- modelo;
+- tipo de autenticacao;
+- usuario;
+- ativo;
+- datas de criacao e atualizacao.
+
+A senha descriptografada nunca e exibida. A senha criptografada completa tambem
+nao aparece na listagem nem no formulario. O formulario possui somente um campo
+de senha para definir ou trocar o segredo.
+
+Permissoes:
+
+- superuser pode criar, alterar e desativar credenciais;
+- Equipe Tecnica pode consultar metadados;
+- Operador nao acessa esta area administrativa.
+
+### Cascata futura
+
+Quando o fallback HTML for implementado, a estrategia planejada passa a ser:
+
+```text
+1 tentativa SNMP
+1 tentativa HTML autenticado usando credencial ativa do modelo
+falha_coleta_alertas apenas se ambas falharem
+```
+
+Esta microetapa nao implementa essa cascata; apenas deixa a credencial segura
+disponivel para uso interno futuro.
+
+### Fora desta microetapa
+
+Esta etapa nao implementa:
+
+- login HTML;
+- sessao, cookies, CSRF ou formularios de impressoras;
+- requests HTTP autenticados;
+- parser HTML;
+- fallback de coleta;
+- API publica;
+- frontend;
+- credencial por maquina;
+- tabela `tentativas_coleta_impressoras`;
+- seed com senhas ou dados reais.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -849,11 +962,13 @@ ou persistencia de alertas. A etapa 3.5.2.3 cria a persistencia de alertas
 atuais e historico, mas nao cria API publica, task Celery, frontend, fallback
 HTML/HTTP, toner, papel ou dashboard. A etapa 3.5.2.4 agenda a task Celery de
 alertas em cinco minutos, sem criar API publica, frontend, fallback HTML/HTTP,
-toner, papel ou dashboard.
+toner, papel ou dashboard. A etapa 3.5.2.5 cria somente credenciais
+criptografadas por modelo para uso futuro do HTML autenticado, sem implementar
+login HTML, parser, fallback, API publica, frontend ou seeds de credenciais.
 
 ## Próximas etapas
 
-- implementar fallback HTML/HTTP posterior;
+- implementar fallback HTML/HTTP posterior usando credencial ativa do modelo;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - 3.5.3: coleta rica em 60 minutos;
 - 3.5.4: papel, toner e históricos;
