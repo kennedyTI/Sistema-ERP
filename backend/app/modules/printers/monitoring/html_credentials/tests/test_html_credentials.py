@@ -34,15 +34,21 @@ from backend.app.modules.printers.monitoring.html_credentials.models import (  #
     PrinterCollectionCredential,
 )
 from backend.app.modules.printers.monitoring.html_credentials.services import (  # noqa: E402
+    build_html_access_description,
     credential_metadata,
     create_collection_credential,
     get_active_credential_for_model,
+    get_active_html_access_for_model,
     get_credential_metadata_for_model,
+    get_decrypted_html_access_for_model,
 )
 
 
-MIGRATION_PATH = Path(
+CREDENTIAL_MIGRATION = Path(
     "backend/app/migrations/versions/20260618_printer_html_credentials.py"
+)
+HTML_ACCESS_MIGRATION = Path(
+    "backend/app/migrations/versions/20260618_printer_html_access_config.py"
 )
 
 
@@ -79,80 +85,102 @@ class HtmlCredentialModelTest(TestCase):
         PrinterModel.__table__.create(self.engine)
         PrinterCollectionCredential.__table__.create(self.engine)
         self.db = sessionmaker(bind=self.engine)()
-        self.model = PrinterModel(manufacturer="Fabricante", name="Modelo X")
+        self.model = PrinterModel(manufacturer="Brother", name="DCP-L1632W")
         self.db.add(self.model)
         self.db.commit()
 
     def tearDown(self):
         self.db.close()
 
-    def _credential(self, *, active=True, auth_type="basic", name="Credencial"):
+    def _credential(self, *, active=True, auth_type="basic", model_id=None):
         return PrinterCollectionCredential(
-            nome=name,
+            descricao="Coleta HTML autenticada para Brother DCP-L1632W",
             tipo_autenticacao=auth_type,
-            modelo_id=self.model.id,
-            usuario="usuario_teste",
+            modelo_id=model_id or self.model.id,
+            usuario=None,
             senha_criptografada="token-seguro",
+            caminho_status="/home/status.html",
+            caminho_informacoes="/general/information.html?kind=item",
+            caminho_login=None,
             ativo=active,
         )
 
-    def test_migration_cria_tabela_campos_constraints_e_indice_parcial(self):
-        content = MIGRATION_PATH.read_text(encoding="utf-8")
+    def test_migration_inicial_cria_tabela_e_indice_parcial(self):
+        content = CREDENTIAL_MIGRATION.read_text(encoding="utf-8")
 
-        self.assertIn('down_revision = "20260617_alerts_persistence"', content)
         self.assertIn('"credenciais_coleta_impressoras"', content)
-        self.assertIn('"modelo_id"', content)
-        self.assertIn("fk_credenciais_coleta_impressoras_modelo_id", content)
         self.assertIn("uq_credenciais_coleta_impressoras_modelo_ativo", content)
         self.assertIn("postgresql_where=sa.text(\"ativo IS true\")", content)
 
-    def test_modelo_define_apenas_escopo_por_modelo(self):
+    def test_migration_config_html_adiciona_campos_e_remove_nome(self):
+        content = HTML_ACCESS_MIGRATION.read_text(encoding="utf-8")
+
+        for field_name in (
+            "caminho_status",
+            "caminho_informacoes",
+            "caminho_login",
+            "timeout_segundos",
+            "protocolo_preferencial",
+            "validar_ssl",
+        ):
+            self.assertIn(field_name, content)
+        self.assertIn('op.drop_column("credenciais_coleta_impressoras", "nome")', content)
+        self.assertIn("ck_credenciais_coleta_impressoras_protocolo_preferencial", content)
+        self.assertIn("ck_credenciais_coleta_impressoras_timeout_segundos", content)
+
+    def test_modelo_define_estrutura_final_por_modelo(self):
         columns = set(PrinterCollectionCredential.__table__.columns.keys())
 
         self.assertEqual(
             columns,
             {
                 "id",
-                "nome",
                 "descricao",
                 "tipo_autenticacao",
                 "modelo_id",
                 "usuario",
                 "senha_criptografada",
+                "caminho_status",
+                "caminho_informacoes",
+                "caminho_login",
+                "timeout_segundos",
+                "protocolo_preferencial",
+                "validar_ssl",
                 "ativo",
                 "criado_em",
                 "atualizado_em",
             },
         )
         self.assertFalse(PrinterCollectionCredential.__table__.c.modelo_id.nullable)
+        self.assertTrue(PrinterCollectionCredential.__table__.c.usuario.nullable)
+        self.assertEqual(PrinterCollectionCredential.__table__.c.timeout_segundos.default.arg, 5)
+        self.assertEqual(
+            PrinterCollectionCredential.__table__.c.protocolo_preferencial.default.arg,
+            "auto",
+        )
+        self.assertFalse(PrinterCollectionCredential.__table__.c.validar_ssl.default.arg)
+        self.assertNotIn("nome", columns)
         self.assertNotIn("maquina_id", columns)
         self.assertNotIn("fabricante", columns)
         self.assertNotIn("escopo", columns)
 
-    def test_tipo_autenticacao_controlado(self):
+    def test_constraints_controlam_tipo_autenticacao_protocolo_e_timeout(self):
         check_text = " ".join(
             str(constraint.sqltext)
             for constraint in PrinterCollectionCredential.__table__.constraints
             if isinstance(constraint, CheckConstraint)
         )
 
-        for auth_type in ALLOWED_AUTH_TYPES:
-            self.assertIn(auth_type, check_text)
+        for value in (*ALLOWED_AUTH_TYPES, "auto", "http", "https"):
+            self.assertIn(value, check_text)
+        self.assertIn("timeout_segundos", check_text)
 
     def test_tipos_validos_sao_aceitos(self):
         for index, auth_type in enumerate(ALLOWED_AUTH_TYPES, start=1):
             model = PrinterModel(manufacturer="Fabricante", name=f"Modelo {index}")
             self.db.add(model)
             self.db.flush()
-            self.db.add(
-                PrinterCollectionCredential(
-                    nome=f"Credencial {auth_type}",
-                    tipo_autenticacao=auth_type,
-                    modelo_id=model.id,
-                    usuario="usuario_teste",
-                    senha_criptografada="token-seguro",
-                )
-            )
+            self.db.add(self._credential(auth_type=auth_type, model_id=model.id))
 
         self.db.commit()
         self.assertEqual(self.db.query(PrinterCollectionCredential).count(), 4)
@@ -163,17 +191,33 @@ class HtmlCredentialModelTest(TestCase):
         with self.assertRaises(IntegrityError):
             self.db.commit()
 
+    def test_protocolo_invalido_e_rejeitado(self):
+        credential = self._credential()
+        credential.protocolo_preferencial = "ftp"
+        self.db.add(credential)
+
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
+
+    def test_timeout_invalido_e_rejeitado(self):
+        credential = self._credential()
+        credential.timeout_segundos = 60
+        self.db.add(credential)
+
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
+
     def test_apenas_uma_credencial_ativa_por_modelo(self):
-        self.db.add(self._credential(name="Credencial 1"))
-        self.db.add(self._credential(name="Credencial 2"))
+        self.db.add(self._credential())
+        self.db.add(self._credential())
 
         with self.assertRaises(IntegrityError):
             self.db.commit()
 
     def test_credenciais_inativas_duplicadas_sao_permitidas(self):
-        self.db.add(self._credential(active=False, name="Inativa 1"))
-        self.db.add(self._credential(active=False, name="Inativa 2"))
-        self.db.add(self._credential(active=True, name="Ativa"))
+        self.db.add(self._credential(active=False))
+        self.db.add(self._credential(active=False))
+        self.db.add(self._credential(active=True))
 
         self.db.commit()
         self.assertEqual(self.db.query(PrinterCollectionCredential).count(), 3)
@@ -210,9 +254,8 @@ class HtmlCredentialServiceTest(TestCase):
         PrinterModel.__table__.create(engine)
         PrinterCollectionCredential.__table__.create(engine)
         self.db = sessionmaker(bind=engine)()
-        self.model = PrinterModel(manufacturer="Fabricante", name="Modelo Y")
-        self.other_model = PrinterModel(manufacturer="Fabricante", name="Modelo Z")
-        self.db.add_all([self.model, self.other_model])
+        self.model = PrinterModel(manufacturer="Brother", name="DCP-L1632W")
+        self.db.add(self.model)
         self.db.commit()
 
     def tearDown(self):
@@ -222,68 +265,82 @@ class HtmlCredentialServiceTest(TestCase):
             os.environ["PRINTER_CREDENTIALS_SECRET_KEY"] = self.previous_key
         self.db.close()
 
-    def test_service_cria_credencial_sem_expor_senha_em_metadados(self):
+    def test_descricao_e_gerada_pelo_codigo(self):
+        description = build_html_access_description(
+            printer_model=self.model,
+            caminho_status="/home/status.html",
+        )
+
+        self.assertEqual(
+            description,
+            "Coleta HTML autenticada para Brother DCP-L1632W - status: /home/status.html",
+        )
+
+    def test_service_cria_configuracao_sem_expor_segredos(self):
         credential = create_collection_credential(
             self.db,
-            nome="Credencial",
             tipo_autenticacao="basic",
             modelo_id=self.model.id,
-            usuario="usuario_teste",
+            usuario=None,
             senha="senha-ficticia",
+            caminho_status="/home/status.html",
+            caminho_informacoes="/general/information.html?kind=item",
+            timeout_segundos=5,
+            protocolo_preferencial="auto",
+            validar_ssl=False,
         )
         self.db.commit()
 
         metadata = credential_metadata(credential)
+        self.assertIn("Brother DCP-L1632W", metadata["descricao"])
         self.assertNotIn("senha", metadata)
         self.assertNotIn("senha_criptografada", metadata)
         self.assertNotIn("senha-ficticia", str(metadata))
+        self.assertIsNone(metadata["usuario"])
 
-    def test_service_busca_credencial_ativa_por_modelo(self):
+    def test_service_busca_configuracao_ativa_por_modelo(self):
         create_collection_credential(
             self.db,
-            nome="Ativa",
             tipo_autenticacao="digest",
             modelo_id=self.model.id,
-            usuario="usuario_teste",
             senha="senha-ficticia",
+            caminho_status="/home/status.html",
         )
         self.db.commit()
 
-        result = get_active_credential_for_model(self.db, model_id=self.model.id)
+        result = get_active_html_access_for_model(self.db, model_id=self.model.id)
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result.nome, "Ativa")
+        self.assertEqual(result["tipo_autenticacao"], "digest")
+        self.assertEqual(result["caminho_status"], "/home/status.html")
 
-    def test_service_ignora_credencial_inativa(self):
+    def test_service_ignora_configuracao_inativa(self):
         create_collection_credential(
             self.db,
-            nome="Inativa",
             tipo_autenticacao="form",
             modelo_id=self.model.id,
-            usuario="usuario_teste",
             senha="senha-ficticia",
+            caminho_status="/home/status.html",
             ativo=False,
         )
         self.db.commit()
 
         self.assertIsNone(get_active_credential_for_model(self.db, model_id=self.model.id))
+        self.assertIsNone(get_credential_metadata_for_model(self.db, model_id=self.model.id))
 
-    def test_service_metadados_nao_retorna_segredos(self):
+    def test_service_retorna_configuracao_interna_descriptografada(self):
         create_collection_credential(
             self.db,
-            nome="Ativa",
-            tipo_autenticacao="cookie",
+            tipo_autenticacao="basic",
             modelo_id=self.model.id,
-            usuario="usuario_teste",
             senha="senha-ficticia",
+            caminho_status="/home/status.html",
         )
         self.db.commit()
 
-        metadata = get_credential_metadata_for_model(self.db, model_id=self.model.id)
+        config = get_decrypted_html_access_for_model(self.db, model_id=self.model.id)
 
-        self.assertEqual(metadata["tipo_autenticacao"], "cookie")
-        self.assertNotIn("senha", metadata)
-        self.assertNotIn("senha_criptografada", metadata)
+        self.assertEqual(config.senha, "senha-ficticia")
+        self.assertEqual(config.caminho_status, "/home/status.html")
 
 
 class HtmlCredentialAdminTest(TestCase):
@@ -297,24 +354,26 @@ class HtmlCredentialAdminTest(TestCase):
         self.assertEqual(
             self.model_admin.list_display,
             (
-                "nome",
                 "modelo",
                 "tipo_autenticacao",
-                "usuario",
+                "protocolo_preferencial",
+                "validar_ssl",
+                "caminho_status",
+                "caminho_informacoes",
                 "ativo",
-                "criado_em",
                 "atualizado_em",
             ),
         )
         self.assertNotIn("senha_criptografada", self.model_admin.list_display)
         self.assertNotIn("senha", self.model_admin.list_display)
+        self.assertNotIn("nome", self.model_admin.list_display)
 
     def test_admin_nao_exibe_senha_criptografada_no_formulario(self):
         self.assertNotIn("senha_criptografada", self.model_admin.fields)
         self.assertIn("senha_mascarada", self.model_admin.readonly_fields)
+        self.assertIn("descricao", self.model_admin.readonly_fields)
 
         obj = PrinterCollectionCredentialAdminModel(
-            nome="Credencial",
             tipo_autenticacao="basic",
             usuario="usuario_teste",
             senha_criptografada="token-encriptado-ficticio",
@@ -326,7 +385,6 @@ class HtmlCredentialAdminTest(TestCase):
 
     def test_auditoria_nao_registra_senha_criptografada_completa(self):
         obj = PrinterCollectionCredentialAdminModel(
-            nome="Credencial",
             tipo_autenticacao="basic",
             usuario="usuario_teste",
             senha_criptografada="token-encriptado-ficticio",
@@ -373,13 +431,17 @@ class HtmlCredentialAdminTest(TestCase):
         )
         self.assertEqual(
             PrinterCollectionCredentialAdminModel._meta.verbose_name_plural,
-            "CREDENCIAIS_COLETA_IMPRESSORAS",
+            "credenciais_coleta_impressoras",
         )
 
 
 class HtmlCredentialScopeTest(TestCase):
-    def test_nao_existe_seed_de_credenciais(self):
+    def test_nao_existe_seed_de_credenciais_ou_tabela_auxiliar_html(self):
         scripts_dir = Path("backend/scripts")
         filenames = [path.name for path in scripts_dir.glob("*credential*")]
+        migration_content = HTML_ACCESS_MIGRATION.read_text(encoding="utf-8")
 
         self.assertEqual(filenames, [])
+        self.assertNotIn("endpoints_html", migration_content)
+        self.assertNotIn("maquina_id", migration_content)
+        self.assertNotIn("tentativas_coleta_impressoras", migration_content)

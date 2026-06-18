@@ -44,6 +44,9 @@ from backend.app.modules.printers.monitoring.snmp.models import (  # noqa: E402
 from backend.app.modules.printers.monitoring.state.models import (  # noqa: E402
     PrinterAlertRule,
 )
+from backend.app.modules.printers.monitoring.state.django_models import (  # noqa: E402
+    PrinterAlertRuleAdminModel,
+)
 from backend.app.modules.printers.monitoring.state.seed import (  # noqa: E402
     INITIAL_ALERT_RULES,
     seed_alert_rules,
@@ -207,40 +210,59 @@ class AlertsPersistenceSchemaTest(TestCase):
 
 
 class AlertsAdminTest(TestCase):
-    def test_admin_alertas_atuais_e_somente_leitura_no_grupo_impressoras(self):
+    def test_admin_alertas_atuais_e_somente_leitura_no_grupo_alertas(self):
         model_admin = PrinterCurrentAlertAdmin(PrinterCurrentAlertAdminModel, AdminSite())
         request = RequestStub(
-            PermissionUserStub({"printer_machines.view_printercurrentalertadminmodel"})
+            PermissionUserStub({"printer_alert_rules.view_printercurrentalertadminmodel"})
         )
 
-        self.assertEqual(PrinterCurrentAlertAdminModel._meta.app_label, "printer_machines")
+        self.assertEqual(PrinterCurrentAlertAdminModel._meta.app_label, "printer_alert_rules")
         self.assertEqual(
             PrinterCurrentAlertAdminModel._meta.verbose_name_plural,
-            "ALERTAS_IMPRESSORAS",
+            "alertas_impressoras",
         )
         self.assertFalse(model_admin.has_add_permission(request))
         self.assertFalse(model_admin.has_change_permission(request))
         self.assertFalse(model_admin.has_delete_permission(request))
         self.assertTrue(model_admin.has_view_permission(request))
+        self.assertIn("regra_alerta_resumida", model_admin.list_display)
 
-    def test_admin_historico_e_somente_leitura_no_grupo_impressoras(self):
+        obj = PrinterCurrentAlertAdminModel()
+        obj.regra_alerta = PrinterAlertRuleAdminModel(id=13, codigo="idle")
+        self.assertEqual(model_admin.regra_alerta_resumida(obj), "#13 - idle")
+
+    def test_admin_historico_e_somente_leitura_no_grupo_alertas(self):
         model_admin = PrinterAlertHistoryAdmin(
             PrinterAlertHistoryAdminModel,
             AdminSite(),
         )
         request = RequestStub(
-            PermissionUserStub({"printer_machines.view_printeralerthistoryadminmodel"})
+            PermissionUserStub({"printer_alert_rules.view_printeralerthistoryadminmodel"})
         )
 
-        self.assertEqual(PrinterAlertHistoryAdminModel._meta.app_label, "printer_machines")
+        self.assertEqual(PrinterAlertHistoryAdminModel._meta.app_label, "printer_alert_rules")
         self.assertEqual(
             PrinterAlertHistoryAdminModel._meta.verbose_name_plural,
-            "HISTORICO_ALERTAS_IMPRESSORAS",
+            "historico_alertas_impressoras",
         )
         self.assertFalse(model_admin.has_add_permission(request))
         self.assertFalse(model_admin.has_change_permission(request))
         self.assertFalse(model_admin.has_delete_permission(request))
         self.assertTrue(model_admin.has_view_permission(request))
+        self.assertIn("regra_alerta_resumida", model_admin.list_display)
+
+        obj = PrinterAlertHistoryAdminModel(regra_alerta_id=13, codigo_alerta="idle")
+        self.assertEqual(model_admin.regra_alerta_resumida(obj), "#13 - idle")
+
+    def test_admin_historico_aceita_json_ja_desserializado_pelo_driver(self):
+        field = PrinterAlertHistoryAdminModel._meta.get_field("detalhes")
+        value = {"quantidade_alertas": 1}
+
+        self.assertEqual(field.from_db_value(value, None, None), value)
+        self.assertEqual(
+            field.from_db_value('{"quantidade_alertas": 1}', None, None),
+            value,
+        )
 
 
 class AlertsPersistenceServiceTest(TestCase):
@@ -659,4 +681,3 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertNotIn(SENSITIVE_MARKER, str(result))
         self.assertNotIn(SENSITIVE_MARKER, str([row.__dict__ for row in current]))
         self.assertNotIn(SENSITIVE_MARKER, str([row.__dict__ for row in histories]))
-

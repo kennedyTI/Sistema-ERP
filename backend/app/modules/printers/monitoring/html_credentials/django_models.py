@@ -7,7 +7,6 @@ from backend.app.modules.printers.machines.django_models import PrinterModelAdmi
 
 class PrinterCollectionCredentialAdminModel(models.Model):
     id = models.AutoField(primary_key=True)
-    nome = models.CharField("NOME", max_length=160)
     descricao = models.TextField("DESCRICAO", null=True, blank=True)
     tipo_autenticacao = models.CharField(
         "TIPO AUTENTICACAO",
@@ -26,8 +25,24 @@ class PrinterCollectionCredentialAdminModel(models.Model):
         on_delete=models.DO_NOTHING,
         related_name="credenciais_coleta",
     )
-    usuario = models.CharField("USUARIO", max_length=160)
+    usuario = models.CharField("USUARIO", max_length=160, null=True, blank=True)
     senha_criptografada = models.TextField("SENHA CRIPTOGRAFADA")
+    caminho_status = models.CharField("CAMINHO STATUS", max_length=500, null=True, blank=True)
+    caminho_informacoes = models.CharField(
+        "CAMINHO INFORMACOES",
+        max_length=500,
+        null=True,
+        blank=True,
+    )
+    caminho_login = models.CharField("CAMINHO LOGIN", max_length=500, null=True, blank=True)
+    timeout_segundos = models.IntegerField("TIMEOUT SEGUNDOS", default=5)
+    protocolo_preferencial = models.CharField(
+        "PROTOCOLO PREFERENCIAL",
+        max_length=10,
+        choices=(("auto", "auto"), ("http", "http"), ("https", "https")),
+        default="auto",
+    )
+    validar_ssl = models.BooleanField("VALIDAR SSL", default=False)
     ativo = models.BooleanField("ATIVO", default=True)
     criado_em = models.DateTimeField("CRIADO EM", null=True, blank=True)
     atualizado_em = models.DateTimeField("ATUALIZADO EM", null=True, blank=True)
@@ -36,9 +51,8 @@ class PrinterCollectionCredentialAdminModel(models.Model):
         app_label = "printer_machines"
         managed = False
         db_table = "credenciais_coleta_impressoras"
-        verbose_name = "Credencial de coleta de impressora"
-        verbose_name_plural = "CREDENCIAIS_COLETA_IMPRESSORAS"
+        verbose_name = "credencial_coleta_impressora"
+        verbose_name_plural = "credenciais_coleta_impressoras"
 
     def __str__(self):
-        return f"{self.nome} - {self.modelo}"
-
+        return str(self.modelo)

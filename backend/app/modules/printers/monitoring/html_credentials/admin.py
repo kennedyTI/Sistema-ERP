@@ -5,12 +5,21 @@ from django.contrib import admin
 from django.core.exceptions import ObjectDoesNotExist
 
 from backend.app.modules.audit.admin import AuditLogAdminMixin
+from backend.app.modules.printers.monitoring.html_client.client import (
+    validate_preferred_protocol,
+    validate_relative_html_path,
+    validate_timeout,
+)
+from backend.app.modules.printers.monitoring.html_client.exceptions import HtmlClientError
 from backend.app.modules.printers.monitoring.html_credentials.crypto import (
     CredentialCryptoError,
     encrypt_password,
 )
 from backend.app.modules.printers.monitoring.html_credentials.django_models import (
     PrinterCollectionCredentialAdminModel,
+)
+from backend.app.modules.printers.monitoring.html_credentials.services import (
+    build_html_access_description,
 )
 
 
@@ -46,11 +55,15 @@ class PrinterCollectionCredentialAdminForm(forms.ModelForm):
     class Meta:
         model = PrinterCollectionCredentialAdminModel
         fields = (
-            "nome",
-            "descricao",
             "tipo_autenticacao",
             "modelo",
             "usuario",
+            "caminho_status",
+            "caminho_informacoes",
+            "caminho_login",
+            "timeout_segundos",
+            "protocolo_preferencial",
+            "validar_ssl",
             "ativo",
         )
 
@@ -68,6 +81,25 @@ class PrinterCollectionCredentialAdminForm(forms.ModelForm):
             except CredentialCryptoError as exc:
                 raise forms.ValidationError(str(exc)) from exc
 
+        for field_name in ("caminho_status", "caminho_informacoes", "caminho_login"):
+            try:
+                cleaned_data[field_name] = validate_relative_html_path(
+                    cleaned_data.get(field_name),
+                    field_name=field_name,
+                )
+            except HtmlClientError as exc:
+                self.add_error(field_name, exc.detail)
+
+        try:
+            validate_timeout(cleaned_data.get("timeout_segundos") or 5)
+        except HtmlClientError as exc:
+            self.add_error("timeout_segundos", exc.detail)
+
+        try:
+            validate_preferred_protocol(cleaned_data.get("protocolo_preferencial") or "auto")
+        except HtmlClientError as exc:
+            self.add_error("protocolo_preferencial", exc.detail)
+
         return cleaned_data
 
     def save(self, commit=True):
@@ -83,31 +115,43 @@ class PrinterCollectionCredentialAdminForm(forms.ModelForm):
 class PrinterCollectionCredentialAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     form = PrinterCollectionCredentialAdminForm
     list_display = (
-        "nome",
         "modelo",
         "tipo_autenticacao",
-        "usuario",
+        "protocolo_preferencial",
+        "validar_ssl",
+        "caminho_status",
+        "caminho_informacoes",
         "ativo",
-        "criado_em",
         "atualizado_em",
     )
-    list_display_links = ("nome",)
-    list_filter = ("tipo_autenticacao", "ativo", "modelo")
-    search_fields = ("nome", "usuario", "modelo__manufacturer", "modelo__name")
-    readonly_fields = ("senha_mascarada", "criado_em", "atualizado_em")
+    list_display_links = ("modelo",)
+    list_filter = ("tipo_autenticacao", "protocolo_preferencial", "validar_ssl", "ativo", "modelo")
+    search_fields = (
+        "usuario",
+        "modelo__manufacturer",
+        "modelo__name",
+        "caminho_status",
+        "caminho_informacoes",
+    )
+    readonly_fields = ("descricao", "senha_mascarada", "criado_em", "atualizado_em")
     fields = (
-        "nome",
         "descricao",
         "tipo_autenticacao",
         "modelo",
         "usuario",
         "senha",
         "senha_mascarada",
+        "caminho_status",
+        "caminho_informacoes",
+        "caminho_login",
+        "timeout_segundos",
+        "protocolo_preferencial",
+        "validar_ssl",
         "ativo",
         "criado_em",
         "atualizado_em",
     )
-    ordering = ("modelo__manufacturer", "modelo__name", "nome")
+    ordering = ("modelo__manufacturer", "modelo__name")
 
     @admin.display(description="SENHA")
     def senha_mascarada(self, obj):
@@ -155,6 +199,10 @@ class PrinterCollectionCredentialAdmin(AuditLogAdminMixin, admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if request is None:
+            obj.descricao = build_html_access_description(
+                printer_model=getattr(obj, "modelo", None),
+                caminho_status=getattr(obj, "caminho_status", None),
+            )
             return admin.ModelAdmin.save_model(self, request, obj, form, change)
 
         old_data = None
@@ -166,6 +214,10 @@ class PrinterCollectionCredentialAdmin(AuditLogAdminMixin, admin.ModelAdmin):
             except ObjectDoesNotExist:
                 old_data = None
 
+        obj.descricao = build_html_access_description(
+            printer_model=getattr(obj, "modelo", None),
+            caminho_status=getattr(obj, "caminho_status", None),
+        )
         admin.ModelAdmin.save_model(self, request, obj, form, change)
         self._record_admin_audit(
             request=request,

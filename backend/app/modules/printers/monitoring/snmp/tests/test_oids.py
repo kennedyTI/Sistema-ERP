@@ -494,7 +494,7 @@ class PrinterSnmpOidAdminTest(TestCase):
         self.assertEqual(PrinterSnmpOidAdminModel._meta.app_label, "printer_machines")
         self.assertEqual(
             PrinterSnmpOidAdminModel._meta.verbose_name_plural,
-            "OIDs_SNMP_IMPRESSORAS",
+            "oids_snmp_impressoras",
         )
 
 

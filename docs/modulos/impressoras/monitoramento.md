@@ -946,6 +946,180 @@ Esta etapa nao implementa:
 - tabela `tentativas_coleta_impressoras`;
 - seed com senhas ou dados reais.
 
+## Etapa 3.5.2.6 - Configuracao de acesso HTML por modelo e cliente HTML seguro
+
+Esta microetapa prepara a configuracao de acesso HTML autenticado por modelo e
+cria um cliente interno seguro para uso futuro no fallback HTML. Ela nao integra
+HTML na cascata de alertas, nao persiste HTML bruto, nao cria API publica e nao
+altera frontend.
+
+### Tabela reutilizada
+
+Nao foi criada nova tabela de endpoints HTML. A tabela existente
+`credenciais_coleta_impressoras` passa a representar:
+
+```text
+credencial criptografada + configuracao de acesso HTML por modelo
+```
+
+O escopo continua sempre por modelo:
+
+- `modelo_id` referencia `printers_models`;
+- nao existe credencial por maquina;
+- nao existe coluna `maquina_id`;
+- nao existe tabela `tentativas_coleta_impressoras`;
+- nao existe tabela nova de endpoints HTML.
+
+### Ajuste do campo nome
+
+O campo `nome` foi removido da estrutura funcional porque era redundante com o
+modelo da impressora. A descricao passa a ser gerada pelo codigo.
+
+Exemplo:
+
+```text
+Coleta HTML autenticada para Brother DCP-L1632W - status: /home/status.html
+```
+
+`usuario` passou a ser opcional, pois alguns paineis usam usuario e senha,
+enquanto outros usam apenas senha.
+
+### Campos HTML por modelo
+
+Foram adicionados:
+
+- `caminho_status`;
+- `caminho_informacoes`;
+- `caminho_login`;
+- `timeout_segundos`;
+- `protocolo_preferencial`;
+- `validar_ssl`.
+
+`timeout_segundos` tem padrao seguro `5` e deve ficar entre `1` e `30`.
+
+`protocolo_preferencial` aceita:
+
+```text
+auto
+http
+https
+```
+
+Regras:
+
+- `auto`: tenta HTTPS primeiro e HTTP depois;
+- `http`: usa somente HTTP;
+- `https`: usa somente HTTPS.
+
+`validar_ssl` tem padrao `false` para redes internas, pois paineis de
+impressoras frequentemente usam certificados proprios, vencidos ou internos.
+
+### Caminhos relativos e URL segura
+
+Os caminhos HTML devem ser relativos:
+
+```text
+/home/status.html
+/general/information.html?kind=item
+```
+
+Nao sao aceitos:
+
+```text
+http://10.0.0.1/home/status.html
+https://10.0.0.1/home/status.html
+//10.0.0.1/home/status.html
+```
+
+A URL final e montada pelo sistema usando o IP da maquina:
+
+```text
+protocolo + "://" + ip_da_maquina + caminho
+```
+
+Essa regra reduz risco de URL arbitraria e evita configurar destino completo no
+Admin.
+
+### Cliente HTML interno
+
+Foi criado o modulo interno:
+
+```text
+backend/app/modules/printers/monitoring/html_client/
+```
+
+O cliente:
+
+- monta URL segura a partir de IP e caminho relativo;
+- respeita `protocolo_preferencial`;
+- respeita `timeout_segundos`;
+- respeita `validar_ssl`;
+- usa autenticacao `basic` e `digest`;
+- retorna erro controlado para `form` e `cookie` nesta etapa;
+- retorna conteudo HTML apenas em memoria;
+- nao faz log de senha, Authorization, cookie, CSRF ou HTML bruto autenticado.
+
+`form` e `cookie` foram preparados, mas ainda nao implementam login real. Isso
+fica para uma etapa especifica, pois depende de endpoint de login, campos do
+formulario, CSRF, cookies, redirecionamentos e validacao de sessao por
+fabricante/modelo.
+
+### Service de configuracao ativa
+
+O service de credenciais foi ajustado para buscar a configuracao ativa por
+modelo e separar:
+
+- metadados seguros;
+- configuracao interna com senha descriptografada em memoria.
+
+Senha descriptografada nao e exposta em Admin, API, logs ou documentacao.
+
+### Admin
+
+`credenciais_coleta_impressoras` lista apenas metadados seguros:
+
+- modelo;
+- tipo de autenticacao;
+- protocolo preferencial;
+- validar SSL;
+- caminho de status;
+- caminho de informacoes;
+- ativo;
+- atualizado em.
+
+A senha descriptografada e o token criptografado completo continuam escondidos.
+
+### Coluna REGRA no Admin de alertas
+
+O Admin de `alertas_impressoras` e `historico_alertas_impressoras` passou a
+exibir a coluna `REGRA` no formato resumido:
+
+```text
+#ID - codigo
+```
+
+Exemplo:
+
+```text
+#13 - idle
+```
+
+No historico, `codigo_alerta` e `severidade` continuam preservados como snapshot
+minimo do momento do evento.
+
+### Fluxo futuro
+
+A proxima etapa de fallback HTML deve seguir:
+
+```text
+SNMP OK -> usa SNMP.
+SNMP falhou -> tenta HTML autenticado.
+HTML OK -> usa HTML.
+SNMP + HTML falharam -> falha_coleta_alertas / vermelho.
+```
+
+Esta microetapa nao ativa esse fluxo ainda.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -964,7 +1138,10 @@ HTML/HTTP, toner, papel ou dashboard. A etapa 3.5.2.4 agenda a task Celery de
 alertas em cinco minutos, sem criar API publica, frontend, fallback HTML/HTTP,
 toner, papel ou dashboard. A etapa 3.5.2.5 cria somente credenciais
 criptografadas por modelo para uso futuro do HTML autenticado, sem implementar
-login HTML, parser, fallback, API publica, frontend ou seeds de credenciais.
+login HTML, parser, fallback, API publica, frontend ou seeds de credenciais. A
+etapa 3.5.2.6 configura caminhos HTML por modelo e cria cliente interno
+basic/digest, mas ainda nao integra HTML na cascata de alertas, nao cria parser
+final, nao cria API publica, nao altera frontend e nao persiste HTML bruto.
 
 ## Próximas etapas
 

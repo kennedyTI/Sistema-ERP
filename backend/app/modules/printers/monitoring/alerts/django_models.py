@@ -11,6 +11,13 @@ from backend.app.modules.printers.monitoring.state.django_models import (
 )
 
 
+class AdminSafeJSONField(models.JSONField):
+    def from_db_value(self, value, expression, connection):
+        if value is None or not isinstance(value, (str, bytes, bytearray)):
+            return value
+        return super().from_db_value(value, expression, connection)
+
+
 class PrinterCurrentAlertAdminModel(models.Model):
     id = models.AutoField(primary_key=True)
     maquina = models.ForeignKey(
@@ -50,11 +57,11 @@ class PrinterCurrentAlertAdminModel(models.Model):
     atualizado_em = models.DateTimeField("ATUALIZADO EM")
 
     class Meta:
-        app_label = "printer_machines"
+        app_label = "printer_alert_rules"
         managed = False
         db_table = "alertas_impressoras"
-        verbose_name = "ALERTA_IMPRESSORA"
-        verbose_name_plural = "ALERTAS_IMPRESSORAS"
+        verbose_name = "alerta_impressora"
+        verbose_name_plural = "alertas_impressoras"
         unique_together = (("maquina", "chave_alerta"),)
 
     def __str__(self):
@@ -101,16 +108,16 @@ class PrinterAlertHistoryAdminModel(models.Model):
     )
     codigo_evento = models.CharField("CODIGO EVENTO", max_length=40)
     descricao_evento = models.CharField("DESCRICAO EVENTO", max_length=255)
-    detalhes = models.JSONField("DETALHES")
+    detalhes = AdminSafeJSONField("DETALHES")
     verificado_em = models.DateTimeField("VERIFICADO EM")
     criado_em = models.DateTimeField("CRIADO EM")
 
     class Meta:
-        app_label = "printer_machines"
+        app_label = "printer_alert_rules"
         managed = False
         db_table = "historico_alertas_impressoras"
-        verbose_name = "HISTORICO_ALERTA_IMPRESSORA"
-        verbose_name_plural = "HISTORICO_ALERTAS_IMPRESSORAS"
+        verbose_name = "historico_alerta_impressora"
+        verbose_name_plural = "historico_alertas_impressoras"
 
     def __str__(self):
         return f"{self.maquina} - {self.codigo_evento}"

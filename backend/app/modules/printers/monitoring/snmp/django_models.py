@@ -54,8 +54,8 @@ class PrinterSnmpOidAdminModel(models.Model):
         app_label = "printer_machines"
         managed = False
         db_table = "oids_snmp_impressoras"
-        verbose_name = "OID_SNMP_IMPRESSORA"
-        verbose_name_plural = "OIDs_SNMP_IMPRESSORAS"
+        verbose_name = "oid_snmp_impressora"
+        verbose_name_plural = "oids_snmp_impressoras"
         unique_together = (("modelo", "chave_metrica"),)
 
     def __str__(self):

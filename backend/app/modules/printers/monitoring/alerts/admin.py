@@ -14,7 +14,7 @@ class PrinterCurrentAlertAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "id",
         "maquina",
-        "regra_alerta",
+        "regra_alerta_resumida",
         "origem_coleta",
         "metodo_confirmacao",
         "metodo_coleta",
@@ -31,12 +31,20 @@ class PrinterCurrentAlertAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     )
     ordering = ("maquina__name", "chave_alerta")
 
+    @admin.display(description="REGRA", ordering="regra_alerta_id")
+    def regra_alerta_resumida(self, obj):
+        if not obj or not obj.regra_alerta_id:
+            return "-"
+        code = getattr(getattr(obj, "regra_alerta", None), "codigo", None) or "-"
+        return f"#{obj.regra_alerta_id} - {code}"
+
 
 @admin.register(PrinterAlertHistoryAdminModel)
 class PrinterAlertHistoryAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     list_display = (
         "id",
         "maquina",
+        "regra_alerta_resumida",
         "codigo_alerta",
         "codigo_evento",
         "classificacao_anterior",
@@ -59,3 +67,9 @@ class PrinterAlertHistoryAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
         "chave_alerta",
     )
     ordering = ("-verificado_em", "-id")
+
+    @admin.display(description="REGRA", ordering="regra_alerta_id")
+    def regra_alerta_resumida(self, obj):
+        if not obj or not obj.regra_alerta_id:
+            return "-"
+        return f"#{obj.regra_alerta_id} - {obj.codigo_alerta}"

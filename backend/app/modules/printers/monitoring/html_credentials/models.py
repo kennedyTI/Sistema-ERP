@@ -18,6 +18,7 @@ from backend.app.core.timezone import now_sao_paulo
 
 
 ALLOWED_AUTH_TYPES = ("basic", "digest", "form", "cookie")
+ALLOWED_PROTOCOLS = ("auto", "http", "https")
 
 
 def _sql_values(values: tuple[str, ...]) -> str:
@@ -30,6 +31,14 @@ class PrinterCollectionCredential(Base):
         CheckConstraint(
             f"tipo_autenticacao IN ({_sql_values(ALLOWED_AUTH_TYPES)})",
             name="ck_credenciais_coleta_impressoras_tipo_autenticacao",
+        ),
+        CheckConstraint(
+            f"protocolo_preferencial IN ({_sql_values(ALLOWED_PROTOCOLS)})",
+            name="ck_credenciais_coleta_impressoras_protocolo_preferencial",
+        ),
+        CheckConstraint(
+            "timeout_segundos BETWEEN 1 AND 30",
+            name="ck_credenciais_coleta_impressoras_timeout_segundos",
         ),
         Index("ix_credenciais_coleta_impressoras_modelo_id", "modelo_id"),
         Index("ix_credenciais_coleta_impressoras_ativo", "ativo"),
@@ -47,12 +56,17 @@ class PrinterCollectionCredential(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    nome = Column(String(160), nullable=False)
     descricao = Column(Text, nullable=True)
     tipo_autenticacao = Column(String(20), nullable=False)
     modelo_id = Column(Integer, ForeignKey("printers_models.id"), nullable=False)
-    usuario = Column(String(160), nullable=False)
+    usuario = Column(String(160), nullable=True)
     senha_criptografada = Column(Text, nullable=False)
+    caminho_status = Column(String(500), nullable=True)
+    caminho_informacoes = Column(String(500), nullable=True)
+    caminho_login = Column(String(500), nullable=True)
+    timeout_segundos = Column(Integer, nullable=False, default=5)
+    protocolo_preferencial = Column(String(10), nullable=False, default="auto")
+    validar_ssl = Column(Boolean, nullable=False, default=False)
     ativo = Column(Boolean, nullable=False, default=True)
     criado_em = Column(DateTime, nullable=False, default=now_sao_paulo)
     atualizado_em = Column(
@@ -61,4 +75,3 @@ class PrinterCollectionCredential(Base):
         default=now_sao_paulo,
         onupdate=now_sao_paulo,
     )
-
