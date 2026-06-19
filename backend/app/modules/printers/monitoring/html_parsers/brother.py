@@ -89,8 +89,9 @@ def _find_message_after_label(
         if not any(label in normalized_chunk for label in normalized_labels):
             continue
 
-        for candidate in chunks[index + 1 : index + 4]:
-            normalized_candidate = normalize_text(candidate)
+        for candidate_index in range(index + 1, min(index + 9, len(chunks))):
+            candidate_window = " ".join(chunks[candidate_index : candidate_index + 4])
+            normalized_candidate = normalize_text(candidate_window)
             for normalized_message, message in known_by_normalized.items():
                 if normalized_message in normalized_candidate:
                     found.append(message)
@@ -103,8 +104,8 @@ def _find_message_after_label(
 
 def _find_known_messages(chunks: list[str], known_messages: tuple[str, ...]) -> list[str]:
     found: list[str] = []
-    for chunk in chunks:
-        normalized_chunk = normalize_text(chunk)
+    for index, chunk in enumerate(chunks):
+        normalized_chunk = normalize_text(" ".join(chunks[index : index + 4]))
         for message in known_messages:
             normalized_message = normalize_text(message)
             if normalized_message == "erro" and any(

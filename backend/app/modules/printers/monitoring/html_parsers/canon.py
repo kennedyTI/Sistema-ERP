@@ -45,7 +45,7 @@ class CanonIrC3326iStatusParser(HtmlStatusParser):
         for index, chunk in enumerate(chunks):
             if index in ignored_scanner_indexes:
                 continue
-            normalized_chunk = normalize_text(chunk)
+            normalized_chunk = normalize_text(" ".join(chunks[index : index + 4]))
             for message in CANON_STATUS_MESSAGES:
                 if normalize_text(message) in normalized_chunk:
                     found.append(message)

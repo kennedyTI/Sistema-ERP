@@ -128,6 +128,35 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertTrue(result.sucesso)
         self.assertEqual(result.mensagens_brutas, ["Subs. o toner"])
 
+    def test_parser_brother_l1632w_detecta_estado_em_formato_real(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_real_shape.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Subs. o toner"])
+        self.assertEqual(result.estado_principal, "Subs. o toner")
+
+    def test_parser_brother_l2540dw_mantem_trocar_cilindro(self):
+        html = """
+        <html>
+          <body>
+            <dl>
+              <dt>Device Status</dt>
+              <dd>Trocar</dd>
+              <dd>Cilindro</dd>
+            </dl>
+          </body>
+        </html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Brother", "DCP-L2540DW"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Trocar Cilindro"])
+        self.assertEqual(result.estado_principal, "Trocar Cilindro")
+
     def test_parser_retorna_multiplas_mensagens_quando_existirem(self):
         html = "<html><body><p>Toner baixo</p><p>Tampa aberta</p></body></html>"
 
@@ -136,6 +165,44 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertTrue(result.sucesso)
         self.assertEqual(result.mensagens_brutas, ["Toner baixo", "Tampa aberta"])
         self.assertEqual(result.mensagens_normalizadas, ["toner baixo", "tampa aberta"])
+
+    def test_parser_canon_detecta_formato_real_com_mensagens_quebradas(self):
+        result = parse_status_html_for_model(
+            DummyModel("Canon", "IR-C3326I"),
+            fixture_html("canon_ir_c3326i_status_real_shape.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.estado_principal, "Ocorreu um erro.")
+        self.assertIn("o toner magenta esta baixo.", result.mensagens_normalizadas)
+        self.assertIn("o toner amarelo esta baixo.", result.mensagens_normalizadas)
+        self.assertNotIn("Modo de espera.", result.mensagens_brutas)
+
+    def test_parser_samsung_detecta_estado_e_alerta_separados(self):
+        result = parse_status_html_for_model(
+            DummyModel("Samsung", "K4250LX"),
+            fixture_html("samsung_k4350_status_real_shape.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Erro", "1 Alerta(s) ocorridos"])
+        self.assertEqual(result.estado_principal, "Erro")
+
+    def test_parser_hp_detecta_formato_real_e_prioriza_aviso(self):
+        result = parse_status_html_for_model(
+            DummyModel("HP", "MFP-4303"),
+            fixture_html("hp_mfp_4303_status_real_shape.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(
+            result.mensagens_brutas,
+            [
+                "Band. 1 Qualquer tipo Qualquer tamanho - Aviso",
+                "Band. 2 Comum A4 (210 x 297 mm) - OK",
+            ],
+        )
+        self.assertEqual(result.estado_principal, "Aviso")
 
     def test_parser_ignora_script_style_e_nao_persiste_html_bruto(self):
         html = """

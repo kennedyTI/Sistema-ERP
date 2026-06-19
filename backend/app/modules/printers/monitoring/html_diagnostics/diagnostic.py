@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +59,14 @@ SENSITIVE_MARKERS = (
     "csrf",
     "senha_criptografada",
 )
+SENSITIVE_PATTERNS = (
+    (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[ip_oculto]"),
+    (re.compile(r"\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b"), "[mac_oculto]"),
+    (re.compile(r"\b[0-9a-fA-F]{2}(?:-[0-9a-fA-F]{2}){5}\b"), "[mac_oculto]"),
+    (re.compile(r"\b[\w.\-+]+@[\w.\-]+\.\w+\b"), "[email_oculto]"),
+    (re.compile(r"https?://\S+"), "[url_oculta]"),
+    (re.compile(r"\b(?!MAQUINA_)[A-Z]{2,}_[A-Z0-9_]*_\d+\b"), "[maquina_oculta]"),
+)
 SANITIZED_MACHINE_LABELS = {
     ("brother", "dcp-l1632w"): "MAQUINA_BROTHER_L1632W",
     ("brother", "dcp-l2540dw"): "MAQUINA_BROTHER_L2540DW",
@@ -66,6 +75,98 @@ SANITIZED_MACHINE_LABELS = {
     ("samsung", "k4250lx"): "MAQUINA_SAMSUNG_K4350",
     ("hp", "mfp-4303"): "MAQUINA_HP_MFP_4303",
 }
+MODEL_DIAGNOSTIC_KEYWORDS = {
+    ("brother", "dcp-l1632w"): (
+        "Estado do dispositivo",
+        "Subs.",
+        "toner",
+        "Pronto",
+        "Dormindo",
+        "Em espera",
+        "Erro",
+    ),
+    ("canon", "ir-c3326i"): (
+        "Estado do dispositivo",
+        "Impressora",
+        "Scanner",
+        "Ocorreu um erro",
+        "toner",
+        "baixo",
+        "Informacoes de Erro",
+        "Poderá ter ocorrido um erro",
+    ),
+    ("hp", "mfp-4303"): (
+        "Cartuchos",
+        "Papel",
+        "Band.",
+        "Bandeja",
+        "Aviso",
+        "OK",
+        "Erro",
+        "Status",
+    ),
+    ("samsung", "k-4350"): (
+        "Estado",
+        "Alerta",
+        "Erro",
+        "Alerta(s) ocorridos",
+        "Informacoes do dispositivo",
+    ),
+    ("samsung", "k4250lx"): (
+        "Estado",
+        "Alerta",
+        "Erro",
+        "Alerta(s) ocorridos",
+        "Informacoes do dispositivo",
+    ),
+}
+STATUS_CANDIDATE_TERMS = (
+    "erro",
+    "aviso",
+    "toner",
+    "baixo",
+    "pronto",
+    "dormindo",
+    "espera",
+    "alerta",
+    "band.",
+    "bandeja",
+    "ok",
+    "trocar",
+    "subs.",
+    "cilindro",
+)
+SAMPLE_BLOCKED_TERMS = (
+    "autenticacao",
+    "authentication",
+    "inicio de sessao",
+    "sessao",
+    "login",
+    "logging in",
+    "nome utiliz",
+    "user name",
+    "destino de inicio",
+    "password",
+    "senha",
+    "password_oculto",
+    "password oculto",
+    "senha_oculto",
+    "senha oculto",
+    "segredo oculto",
+    "numero de serie",
+    "serial",
+    "mac",
+    "uuid",
+    "ip",
+    "endereco",
+    "administrador",
+    "email",
+    "localizacao",
+    "location",
+    "firmware",
+    "host",
+    "copyright",
+)
 
 
 def sanitized_machine_label(target: "HtmlDiagnosticTarget") -> str:
@@ -122,11 +223,13 @@ class HtmlDiagnosticTarget:
 def sanitize_text(value: Any) -> Any:
     if not isinstance(value, str):
         return value
-    sanitized = value
+    sanitized = " ".join(value.replace("\xa0", " ").split())
     for marker in SENSITIVE_MARKERS:
-        sanitized = sanitized.replace(marker, f"[{marker}_oculto]")
-        sanitized = sanitized.replace(marker.upper(), f"[{marker}_oculto]")
-        sanitized = sanitized.replace(marker.title(), f"[{marker}_oculto]")
+        sanitized = sanitized.replace(marker, "[segredo_oculto]")
+        sanitized = sanitized.replace(marker.upper(), "[segredo_oculto]")
+        sanitized = sanitized.replace(marker.title(), "[segredo_oculto]")
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
     return sanitized[:1000]
 
 
@@ -144,6 +247,90 @@ def sanitize_payload(data: Any) -> Any:
 
 def _safe_bool(value: Any) -> bool:
     return bool(value)
+
+
+def _target_model_key(target: HtmlDiagnosticTarget) -> tuple[str, str]:
+    return normalize_text(target.fabricante), normalize_text(target.modelo)
+
+
+def _diagnostic_keywords(target: HtmlDiagnosticTarget) -> tuple[str, ...]:
+    return MODEL_DIAGNOSTIC_KEYWORDS.get(_target_model_key(target), STATUS_CANDIDATE_TERMS)
+
+
+def _limited_unique(values: Iterable[str], *, limit: int = 8) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = sanitize_text(value)
+        normalized = normalize_text(cleaned)
+        if not cleaned or normalized in seen:
+            continue
+        unique.append(cleaned)
+        seen.add(normalized)
+        if len(unique) >= limit:
+            break
+    return unique
+
+
+def _is_safe_diagnostic_chunk(chunk: str) -> bool:
+    normalized = normalize_text(chunk)
+    if " / " in chunk:
+        return False
+    return not any(term in normalized for term in SAMPLE_BLOCKED_TERMS)
+
+
+def _visible_text_sample(chunks: list[str], *, limit: int = 24) -> list[str]:
+    allowed: list[str] = []
+    for chunk in chunks:
+        if not _is_safe_diagnostic_chunk(chunk):
+            continue
+        allowed.append(chunk)
+    return _limited_unique(allowed, limit=limit)
+
+
+def _visible_window(chunks: list[str], index: int, *, radius: int = 2) -> str:
+    start = max(index - radius, 0)
+    end = min(index + radius + 1, len(chunks))
+    return " | ".join(chunks[start:end])
+
+
+def build_parser_failure_diagnostic(
+    target: HtmlDiagnosticTarget,
+    html: str | None,
+) -> dict[str, Any]:
+    chunks = extract_visible_text_chunks(html or "")
+    normalized_keywords = tuple(normalize_text(keyword) for keyword in _diagnostic_keywords(target))
+    snippets: list[str] = []
+    labels: list[str] = []
+    candidates: list[str] = []
+
+    for index, chunk in enumerate(chunks):
+        if not _is_safe_diagnostic_chunk(chunk):
+            continue
+        normalized = normalize_text(chunk)
+        if ":" in chunk or normalized in {"status", "estado", "estado do dispositivo"}:
+            labels.append(chunk)
+        if any(keyword and keyword in normalized for keyword in normalized_keywords):
+            snippets.append(_visible_window(chunks, index))
+        if any(term in normalized for term in STATUS_CANDIDATE_TERMS):
+            candidates.append(chunk)
+
+    if not chunks:
+        failure_reason = "html_sem_texto_visivel"
+    elif not snippets and not candidates:
+        failure_reason = "sem_palavra_chave_operacional_sanitizada"
+    else:
+        failure_reason = "texto_visivel_sem_padrao_de_estado"
+
+    return {
+        "motivo_provavel": failure_reason,
+        "quantidade_trechos_visiveis": len(chunks),
+        "palavras_chave_usadas": list(_diagnostic_keywords(target)),
+        "amostra_texto_visivel": _visible_text_sample(chunks),
+        "trechos_sanitizados": _limited_unique(snippets),
+        "labels_detectados": _limited_unique(labels, limit=10),
+        "candidatos_status": _limited_unique(candidates, limit=10),
+    }
 
 
 def detect_information_capabilities(html: str) -> dict[str, bool]:
@@ -425,6 +612,11 @@ def diagnose_status_path(
         "sucesso": bool(parse_result.sucesso),
         "erro_codigo": None if parse_result.sucesso else "html_status_nao_detectado",
         "erro_detalhe_sanitizado": parse_result.erro_detalhe_sanitizado,
+        "diagnostico_parser": (
+            None
+            if parse_result.sucesso
+            else build_parser_failure_diagnostic(target, response.conteudo_html)
+        ),
     }
 
 

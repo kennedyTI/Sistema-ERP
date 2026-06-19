@@ -56,7 +56,17 @@ class HpMfp4303StatusParser(HtmlStatusParser):
 
     def _format_tray_message(self, parts: list[str]) -> str:
         status = self._extract_status_word(" ".join(parts))
-        body = " ".join(part for part in parts if normalize_text(part) != normalize_text(status))
+        body = " ".join(
+            part
+            for part in parts
+            if normalize_text(part)
+            not in {
+                normalize_text(status),
+                "status",
+                "papel",
+                "cartuchos",
+            }
+        )
         if status and f"- {status}" not in body:
             return f"{body} - {status}"
         return body

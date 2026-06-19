@@ -30,14 +30,18 @@ class SamsungK4350StatusParser(HtmlStatusParser):
         chunks = extract_visible_text_chunks(html)
         found: list[str] = []
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             normalized = normalize_text(chunk)
             if normalized.startswith("estado"):
                 value = self._value_after_separator(chunk)
+                if not value:
+                    value = self._next_operational_value(chunks, index)
                 if value:
                     found.append(value)
             if normalized.startswith("alerta"):
                 value = self._value_after_separator(chunk)
+                if not value:
+                    value = self._next_operational_value(chunks, index)
                 if value:
                     found.append(value)
 
@@ -46,4 +50,11 @@ class SamsungK4350StatusParser(HtmlStatusParser):
     def _value_after_separator(self, value: str) -> str | None:
         if ":" in value:
             return value.split(":", 1)[1].strip() or None
+        return None
+
+    def _next_operational_value(self, chunks: list[str], index: int) -> str | None:
+        for candidate in chunks[index + 1 : index + 4]:
+            normalized = normalize_text(candidate)
+            if normalized in {"erro"} or "alerta" in normalized:
+                return candidate
         return None

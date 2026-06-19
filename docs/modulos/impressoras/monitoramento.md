@@ -1722,6 +1722,97 @@ Refinar os parsers minimos contra o HTML real dos modelos que retornaram
 operacionais. A integracao com a cascata deve continuar para uma etapa futura,
 quando os parsers estiverem suficientemente confiaveis.
 
+## Etapa 3.5.2.12 - Refinamento dos parsers HTML minimos com base no diagnostico real
+
+Esta microetapa refinou os parsers HTML minimos a partir do diagnostico real
+da etapa 3.5.2.11. O objetivo foi melhorar a tolerancia dos parsers a
+estruturas reais de tela, sem integrar HTML na cascata SNMP -> HTML e sem
+persistir alertas HTML.
+
+Branch usada:
+
+```text
+feature/printers-html-parsers-real-fixes
+```
+
+Base usada:
+
+```text
+feature/printers-html-parsers-real-diagnostic
+commit base: 6df6fc2
+```
+
+### Ajustes feitos
+
+- Brother DCP-L1632W: parser passa a procurar mensagens conhecidas em janelas
+  de texto, cobrindo label e valor separados em varios elementos.
+- Canon IR-C3326I: parser passa a procurar mensagens em janelas de texto e
+  continua ignorando `Scanner: Modo de espera` como estado principal quando ha
+  erro da impressora.
+- HP MFP-4303: parser passa a limpar labels de card, como `Status`, `Papel` e
+  `Cartuchos`, preservando somente bandeja e estado operacional.
+- Samsung K-4350/K4250LX: parser passa a aceitar `Estado`/`Alerta` e seus
+  valores em elementos separados.
+- Diagnostico HTML: em falhas de parser, o relatorio agora inclui somente
+  amostras de texto visivel sanitizadas, candidatos de status, labels seguros
+  e motivo provavel da falha. O diagnostico nao salva HTML bruto.
+- Fixtures sinteticas e sanitizadas foram adicionadas para os formatos reais
+  esperados, sem dados reais, IP, MAC, serial, credencial, host ou localizacao.
+
+### Resultado anterior
+
+| Modelo | Resultado anterior |
+| --- | --- |
+| Brother DCP-L1632W | html_status_nao_detectado |
+| Canon IR-C3326I | html_status_nao_detectado |
+| Brother DCP-L2540DW | OK, estado `Trocar Cilindro` |
+| HP MFP-4303 | html_status_nao_detectado |
+| Samsung K-4350 | html_status_nao_detectado |
+
+### Novo diagnostico real
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260619_165037.json
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260619_165037.md
+```
+
+| Modelo cadastrado | Maquina analisada | Porta | Parser | Resultado novo | Estado principal | Motivo sanitizado |
+| --- | --- | --- | --- | --- | --- | --- |
+| Brother DCP-L1632W | MAQUINA_BROTHER_L1632W | 80 | disponivel | html_status_nao_detectado | - | texto visivel sem padrao de estado; caminho retornou `Device Status` e `Toner Level`, sem mensagem operacional de estado |
+| Canon IR-C3326I | MAQUINA_CANON_IR_C3326I | 8000 | disponivel | html_status_nao_detectado | - | raiz `/` retornou tela inicial/autenticacao sem texto operacional de status |
+| Brother DCP-L2540DW | MAQUINA_BROTHER_L2540DW | 80 | disponivel | OK | Trocar Cilindro | parser continua funcionando |
+| HP MFP-4303 | MAQUINA_HP_MFP_4303 | 80 | disponivel | html_status_nao_detectado | - | `/index.html` retornou shell do EWS sem cards operacionais visiveis |
+| Samsung K-4350 | MAQUINA_SAMSUNG_K4350 | 80 | disponivel | html_status_nao_detectado | - | `/sws/index.sws` retornou shell/carregamento e selecao de idioma, sem estado/alerta visivel |
+
+### Leitura tecnica
+
+- Os parsers refinados passaram nos testes com fixtures sinteticas que simulam
+  os formatos esperados.
+- O diagnostico real final mostrou que as falhas restantes nao decorrem apenas
+  do parser: os caminhos atuais de Brother DCP-L1632W, Canon IR-C3326I,
+  HP MFP-4303 e Samsung K-4350 nao entregaram texto operacional suficiente para
+  extrair `estado_principal`.
+- O Brother DCP-L2540DW continuou funcionando no HTML real.
+- A busca de seguranca no JSON/Markdown final nao encontrou HTML bruto, senha,
+  Authorization, Cookie, CSRF, token, senha criptografada, nome real de
+  maquina, IP real ou setor real.
+
+### Proxima etapa recomendada
+
+Validar caminhos HTML de status que entreguem texto operacional real para os
+modelos ainda pendentes. O primeiro foco deve ser encontrar endpoint seguro de
+status para Canon, HP e Samsung sem usar parametros dinamicos artificiais e sem
+coleta rica. A integracao com a cascata deve continuar fora do escopo ate que
+os caminhos e parsers estejam confiaveis.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1764,6 +1855,11 @@ cria API publica, nao altera frontend, nao cria nova tabela de endpoints, nao
 cria credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao
 extrai coleta rica e nao salva HTML bruto. A etapa 3.5.2.11 executa somente o
 diagnostico real dos parsers HTML minimos; ela nao integra HTML na cascata, nao
+persiste alertas HTML, nao altera Celery/task, nao altera Rules Engine, nao cria
+tabela nova, nao cria credencial por maquina, nao cria
+`tentativas_coleta_impressoras`, nao extrai dados cadastrais do HTML/SNMP e nao
+salva HTML bruto. A etapa 3.5.2.12 refina apenas parsers minimos, fixtures
+sinteticas e diagnostico sanitizado; ela nao integra HTML na cascata, nao
 persiste alertas HTML, nao altera Celery/task, nao altera Rules Engine, nao cria
 tabela nova, nao cria credencial por maquina, nao cria
 `tentativas_coleta_impressoras`, nao extrai dados cadastrais do HTML/SNMP e nao

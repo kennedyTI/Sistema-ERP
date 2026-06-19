@@ -324,6 +324,32 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertIn("erro_codigo", content)
         self.assertIn("MAQUINA_BROTHER_L1632W", content)
 
+    def test_diagnostico_de_falha_sanitiza_amostra_visivel(self):
+        raw_html = """
+        <html>
+          <body>
+            <p>Status</p>
+            <p>CAR_PRINT_002 10.0.0.10 Authorization Cookie CSRF</p>
+            <p>Toner Level</p>
+          </body>
+        </html>
+        """
+        fetcher = FakeFetcher(
+            [HtmlClientResponse(True, 200, "http://x", raw_html, None, None, "http", "basic")]
+        )
+
+        result = diagnose_status_path(self.target(), fetcher=fetcher)
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        self.assertFalse(result["sucesso"])
+        self.assertIn("diagnostico_parser", result)
+        self.assertNotIn("<html", serialized.lower())
+        self.assertNotIn("CAR_PRINT_002", serialized)
+        self.assertNotIn("10.0.0.10", serialized)
+        self.assertNotIn("Authorization", serialized)
+        self.assertNotIn("Cookie", serialized)
+        self.assertNotIn("CSRF", serialized)
+
     def test_markdown_contem_matriz_por_modelo(self):
         report = build_report(targets=[self.target()], confirmar=False)
         markdown = build_markdown(report)
