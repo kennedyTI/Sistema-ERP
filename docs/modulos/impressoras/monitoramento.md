@@ -1606,6 +1606,52 @@ de forma controlada:
 HTML autenticado -> parser -> mensagens_brutas -> Rules Engine -> sincronizacao de alertas
 ```
 
+### Diagnostico real apos parsers minimos
+
+Depois da criacao dos parsers minimos, foi executado novo diagnostico real com
+`--confirmar`, usando os caminhos, porta e credenciais ja cadastrados no banco,
+o cliente HTML seguro e os parsers disponiveis.
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em `tmp/diagnosticos/html_modelos/`:
+
+```text
+diagnostico_html_modelos_20260619_144004.json
+diagnostico_html_modelos_20260619_144004.md
+```
+
+Matriz real consolidada:
+
+| Modelo | Status HTML | Estado detectado | Informacoes HTML | Parser status | Observacao |
+| --- | --- | --- | --- | --- | --- |
+| Brother DCP-L1632W | HTTP 200 com HTML | nao detectado | HTTP 200 sem capacidades detectadas | disponivel | parser precisa ser refinado contra HTML real |
+| Canon IR-C3326I | HTTP 200 com HTML na porta 8000 | nao detectado | HTTP 200 sem capacidades detectadas | disponivel | caminho/HTML real difere da fixture minima |
+| Brother DCP-L2540DW | OK | Trocar Cilindro | OK | disponivel | pronto para proxima avaliacao de fallback |
+| HP MFP-4303 | HTTP 200 com HTML | nao detectado | HTTP 200 sem capacidades detectadas | disponivel | parser precisa ser refinado contra HTML real |
+| HP T-2530 | sem maquina elegivel | nao executado | sem maquina elegivel | sem parser | manter fora ate haver alvo elegivel |
+| Samsung K-4350 | HTTP 200 com HTML | nao detectado | nao configurado | disponivel | parser precisa ser refinado contra HTML real |
+| Brother ADS-4700W | sem maquina elegivel | nao executado | sem maquina elegivel | sem parser | manter fora ate haver alvo elegivel |
+
+Leitura tecnica:
+
+- O primeiro modelo com parser e extracao real bem-sucedida foi Brother
+  DCP-L2540DW, com estado principal `Trocar Cilindro`.
+- Brother DCP-L1632W, Canon IR-C3326I, HP MFP-4303 e Samsung K-4350 acessaram
+  HTML real, mas os parsers minimos ainda nao reconheceram mensagens no HTML
+  recebido.
+- O Canon IR-C3326I passou a responder HTTP 200 usando porta 8000 e caminho
+  `/`, confirmando que o suporte a porta esta funcionando no cliente.
+- Os relatorios continuaram sanitizados; a busca de seguranca nao encontrou
+  HTML bruto, senha, Authorization, Cookie, CSRF, token ou senha criptografada.
+- Nao houve integracao com a cascata, nao houve persistencia de alertas HTML,
+  nao houve alteracao de Celery/task, nao houve alteracao da Rules Engine e nao
+  houve ampliacao para coleta rica.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
