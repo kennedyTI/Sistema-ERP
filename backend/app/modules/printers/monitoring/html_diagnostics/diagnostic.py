@@ -58,6 +58,19 @@ SENSITIVE_MARKERS = (
     "csrf",
     "senha_criptografada",
 )
+SANITIZED_MACHINE_LABELS = {
+    ("brother", "dcp-l1632w"): "MAQUINA_BROTHER_L1632W",
+    ("brother", "dcp-l2540dw"): "MAQUINA_BROTHER_L2540DW",
+    ("canon", "ir-c3326i"): "MAQUINA_CANON_IR_C3326I",
+    ("samsung", "k-4350"): "MAQUINA_SAMSUNG_K4350",
+    ("samsung", "k4250lx"): "MAQUINA_SAMSUNG_K4350",
+    ("hp", "mfp-4303"): "MAQUINA_HP_MFP_4303",
+}
+
+
+def sanitized_machine_label(target: "HtmlDiagnosticTarget") -> str:
+    key = (normalize_text(target.fabricante), normalize_text(target.modelo))
+    return SANITIZED_MACHINE_LABELS.get(key, f"MAQUINA_MODELO_{target.modelo_id}")
 
 
 @dataclass(frozen=True)
@@ -89,9 +102,8 @@ class HtmlDiagnosticTarget:
             "modelo_id": self.modelo_id,
             "fabricante": self.fabricante,
             "modelo": self.modelo,
-            "maquina_id": self.maquina_id,
-            "maquina": self.maquina,
-            "ip": self.ip,
+            "maquina_sanitizada": sanitized_machine_label(self),
+            "ip_configurado": bool(self.ip),
             "status_previo": self.status_previo,
             "motivo_ignorado": self.motivo_ignorado,
             "caminho_status": self.caminho_status,
@@ -318,8 +330,9 @@ def unsupported_auth_result(
 ) -> dict[str, Any]:
     return {
         "modelo": f"{target.fabricante} {target.modelo}",
-        "maquina": target.maquina,
-        "ip": target.ip,
+        "maquina_sanitizada": sanitized_machine_label(target),
+        "ip_configurado": bool(target.ip),
+        "porta": target.porta,
         "tipo_teste": test_type,
         "caminho": path,
         "autenticacao": target.tipo_autenticacao,
@@ -358,8 +371,9 @@ def diagnose_status_path(
     response = fetcher(target.ip, target_to_config(target), page_type="status")
     base = {
         "modelo": f"{target.fabricante} {target.modelo}",
-        "maquina": target.maquina,
-        "ip": target.ip,
+        "maquina_sanitizada": sanitized_machine_label(target),
+        "ip_configurado": bool(target.ip),
+        "porta": target.porta,
         "tipo_teste": "status",
         "caminho": target.caminho_status,
         "protocolo_usado": response.protocolo_usado,
@@ -441,8 +455,9 @@ def diagnose_information_path(
     response = fetcher(target.ip, target_to_config(target), page_type="informacoes")
     base = {
         "modelo": f"{target.fabricante} {target.modelo}",
-        "maquina": target.maquina,
-        "ip": target.ip,
+        "maquina_sanitizada": sanitized_machine_label(target),
+        "ip_configurado": bool(target.ip),
+        "porta": target.porta,
         "tipo_teste": "informacoes",
         "caminho": target.caminho_informacoes,
         "protocolo_usado": response.protocolo_usado,
@@ -485,9 +500,9 @@ def diagnose_target(
         "modelo_id": target.modelo_id,
         "fabricante": target.fabricante,
         "modelo": target.modelo,
-        "maquina_id": target.maquina_id,
-        "maquina": target.maquina,
-        "ip": target.ip,
+        "maquina_sanitizada": sanitized_machine_label(target),
+        "ip_configurado": bool(target.ip),
+        "porta": target.porta,
         "status_previo": target.status_previo,
         "caminho_login_configurado": bool(target.caminho_login),
         "login_observacao": (
@@ -590,16 +605,17 @@ def build_markdown(report: dict[str, Any]) -> str:
                 "",
                 "Nenhuma requisicao HTTP real foi executada.",
                 "",
-                "| Modelo | Maquina | IP | Status | Informacoes | Autenticacao | Parser |",
-                "| --- | --- | --- | --- | --- | --- | --- |",
+                "| Modelo | Maquina | IP configurado | Porta | Status | Informacoes | Autenticacao | Parser |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
         for target in report.get("alvos_planejados", []):
             lines.append(
-                "| {modelo} | {maquina} | {ip} | {caminho_status} | {caminho_informacoes} | {tipo_autenticacao} | {parser_status} |".format(
+                "| {modelo} | {maquina} | {ip_configurado} | {porta} | {caminho_status} | {caminho_informacoes} | {tipo_autenticacao} | {parser_status} |".format(
                     modelo=f"{target.get('fabricante')} {target.get('modelo')}",
-                    maquina=target.get("maquina") or "-",
-                    ip=target.get("ip") or "-",
+                    maquina=target.get("maquina_sanitizada") or "-",
+                    ip_configurado="sim" if target.get("ip_configurado") else "nao",
+                    porta=target.get("porta") or "-",
                     caminho_status=target.get("caminho_status") or "-",
                     caminho_informacoes=target.get("caminho_informacoes") or "-",
                     tipo_autenticacao=target.get("tipo_autenticacao") or "-",

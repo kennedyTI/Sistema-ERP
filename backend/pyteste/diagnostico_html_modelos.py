@@ -16,6 +16,9 @@ import argparse
 import sys
 from pathlib import Path
 
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -67,6 +70,7 @@ def emitir(texto: str = "") -> None:
 
 def main() -> int:
     args = parse_args()
+    urllib3.disable_warnings(InsecureRequestWarning)
     db = SessionLocal()
     try:
         rows = load_candidate_rows(
@@ -101,4 +105,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

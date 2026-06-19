@@ -1652,6 +1652,76 @@ Leitura tecnica:
   nao houve alteracao de Celery/task, nao houve alteracao da Rules Engine e nao
   houve ampliacao para coleta rica.
 
+## Etapa 3.5.2.11 - Diagnostico real dos parsers HTML minimos
+
+Esta microetapa validou, com acesso real controlado, se os parsers HTML
+minimos conseguem detectar o estado operacional dos modelos ja mapeados. A
+etapa foi apenas diagnostica: HTML ainda nao foi integrado na cascata SNMP ->
+HTML, alertas HTML nao foram persistidos, Celery/task nao foi alterado, Rules
+Engine nao foi alterada e nao houve ampliacao para coleta rica.
+
+Branch usada:
+
+```text
+feature/printers-html-parsers-real-diagnostic
+```
+
+Base usada:
+
+```text
+feature/printers-html-status-parsers-minimal
+commit base: 71d3593
+parsers minimos: d3436e0
+```
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260619_160542.json
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260619_160542.md
+```
+
+### Resultado sanitizado
+
+| Modelo cadastrado | Maquina analisada | Caminho status | Porta | Parser | Resultado status | Estado principal | Resultado informacoes | Observacao |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Brother DCP-L1632W | MAQUINA_BROTHER_L1632W | /home/status.html | 80 | disponivel | html_status_nao_detectado | - | html_capacidades_nao_detectadas | parser precisa refinamento contra HTML real |
+| Canon IR-C3326I | MAQUINA_CANON_IR_C3326I | / | 8000 | disponivel | html_status_nao_detectado | - | html_capacidades_nao_detectadas | porta 8000 confirmada; parser precisa refinamento |
+| Brother DCP-L2540DW | MAQUINA_BROTHER_L2540DW | /general/status.html | 80 | disponivel | OK | Trocar Cilindro | OK | parser passou com HTML real |
+| HP MFP-4303 | MAQUINA_HP_MFP_4303 | /index.html | 80 | disponivel | html_status_nao_detectado | - | html_capacidades_nao_detectadas | parser precisa refinamento contra HTML real |
+| Samsung K-4350 | MAQUINA_SAMSUNG_K4350 | /sws/index.sws | 80 | disponivel | html_status_nao_detectado | - | html_caminho_informacoes_nao_configurado | parser precisa refinamento contra HTML real |
+
+Tambem foram listados modelos sem alvo elegivel ou sem parser configurado,
+apenas como diagnostico cadastral, sem ampliar o escopo desta etapa.
+
+### Decisoes e seguranca
+
+- Os dados cadastrais continuam vindo das tabelas do ERP.
+- O diagnostico usa identificador de maquina sanitizado e nao grava IP real no
+  relatorio.
+- A senha criptografada e descriptografada somente em memoria pelo fluxo ja
+  existente.
+- O script manual silencia apenas o aviso de certificado self-signed do
+  `urllib3`, evitando que o console exponha IP real durante o diagnostico.
+- A busca de seguranca no JSON/Markdown gerado nao encontrou HTML bruto, senha,
+  Authorization, Cookie, CSRF, token, senha criptografada, nome real de maquina
+  ou IP real.
+- Nao houve migration, tabela nova, credencial por maquina ou
+  `tentativas_coleta_impressoras`.
+
+### Proxima etapa recomendada
+
+Refinar os parsers minimos contra o HTML real dos modelos que retornaram
+`html_status_nao_detectado`, com prioridade para manter o escopo em mensagens
+operacionais. A integracao com a cascata deve continuar para uma etapa futura,
+quando os parsers estiverem suficientemente confiaveis.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1692,7 +1762,12 @@ minimos de status por modelo e suporte a porta na credencial HTML; ela ainda
 nao integra HTML na cascata, nao altera Celery, nao persiste alertas HTML, nao
 cria API publica, nao altera frontend, nao cria nova tabela de endpoints, nao
 cria credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao
-extrai coleta rica e nao salva HTML bruto.
+extrai coleta rica e nao salva HTML bruto. A etapa 3.5.2.11 executa somente o
+diagnostico real dos parsers HTML minimos; ela nao integra HTML na cascata, nao
+persiste alertas HTML, nao altera Celery/task, nao altera Rules Engine, nao cria
+tabela nova, nao cria credencial por maquina, nao cria
+`tentativas_coleta_impressoras`, nao extrai dados cadastrais do HTML/SNMP e nao
+salva HTML bruto.
 
 ## Próximas etapas
 

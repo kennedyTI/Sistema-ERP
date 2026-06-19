@@ -132,6 +132,14 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertEqual(fetcher.calls, [])
         self.assertEqual(report["alvos_planejados"][0]["modelo"], "DCP-L1632W")
         self.assertEqual(report["alvos_planejados"][0]["parser_status"], "disponivel")
+        self.assertEqual(
+            report["alvos_planejados"][0]["maquina_sanitizada"],
+            "MAQUINA_BROTHER_L1632W",
+        )
+        self.assertTrue(report["alvos_planejados"][0]["ip_configurado"])
+        self.assertEqual(report["alvos_planejados"][0]["porta"], 80)
+        self.assertNotIn("maquina", report["alvos_planejados"][0])
+        self.assertNotIn("ip", report["alvos_planejados"][0])
 
     def test_selecao_filtra_maquinas_ativas_e_ignora_sem_ip(self):
         rows = [
@@ -196,6 +204,27 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertEqual(fetcher.calls[0]["tipo_autenticacao"], "basic")
         self.assertEqual(fetcher.calls[0]["porta"], 80)
         self.assertEqual(result["estado_principal"], "Em espera")
+        self.assertEqual(result["maquina_sanitizada"], "MAQUINA_BROTHER_L1632W")
+        self.assertTrue(result["ip_configurado"])
+        self.assertEqual(result["porta"], 80)
+
+    def test_status_canon_monta_porta_8000(self):
+        fetcher = FakeFetcher()
+        target = self.target(
+            fabricante="Canon",
+            modelo="IR-C3326I",
+            modelo_id=3,
+            caminho_status="/",
+            porta=8000,
+            protocolo_preferencial="http",
+        )
+
+        result = diagnose_status_path(target, fetcher=fetcher)
+
+        self.assertEqual(fetcher.calls[0]["porta"], 8000)
+        self.assertEqual(fetcher.calls[0]["protocolo_preferencial"], "http")
+        self.assertEqual(result["porta"], 8000)
+        self.assertEqual(result["maquina_sanitizada"], "MAQUINA_CANON_IR_C3326I")
 
     def test_informacoes_usa_cliente_html_seguro_e_digest(self):
         fetcher = FakeFetcher()
@@ -279,6 +308,8 @@ class HtmlPathsDiagnosticTest(TestCase):
 
         for forbidden in (
             "<html",
+            "CAR_PRINT_002",
+            "10.0.0.10",
             "senha-ficticia",
             "Authorization",
             "Cookie",
@@ -287,6 +318,11 @@ class HtmlPathsDiagnosticTest(TestCase):
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, content)
+        self.assertIn("estado_principal", content)
+        self.assertIn("mensagens_brutas", content)
+        self.assertIn("mensagens_normalizadas", content)
+        self.assertIn("erro_codigo", content)
+        self.assertIn("MAQUINA_BROTHER_L1632W", content)
 
     def test_markdown_contem_matriz_por_modelo(self):
         report = build_report(targets=[self.target()], confirmar=False)
