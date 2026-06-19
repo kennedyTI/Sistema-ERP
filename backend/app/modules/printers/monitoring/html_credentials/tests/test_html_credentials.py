@@ -50,6 +50,9 @@ CREDENTIAL_MIGRATION = Path(
 HTML_ACCESS_MIGRATION = Path(
     "backend/app/migrations/versions/20260618_printer_html_access_config.py"
 )
+HTML_PORT_MIGRATION = Path(
+    "backend/app/migrations/versions/20260619_printer_html_credentials_port.py"
+)
 
 
 class PermissionUserStub:
@@ -143,6 +146,7 @@ class HtmlCredentialModelTest(TestCase):
                 "caminho_status",
                 "caminho_informacoes",
                 "caminho_login",
+                "porta",
                 "timeout_segundos",
                 "protocolo_preferencial",
                 "validar_ssl",
@@ -154,6 +158,7 @@ class HtmlCredentialModelTest(TestCase):
         self.assertFalse(PrinterCollectionCredential.__table__.c.modelo_id.nullable)
         self.assertTrue(PrinterCollectionCredential.__table__.c.usuario.nullable)
         self.assertEqual(PrinterCollectionCredential.__table__.c.timeout_segundos.default.arg, 5)
+        self.assertEqual(PrinterCollectionCredential.__table__.c.porta.default.arg, 80)
         self.assertEqual(
             PrinterCollectionCredential.__table__.c.protocolo_preferencial.default.arg,
             "auto",
@@ -174,6 +179,14 @@ class HtmlCredentialModelTest(TestCase):
         for value in (*ALLOWED_AUTH_TYPES, "auto", "http", "https"):
             self.assertIn(value, check_text)
         self.assertIn("timeout_segundos", check_text)
+        self.assertIn("porta", check_text)
+
+    def test_migration_porta_html_adiciona_coluna_sem_criar_tabela_nova(self):
+        content = HTML_PORT_MIGRATION.read_text(encoding="utf-8")
+
+        self.assertIn('"porta"', content)
+        self.assertIn("ck_credenciais_coleta_impressoras_porta", content)
+        self.assertNotIn("op.create_table", content)
 
     def test_tipos_validos_sao_aceitos(self):
         for index, auth_type in enumerate(ALLOWED_AUTH_TYPES, start=1):
@@ -285,6 +298,7 @@ class HtmlCredentialServiceTest(TestCase):
             senha="senha-ficticia",
             caminho_status="/home/status.html",
             caminho_informacoes="/general/information.html?kind=item",
+            porta=80,
             timeout_segundos=5,
             protocolo_preferencial="auto",
             validar_ssl=False,
@@ -293,6 +307,7 @@ class HtmlCredentialServiceTest(TestCase):
 
         metadata = credential_metadata(credential)
         self.assertIn("Brother DCP-L1632W", metadata["descricao"])
+        self.assertEqual(metadata["porta"], 80)
         self.assertNotIn("senha", metadata)
         self.assertNotIn("senha_criptografada", metadata)
         self.assertNotIn("senha-ficticia", str(metadata))
@@ -341,6 +356,7 @@ class HtmlCredentialServiceTest(TestCase):
 
         self.assertEqual(config.senha, "senha-ficticia")
         self.assertEqual(config.caminho_status, "/home/status.html")
+        self.assertEqual(config.porta, 80)
 
 
 class HtmlCredentialAdminTest(TestCase):
@@ -356,6 +372,7 @@ class HtmlCredentialAdminTest(TestCase):
             (
                 "modelo",
                 "tipo_autenticacao",
+                "porta",
                 "protocolo_preferencial",
                 "validar_ssl",
                 "caminho_status",

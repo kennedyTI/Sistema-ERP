@@ -1507,6 +1507,105 @@ parsers especificos antes de integrar o fallback HTML na cascata de alertas.
 O primeiro candidato tecnico e o Brother DCP-L2540DW, porque retornou HTML de
 status e informacoes com capacidades detectaveis.
 
+## Etapa 3.5.2.10 - Parsers HTML minimos de status por modelo
+
+Esta microetapa cria parsers HTML minimos para extrair somente mensagens
+operacionais de status/alertas dos paineis HTML ja mapeados. O objetivo e
+preparar a base para o fallback HTML futuro, sem acionar a cascata SNMP -> HTML
+e sem persistir alertas vindos de HTML.
+
+### Regra cadastral
+
+Dados cadastrais oficiais continuam vindo das tabelas do ERP:
+
+```text
+printer_machines
+printers_models
+```
+
+HTML e SNMP nao substituem nem atualizam automaticamente fabricante, modelo,
+nome da maquina, IP, setor, centro de custo, numero de serie, firmware, MAC,
+UUID, imagem ou qualquer descricao administrativa. Nesta etapa, HTML serve
+apenas como fonte operacional para mensagens de status.
+
+### Modelos suportados
+
+| Modelo cadastrado | Caminho status | Porta | Parser |
+| --- | --- | --- | --- |
+| Brother DCP-L1632W | /home/status.html | 80 | brother_dcp_l1632w_status |
+| Brother DCP-L2540DW | /general/status.html | 80 | brother_dcp_l2540dw_status |
+| Canon IR-C3326I | / | 8000 | canon_ir_c3326i_status |
+| Samsung K-4350 | /sws/index.sws | 80 | samsung_k4350_status |
+| Samsung K4250LX | /sws/index.sws | 80 | alias do parser Samsung K-4350 |
+| HP MFP-4303 | /index.html | 80 | hp_mfp_4303_status |
+
+Foi adicionada a coluna `porta` em `credenciais_coleta_impressoras`, com valor
+padrao 80 e validacao entre 1 e 65535. Isso permite configurar o Canon
+IR-C3326I em HTTP na porta 8000 sem criar nova tabela e sem criar credencial
+por maquina.
+
+### Mensagens extraidas
+
+| Modelo | Mensagens operacionais esperadas |
+| --- | --- |
+| Brother DCP-L1632W | `Subs. o toner`, `Substituir toner`, `Em espera`, `Dormindo`, `Pronto`, `Sem papel`, `Atolamento`, `Tampa aberta`, `Erro` |
+| Brother DCP-L2540DW | `Ha pouco toner`, `Trocar Toner`, `Papel Preso`, `Trocar Cilindro`, `Ready`, `Sleep`, `Deep Sleep`, `Em espera`, `Pronto`, `Erro` |
+| Canon IR-C3326I | `Ocorreu um erro.`, `O toner Magenta esta baixo.`, `O toner Amarelo esta baixo.`, `Podera ter ocorrido um erro.` |
+| Samsung K-4350/K4250LX | `Erro`, `1 Alerta(s) ocorridos` |
+| HP MFP-4303 | estados dos cards de papel, como `Band. 1 ... - Aviso` e `Band. 2 ... - OK` |
+
+A prioridade interna dos parsers serve apenas para escolher
+`estado_principal`:
+
+```text
+erro/vermelho > aviso/toner baixo/amarelo > ok/pronto/espera/verde
+```
+
+A Rules Engine oficial ainda nao e aplicada nesta etapa.
+
+### Fixtures sanitizadas
+
+Foram criadas fixtures HTML minimas e sanitizadas em:
+
+```text
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/
+```
+
+Arquivos:
+
+```text
+brother_dcp_l1632w_status.html
+brother_dcp_l2540dw_status.html
+canon_ir_c3326i_status.html
+samsung_k4350_status.html
+hp_mfp_4303_status.html
+```
+
+As fixtures contem apenas trechos minimos para testes de parser. Elas nao
+incluem senha, senha criptografada, Cookie, CSRF, Authorization, IP real, MAC
+real, numero de serie real, UUID, host real, localizacao real, e-mail,
+administrador, certificado, chave ou HTML bruto autenticado.
+
+### Fora desta microetapa
+
+Esta microetapa nao integra HTML na cascata SNMP -> HTML, nao altera
+`collect_and_sync_machine_alerts`, nao altera task Celery, nao persiste alertas
+HTML, nao cria API publica, nao altera frontend, nao faz coleta rica, nao
+extrai contador, toner percentual, papel estruturado, numero de serie,
+firmware, UUID, MAC ou qualquer dado cadastral.
+
+Tambem nao cria nova tabela de endpoints HTML, nao cria credencial por maquina,
+nao cria `tentativas_coleta_impressoras` e nao salva HTML bruto.
+
+### Proxima etapa recomendada
+
+A proxima etapa deve integrar o fallback HTML autenticado na cascata de alertas
+de forma controlada:
+
+```text
+HTML autenticado -> parser -> mensagens_brutas -> Rules Engine -> sincronizacao de alertas
+```
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1542,7 +1641,12 @@ diagnostico HTML real controlado por modelo e documenta uma matriz consolidada,
 mas ainda nao integra HTML na cascata, nao cria parser novo, nao cria tabela
 nova, nao cria credencial por maquina, nao cria `tentativas_coleta_impressoras`,
 nao altera Celery, nao cria API publica, nao altera frontend, nao persiste
-alertas HTML e nao salva HTML bruto.
+alertas HTML e nao salva HTML bruto. A etapa 3.5.2.10 cria apenas parsers HTML
+minimos de status por modelo e suporte a porta na credencial HTML; ela ainda
+nao integra HTML na cascata, nao altera Celery, nao persiste alertas HTML, nao
+cria API publica, nao altera frontend, nao cria nova tabela de endpoints, nao
+cria credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao
+extrai coleta rica e nao salva HTML bruto.
 
 ## Próximas etapas
 

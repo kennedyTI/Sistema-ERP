@@ -35,6 +35,7 @@ class PrinterCollectionCredentialAdminModel(models.Model):
         blank=True,
     )
     caminho_login = models.CharField("CAMINHO LOGIN", max_length=500, null=True, blank=True)
+    porta = models.IntegerField("PORTA", default=80)
     timeout_segundos = models.IntegerField("TIMEOUT SEGUNDOS", default=5)
     protocolo_preferencial = models.CharField(
         "PROTOCOLO PREFERENCIAL",

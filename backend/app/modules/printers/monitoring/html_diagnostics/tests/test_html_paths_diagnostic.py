@@ -63,6 +63,7 @@ class FakeFetcher:
                 "page_type": page_type,
                 "tipo_autenticacao": config.tipo_autenticacao,
                 "timeout_segundos": config.timeout_segundos,
+                "porta": config.porta,
                 "validar_ssl": config.validar_ssl,
                 "protocolo_preferencial": config.protocolo_preferencial,
             }
@@ -104,6 +105,7 @@ class HtmlPathsDiagnosticTest(TestCase):
             "caminho_status": "/home/status.html",
             "caminho_informacoes": "/general/information.html?kind=item",
             "caminho_login": None,
+            "porta": 80,
             "timeout_segundos": 5,
             "protocolo_preferencial": "auto",
             "validar_ssl": False,
@@ -192,6 +194,7 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertTrue(result["sucesso"])
         self.assertEqual(fetcher.calls[0]["page_type"], "status")
         self.assertEqual(fetcher.calls[0]["tipo_autenticacao"], "basic")
+        self.assertEqual(fetcher.calls[0]["porta"], 80)
         self.assertEqual(result["estado_principal"], "Em espera")
 
     def test_informacoes_usa_cliente_html_seguro_e_digest(self):
@@ -227,7 +230,7 @@ class HtmlPathsDiagnosticTest(TestCase):
 
     def test_status_sem_parser_retorna_erro_controlado(self):
         fetcher = FakeFetcher()
-        target = self.target(fabricante="HP", modelo="MFP-4303", modelo_id=5)
+        target = self.target(fabricante="HP", modelo="MFP-4305", modelo_id=9)
 
         result = diagnose_status_path(target, fetcher=fetcher)
 
@@ -328,4 +331,3 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertEqual(matrix[0]["modelo"], "Brother DCP-L1632W")
         self.assertEqual(matrix[0]["status_html"], "OK")
         self.assertEqual(matrix[0]["informacoes_html"], "OK")
-

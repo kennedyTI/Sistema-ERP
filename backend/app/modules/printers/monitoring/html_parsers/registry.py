@@ -9,12 +9,24 @@ from backend.app.modules.printers.monitoring.html_parsers.base import (
 )
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
     BrotherDcpL1632wStatusParser,
+    BrotherDcpL2540dwStatusParser,
+)
+from backend.app.modules.printers.monitoring.html_parsers.canon import (
+    CanonIrC3326iStatusParser,
+)
+from backend.app.modules.printers.monitoring.html_parsers.hp import HpMfp4303StatusParser
+from backend.app.modules.printers.monitoring.html_parsers.samsung import (
+    SamsungK4350StatusParser,
 )
 from backend.app.modules.printers.monitoring.state.rules import normalize_text
 
 
 PARSER_CLASSES: tuple[type[HtmlStatusParser], ...] = (
     BrotherDcpL1632wStatusParser,
+    BrotherDcpL2540dwStatusParser,
+    CanonIrC3326iStatusParser,
+    SamsungK4350StatusParser,
+    HpMfp4303StatusParser,
 )
 
 
@@ -38,13 +50,22 @@ def _parser_key(parser: HtmlStatusParser) -> tuple[str, str]:
     return _registry_key(parser.supported_manufacturer, parser.supported_model)
 
 
+def _parser_keys(parser: HtmlStatusParser) -> set[tuple[str, str]]:
+    keys = {_parser_key(parser)}
+    keys.update(
+        _registry_key(parser.supported_manufacturer, alias)
+        for alias in parser.supported_model_aliases
+    )
+    return keys
+
+
 def get_status_parser_for_model(model: Any) -> HtmlStatusParser | None:
     manufacturer, model_name = _model_identity(model)
     lookup_key = _registry_key(manufacturer, model_name)
 
     for parser_class in PARSER_CLASSES:
         parser = parser_class()
-        if _parser_key(parser) == lookup_key:
+        if lookup_key in _parser_keys(parser):
             return parser
     return None
 
@@ -95,4 +116,3 @@ def parse_html_status_response(
             detail="Resposta HTML de status indisponivel para parser.",
         )
     return parse_status_html_for_model(model, response.conteudo_html)
-

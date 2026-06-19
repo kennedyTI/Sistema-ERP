@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.modules.printers.machines.models import PrinterModel
 from backend.app.modules.printers.monitoring.html_client.client import (
+    validate_port,
     validate_preferred_protocol,
     validate_relative_html_path,
     validate_timeout,
@@ -47,6 +48,7 @@ def credential_metadata(credential: PrinterCollectionCredential | None) -> dict 
         "caminho_status": credential.caminho_status,
         "caminho_informacoes": credential.caminho_informacoes,
         "caminho_login": credential.caminho_login,
+        "porta": credential.porta,
         "timeout_segundos": credential.timeout_segundos,
         "protocolo_preferencial": credential.protocolo_preferencial,
         "validar_ssl": credential.validar_ssl,
@@ -102,6 +104,7 @@ def get_decrypted_html_access_for_model(db: Session, *, model_id: int) -> HtmlAc
         caminho_status=credential.caminho_status,
         caminho_informacoes=credential.caminho_informacoes,
         caminho_login=credential.caminho_login,
+        porta=credential.porta,
         timeout_segundos=credential.timeout_segundos,
         protocolo_preferencial=credential.protocolo_preferencial,
         validar_ssl=credential.validar_ssl,
@@ -118,6 +121,7 @@ def create_collection_credential(
     caminho_status: str | None = None,
     caminho_informacoes: str | None = None,
     caminho_login: str | None = None,
+    porta: int = 80,
     timeout_segundos: int = 5,
     protocolo_preferencial: str = "auto",
     validar_ssl: bool = False,
@@ -129,6 +133,7 @@ def create_collection_credential(
         field_name="caminho_informacoes",
     )
     caminho_login = _validated_path(caminho_login, field_name="caminho_login")
+    validate_port(porta)
     validate_timeout(timeout_segundos)
     validate_preferred_protocol(protocolo_preferencial)
     printer_model = db.get(PrinterModel, modelo_id)
@@ -145,6 +150,7 @@ def create_collection_credential(
         caminho_status=caminho_status,
         caminho_informacoes=caminho_informacoes,
         caminho_login=caminho_login,
+        porta=porta,
         timeout_segundos=timeout_segundos,
         protocolo_preferencial=protocolo_preferencial,
         validar_ssl=validar_ssl,

@@ -71,6 +71,7 @@ class HtmlDiagnosticTarget:
     caminho_status: str | None
     caminho_informacoes: str | None
     caminho_login: str | None
+    porta: int
     timeout_segundos: int
     protocolo_preferencial: str
     validar_ssl: bool
@@ -96,6 +97,7 @@ class HtmlDiagnosticTarget:
             "caminho_status": self.caminho_status,
             "caminho_informacoes": self.caminho_informacoes,
             "caminho_login_configurado": bool(self.caminho_login),
+            "porta": self.porta,
             "tipo_autenticacao": self.tipo_autenticacao,
             "usuario_configurado": bool(self.usuario),
             "protocolo_preferencial": self.protocolo_preferencial,
@@ -150,6 +152,7 @@ def target_to_config(target: HtmlDiagnosticTarget) -> HtmlAccessConfig:
         caminho_status=target.caminho_status,
         caminho_informacoes=target.caminho_informacoes,
         caminho_login=target.caminho_login,
+        porta=target.porta,
         timeout_segundos=target.timeout_segundos,
         protocolo_preferencial=target.protocolo_preferencial,
         validar_ssl=target.validar_ssl,
@@ -178,6 +181,7 @@ def load_candidate_rows(
             credentials.c.caminho_status,
             credentials.c.caminho_informacoes,
             credentials.c.caminho_login,
+            credentials.c.porta,
             credentials.c.timeout_segundos,
             credentials.c.protocolo_preferencial,
             credentials.c.validar_ssl,
@@ -254,6 +258,7 @@ def _target_from_row(row: dict[str, Any], *, motivo_ignorado: str | None = None)
         caminho_status=row.get("caminho_status"),
         caminho_informacoes=row.get("caminho_informacoes"),
         caminho_login=row.get("caminho_login"),
+        porta=int(row.get("porta") or 80),
         timeout_segundos=int(row.get("timeout_segundos") or 5),
         protocolo_preferencial=row.get("protocolo_preferencial") or "auto",
         validar_ssl=bool(row.get("validar_ssl")),

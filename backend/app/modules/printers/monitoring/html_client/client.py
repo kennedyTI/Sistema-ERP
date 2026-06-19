@@ -56,6 +56,16 @@ def validate_timeout(timeout_seconds: int) -> int:
     return timeout_seconds
 
 
+def validate_port(port: int | None) -> int:
+    port = 80 if port is None else int(port)
+    if port < 1 or port > 65535:
+        raise HtmlClientError(
+            "porta_html_invalida",
+            "porta deve ficar entre 1 e 65535.",
+        )
+    return port
+
+
 def protocol_sequence(preferred_protocol: str) -> tuple[str, ...]:
     protocol = validate_preferred_protocol(preferred_protocol)
     if protocol == "auto":
@@ -63,13 +73,15 @@ def protocol_sequence(preferred_protocol: str) -> tuple[str, ...]:
     return (protocol,)
 
 
-def build_html_url(ip_value: str, protocol: str, path: str) -> str:
+def build_html_url(ip_value: str, protocol: str, path: str, *, port: int | None = 80) -> str:
     if protocol not in ("http", "https"):
         raise HtmlClientError("protocolo_html_invalido", "Protocolo HTML concreto invalido.")
     validated_path = validate_relative_html_path(path) or "/"
+    validated_port = validate_port(port)
     address = ip_address(ip_value)
     host = f"[{address}]" if address.version == 6 else str(address)
-    return f"{protocol}://{host}{validated_path}"
+    port_suffix = "" if validated_port == 80 or (protocol == "https" and validated_port == 443) else f":{validated_port}"
+    return f"{protocol}://{host}{port_suffix}{validated_path}"
 
 
 def path_for_page(config: HtmlAccessConfig, page_type: str) -> str | None:
@@ -133,6 +145,7 @@ def fetch_html_page(
         if not path:
             raise HtmlClientError("caminho_html_nao_configurado", "Caminho HTML nao configurado.")
         validate_timeout(config.timeout_segundos)
+        validate_port(config.porta)
         auth = build_auth(config)
         protocols = protocol_sequence(config.protocolo_preferencial)
     except HtmlClientError as exc:
@@ -143,7 +156,7 @@ def fetch_html_page(
 
     for protocol in protocols:
         try:
-            url = build_html_url(ip_value, protocol, path)
+            url = build_html_url(ip_value, protocol, path, port=config.porta)
         except (HtmlClientError, ValueError) as exc:
             return _failure_response(
                 config=config,

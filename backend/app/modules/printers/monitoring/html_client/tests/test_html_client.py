@@ -7,6 +7,7 @@ from backend.app.modules.printers.monitoring.html_client.client import (
     build_html_url,
     fetch_html_page,
     protocol_sequence,
+    validate_port,
     validate_relative_html_path,
 )
 from backend.app.modules.printers.monitoring.html_client.exceptions import HtmlClientError
@@ -40,6 +41,7 @@ def config(**overrides):
         "senha": "senha-ficticia",
         "caminho_status": "/home/status.html",
         "caminho_informacoes": "/general/information.html?kind=item",
+        "porta": 80,
         "timeout_segundos": 5,
         "protocolo_preferencial": "auto",
         "validar_ssl": False,
@@ -77,6 +79,24 @@ class HtmlClientPathTest(TestCase):
             build_html_url("10.0.0.10", "https", "/home/status.html"),
             "https://10.0.0.10/home/status.html",
         )
+
+    def test_monta_url_com_porta_customizada_para_canon(self):
+        self.assertEqual(
+            build_html_url("10.0.0.10", "http", "/", port=8000),
+            "http://10.0.0.10:8000/",
+        )
+
+    def test_porta_padrao_80_preserva_url_existente(self):
+        self.assertEqual(
+            build_html_url("10.0.0.10", "http", "/home/status.html", port=80),
+            "http://10.0.0.10/home/status.html",
+        )
+
+    def test_rejeita_porta_invalida(self):
+        for port in (0, 65536):
+            with self.subTest(port=port):
+                with self.assertRaises(HtmlClientError):
+                    validate_port(port)
 
     def test_rejeita_protocolo_na_montagem_de_url_concreta(self):
         with self.assertRaises(HtmlClientError):
@@ -142,6 +162,18 @@ class HtmlClientRequestTest(TestCase):
         self.assertEqual(call["timeout"], 7)
         self.assertTrue(call["verify"])
         self.assertIsInstance(call["auth"], HTTPBasicAuth)
+
+    def test_cliente_usa_porta_configurada(self):
+        session = FakeSession(FakeResponse())
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(protocolo_preferencial="http", porta=8000, caminho_status="/"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(session.calls[0]["url"], "http://10.0.0.10:8000/")
 
     def test_cliente_usa_digest_auth(self):
         session = FakeSession(FakeResponse())

@@ -12,6 +12,7 @@ class HtmlAccessConfig:
     caminho_status: str | None = None
     caminho_informacoes: str | None = None
     caminho_login: str | None = None
+    porta: int = 80
     timeout_segundos: int = 5
     protocolo_preferencial: str = "auto"
     validar_ssl: bool = False
@@ -27,4 +28,3 @@ class HtmlClientResponse:
     erro_detalhe_sanitizado: str | None
     protocolo_usado: str | None
     tipo_autenticacao: str
-

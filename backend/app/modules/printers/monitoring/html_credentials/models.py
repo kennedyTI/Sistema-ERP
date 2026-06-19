@@ -40,6 +40,10 @@ class PrinterCollectionCredential(Base):
             "timeout_segundos BETWEEN 1 AND 30",
             name="ck_credenciais_coleta_impressoras_timeout_segundos",
         ),
+        CheckConstraint(
+            "porta BETWEEN 1 AND 65535",
+            name="ck_credenciais_coleta_impressoras_porta",
+        ),
         Index("ix_credenciais_coleta_impressoras_modelo_id", "modelo_id"),
         Index("ix_credenciais_coleta_impressoras_ativo", "ativo"),
         Index(
@@ -64,6 +68,7 @@ class PrinterCollectionCredential(Base):
     caminho_status = Column(String(500), nullable=True)
     caminho_informacoes = Column(String(500), nullable=True)
     caminho_login = Column(String(500), nullable=True)
+    porta = Column(Integer, nullable=False, default=80)
     timeout_segundos = Column(Integer, nullable=False, default=5)
     protocolo_preferencial = Column(String(10), nullable=False, default="auto")
     validar_ssl = Column(Boolean, nullable=False, default=False)

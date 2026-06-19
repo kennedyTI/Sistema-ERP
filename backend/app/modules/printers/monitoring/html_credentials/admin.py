@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 from backend.app.modules.audit.admin import AuditLogAdminMixin
 from backend.app.modules.printers.monitoring.html_client.client import (
+    validate_port,
     validate_preferred_protocol,
     validate_relative_html_path,
     validate_timeout,
@@ -61,6 +62,7 @@ class PrinterCollectionCredentialAdminForm(forms.ModelForm):
             "caminho_status",
             "caminho_informacoes",
             "caminho_login",
+            "porta",
             "timeout_segundos",
             "protocolo_preferencial",
             "validar_ssl",
@@ -91,6 +93,11 @@ class PrinterCollectionCredentialAdminForm(forms.ModelForm):
                 self.add_error(field_name, exc.detail)
 
         try:
+            validate_port(cleaned_data.get("porta") or 80)
+        except HtmlClientError as exc:
+            self.add_error("porta", exc.detail)
+
+        try:
             validate_timeout(cleaned_data.get("timeout_segundos") or 5)
         except HtmlClientError as exc:
             self.add_error("timeout_segundos", exc.detail)
@@ -117,6 +124,7 @@ class PrinterCollectionCredentialAdmin(AuditLogAdminMixin, admin.ModelAdmin):
     list_display = (
         "modelo",
         "tipo_autenticacao",
+        "porta",
         "protocolo_preferencial",
         "validar_ssl",
         "caminho_status",
@@ -144,6 +152,7 @@ class PrinterCollectionCredentialAdmin(AuditLogAdminMixin, admin.ModelAdmin):
         "caminho_status",
         "caminho_informacoes",
         "caminho_login",
+        "porta",
         "timeout_segundos",
         "protocolo_preferencial",
         "validar_ssl",
