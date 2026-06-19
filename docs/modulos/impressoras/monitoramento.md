@@ -1364,6 +1364,149 @@ HTML OK + parser OK -> usa mensagens HTML.
 SNMP + HTML/parser falharam -> falha_coleta_alertas / vermelho.
 ```
 
+## Etapa 3.5.2.9 - Diagnostico HTML real controlado por modelo
+
+Esta microetapa executou o diagnostico HTML real, de forma controlada, usando
+as credenciais e caminhos ja cadastrados em `credenciais_coleta_impressoras`.
+O objetivo foi confirmar, com evidencia real de rede e relatorios
+sanitizados, quais modelos conseguem acessar `caminho_status` e
+`caminho_informacoes`, alem de identificar quais modelos ja possuem parser de
+status aplicavel.
+
+Ainda nao houve integracao com a cascata SNMP -> HTML, nao houve alteracao de
+Celery, nao houve persistencia de alertas vindos de HTML, nao foi criada tabela
+nova, nao foi criada credencial por maquina e nao foi salva nenhuma pagina
+HTML bruta.
+
+### Comandos executados
+
+O dry-run foi executado no container `admin`:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py
+```
+
+O diagnostico real foi executado por modelo, um por vez:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L2540DW" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Canon IR-C3326I" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "HP MFP-4303" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "HP T-2530" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Samsung K-4350" --saida-json --saida-md
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother ADS-4700W" --saida-json --saida-md
+```
+
+### Resultado do dry-run
+
+O dry-run encontrou sete modelos com credencial ativa:
+
+| Modelo | Caminho status | Caminho informacoes | Parser status |
+| --- | --- | --- | --- |
+| Brother DCP-L1632W | configurado | configurado | disponivel |
+| Brother DCP-L2540DW | configurado | configurado | sem parser |
+| Canon IR-C3326I | configurado | configurado | sem parser |
+| HP MFP-4303 | configurado | nao configurado | sem parser |
+| HP T-2530 | nao configurado | nao configurado | sem parser |
+| Samsung K-4350 | configurado | nao configurado | sem parser |
+| Brother ADS-4700W | nao configurado | nao configurado | sem parser |
+
+### Matriz real consolidada
+
+| Modelo | Status HTML | Estado detectado | Informacoes HTML | Capacidades | Parser status |
+| --- | --- | --- | --- | --- | --- |
+| Brother DCP-L1632W | HTTP 200 com HTML | nao | HTTP 200 com HTML | falha | disponivel |
+| Brother DCP-L2540DW | HTTP 200 com HTML | nao, sem parser | HTTP 200 com HTML | OK | sem parser |
+| Canon IR-C3326I | HTTP 404 | nao executado | HTTP 404 | falha | nao executado |
+| HP MFP-4303 | HTTP 200 com HTML | nao, sem parser | nao configurado | falha | sem parser |
+| HP T-2530 | sem maquina elegivel | nao executado | sem maquina elegivel | falha | sem parser |
+| Samsung K-4350 | HTTP 200 com HTML | nao, sem parser | nao configurado | falha | sem parser |
+| Brother ADS-4700W | sem maquina elegivel | nao executado | sem maquina elegivel | falha | sem parser |
+
+### Leitura tecnica
+
+Modelos que ja retornaram HTML de status:
+
+- Brother DCP-L1632W;
+- Brother DCP-L2540DW;
+- HP MFP-4303;
+- Samsung K-4350.
+
+Modelos que ja retornaram HTML de informacoes:
+
+- Brother DCP-L1632W;
+- Brother DCP-L2540DW.
+
+Modelo com informacoes HTML mais promissoras nesta execucao:
+
+- Brother DCP-L2540DW, com deteccao de modelo, numero de serie, firmware,
+  contador total, toner, tambor, papel, bandejas, paginas por tamanho,
+  digitalizacoes e erros.
+
+Modelos que precisam de parser de status antes de entrar no fallback HTML:
+
+- Brother DCP-L2540DW;
+- HP MFP-4303;
+- Samsung K-4350.
+
+Modelo com parser ja disponivel, mas ainda sem estado detectado no HTML real:
+
+- Brother DCP-L1632W.
+
+Modelos com caminho de status ou informacoes a revisar:
+
+- Canon IR-C3326I, pois os caminhos testados retornaram HTTP 404;
+- HP MFP-4303, pois ainda nao possui `caminho_informacoes`;
+- Samsung K-4350, pois ainda nao possui `caminho_informacoes`;
+- HP T-2530, pois nao possui caminhos configurados e nao teve maquina
+  elegivel sem `--incluir-offline`;
+- Brother ADS-4700W, pois nao possui caminhos configurados e nao teve maquina
+  elegivel sem `--incluir-offline`.
+
+Nenhum modelo apresentou autenticacao `form` ou `cookie` nesta execucao. Todas
+as credenciais avaliadas estavam em autenticacao suportada pelo cliente atual.
+
+### Relatorios gerados
+
+Os relatorios foram gerados em:
+
+```text
+tmp/diagnosticos/html_modelos/
+```
+
+Foram criados relatorios individuais por modelo e um consolidado local:
+
+```text
+diagnostico_html_modelos_20260619_112632.json
+diagnostico_html_modelos_20260619_112632.md
+diagnostico_html_modelos_20260619_112650.json
+diagnostico_html_modelos_20260619_112650.md
+diagnostico_html_modelos_20260619_112706.json
+diagnostico_html_modelos_20260619_112706.md
+diagnostico_html_modelos_20260619_112716.json
+diagnostico_html_modelos_20260619_112716.md
+diagnostico_html_modelos_20260619_112725.json
+diagnostico_html_modelos_20260619_112725.md
+diagnostico_html_modelos_20260619_112756.json
+diagnostico_html_modelos_20260619_112756.md
+diagnostico_html_modelos_20260619_112808.json
+diagnostico_html_modelos_20260619_112808.md
+diagnostico_html_modelos_consolidado_20260619_112927.json
+diagnostico_html_modelos_consolidado_20260619_112927.md
+```
+
+Os relatorios permanecem em `tmp/`, que e ignorado pelo Git. A busca de
+seguranca nos relatorios nao encontrou HTML bruto, senha, senha
+criptografada completa, Authorization, Cookie, CSRF, token ou header sensivel.
+
+### Proxima etapa recomendada
+
+A proxima etapa deve corrigir ou completar os caminhos HTML por modelo e criar
+parsers especificos antes de integrar o fallback HTML na cascata de alertas.
+O primeiro candidato tecnico e o Brother DCP-L2540DW, porque retornou HTML de
+status e informacoes com capacidades detectaveis.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1394,7 +1537,12 @@ etapa 3.5.2.8 cria apenas o diagnostico seguro dos caminhos HTML cadastrados,
 com dry-run obrigatorio por padrao e relatorios sanitizados; ela nao integra
 HTML na cascata, nao cria tabela nova, nao cria credencial por maquina, nao
 cria `tentativas_coleta_impressoras`, nao altera Celery, nao cria API publica,
-nao altera frontend e nao persiste HTML bruto.
+nao altera frontend e nao persiste HTML bruto. A etapa 3.5.2.9 executa o
+diagnostico HTML real controlado por modelo e documenta uma matriz consolidada,
+mas ainda nao integra HTML na cascata, nao cria parser novo, nao cria tabela
+nova, nao cria credencial por maquina, nao cria `tentativas_coleta_impressoras`,
+nao altera Celery, nao cria API publica, nao altera frontend, nao persiste
+alertas HTML e nao salva HTML bruto.
 
 ## Próximas etapas
 
