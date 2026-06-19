@@ -1244,6 +1244,126 @@ HTML OK + parser OK -> usa mensagens HTML.
 SNMP + HTML/parser falharam -> falha_coleta_alertas / vermelho.
 ```
 
+## Etapa 3.5.2.8 - Diagnostico seguro dos caminhos HTML por modelo
+
+Esta microetapa cria o diagnostico manual dos caminhos HTML cadastrados em
+`credenciais_coleta_impressoras`. O objetivo e testar, por modelo e por maquina
+representativa, se `caminho_status` e `caminho_informacoes` conseguem retornar
+HTML util para as proximas etapas de fallback HTML e coleta rica.
+
+O script fica em:
+
+```bash
+backend/pyteste/diagnostico_html_modelos.py
+```
+
+Ele nao roda em Celery, nao cria API publica, nao altera frontend e nao integra
+HTML na cascata de alertas.
+
+### Modo dry-run
+
+Sem `--confirmar`, o diagnostico nao faz requisicao HTTP real. Ele lista:
+
+- modelos com credencial ativa;
+- maquina candidata por modelo;
+- IP planejado;
+- `caminho_status`;
+- `caminho_informacoes`;
+- tipo de autenticacao;
+- protocolo preferencial;
+- validacao SSL;
+- timeout;
+- parser de status disponivel ou ausente.
+
+Execucao:
+
+```bash
+py -3.11 backend/pyteste/diagnostico_html_modelos.py
+```
+
+### Modo confirmado
+
+Com `--confirmar`, o diagnostico usa o cliente HTML seguro existente para
+consultar os caminhos configurados:
+
+```bash
+py -3.11 backend/pyteste/diagnostico_html_modelos.py --confirmar
+```
+
+Filtros disponiveis:
+
+```bash
+py -3.11 backend/pyteste/diagnostico_html_modelos.py --modelo "Brother DCP-L1632W"
+py -3.11 backend/pyteste/diagnostico_html_modelos.py --maquina-id 4
+py -3.11 backend/pyteste/diagnostico_html_modelos.py --incluir-offline
+```
+
+O diagnostico escolhe apenas maquinas ativas, com IP, e prefere uma maquina
+online quando `status_impressoras` tiver essa informacao. Maquinas offline sao
+ignoradas por padrao.
+
+### Teste de caminho_status
+
+Para `caminho_status`, o diagnostico monta a URL segura pelo IP da maquina e
+caminho relativo, respeita `protocolo_preferencial`, `validar_ssl` e
+`timeout_segundos`, usa autenticacao `basic` ou `digest`, retorna erro
+controlado para `form` e `cookie`, valida `status_code`, verifica se recebeu
+HTML e executa parser de status quando houver parser para o modelo.
+
+Quando nao ha parser para o modelo, o resultado usa
+`html_parser_nao_configurado`.
+
+### Teste de caminho_informacoes
+
+Para `caminho_informacoes`, o diagnostico nao cria parser completo. Ele apenas
+faz uma deteccao segura de capacidades por termos/padroes em memoria:
+
+- `modelo`;
+- `numero_serie`;
+- `firmware`;
+- `contador_total`;
+- `toner`;
+- `tambor`;
+- `papel`;
+- `bandejas`;
+- `paginas_por_tamanho`;
+- `paginas_por_tipo`;
+- `digitalizacoes`;
+- `erros`.
+
+A etapa responde se a tela parece conter as informacoes necessarias. A extracao
+estruturada de valores fica para a etapa futura de coleta rica.
+
+### Relatorios sanitizados
+
+Quando relatorios forem gravados, ficam em:
+
+```text
+tmp/diagnosticos/html_modelos/
+```
+
+Arquivos gerados:
+
+```text
+diagnostico_html_modelos_YYYYMMDD_HHMMSS.json
+diagnostico_html_modelos_YYYYMMDD_HHMMSS.md
+```
+
+`tmp/` ja e ignorado pelo Git. Os relatorios nao devem conter senha, senha
+descriptografada, token criptografado completo, Authorization, Cookie, CSRF,
+headers sensiveis ou HTML bruto autenticado.
+
+### Cascata futura
+
+A cascata planejada para a proxima etapa passa a ser:
+
+```text
+SNMP OK -> usa SNMP.
+SNMP falhou -> tenta HTML autenticado.
+HTML OK + parser OK -> usa mensagens HTML.
+SNMP + HTML/parser falharam -> falha_coleta_alertas / vermelho.
+```
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1269,7 +1389,12 @@ final, nao cria API publica, nao altera frontend e nao persiste HTML bruto. A
 etapa 3.5.2.7 cria apenas o parser HTML de status por modelo em memoria; ela
 nao integra HTML na cascata de alertas, nao cria tabela nova, nao cria
 credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao altera
-Celery, nao cria API publica, nao altera frontend e nao persiste HTML bruto.
+Celery, nao cria API publica, nao altera frontend e nao persiste HTML bruto. A
+etapa 3.5.2.8 cria apenas o diagnostico seguro dos caminhos HTML cadastrados,
+com dry-run obrigatorio por padrao e relatorios sanitizados; ela nao integra
+HTML na cascata, nao cria tabela nova, nao cria credencial por maquina, nao
+cria `tentativas_coleta_impressoras`, nao altera Celery, nao cria API publica,
+nao altera frontend e nao persiste HTML bruto.
 
 ## Próximas etapas
 
