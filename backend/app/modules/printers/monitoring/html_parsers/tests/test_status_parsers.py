@@ -8,6 +8,7 @@ from backend.app.modules.printers.monitoring.html_parsers.brother import (
     BrotherDcpL1632wStatusParser,
     BrotherDcpL2540dwStatusParser,
     extract_visible_text_chunks,
+    parse_brother_dcp_l1632w_maintenance_info,
 )
 from backend.app.modules.printers.monitoring.html_parsers.canon import (
     CanonIrC3326iStatusParser,
@@ -135,8 +136,60 @@ class HtmlStatusParserByModelTest(TestCase):
         )
 
         self.assertTrue(result.sucesso)
-        self.assertEqual(result.mensagens_brutas, ["Subs. o toner"])
-        self.assertEqual(result.estado_principal, "Subs. o toner")
+        self.assertEqual(result.mensagens_brutas, ["Em espera"])
+        self.assertEqual(result.mensagens_normalizadas, ["em espera"])
+        self.assertEqual(result.estado_principal, "Em espera")
+
+    def test_parser_brother_l1632w_detecta_bloco_toner_sem_percentual(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_real_shape.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertTrue(result.metadados["nivel_toner_bloco_detectado"])
+        self.assertEqual(result.metadados["nivel_toner_labels"], ["BK"])
+        self.assertFalse(result.metadados["nivel_toner_percentual_disponivel"])
+        self.assertNotIn("16", result.mensagens_brutas)
+
+    def test_parser_brother_l1632w_manutencao_extrai_campos_controlados(self):
+        info = parse_brother_dcp_l1632w_maintenance_info(
+            fixture_html("brother_dcp_l1632w_maintenance_real_shape.html")
+        )
+
+        self.assertEqual(info["total_paginas_impressas_a4_letter"], 4556)
+        self.assertEqual(info["unidade_tambor_percentual"], 55)
+        self.assertEqual(info["toner_percentual"], 30)
+
+    def test_parser_brother_l1632w_manutencao_ignora_campos_cadastrais(self):
+        html = """
+        <html>
+          <body>
+            <h3>Vida Ãºtil restante</h3>
+            <dl class="items">
+              <dt>Unidade de tambor*</dt><dd>55%</dd>
+              <dt>Toner**</dt><dd>30%</dd>
+            </dl>
+            <h3>Identificacao</h3>
+            <dl class="items">
+              <dt>N. de serie</dt><dd>SERIAL-REAL</dd>
+              <dt>Versao de firmware principal</dt><dd>1.2.3</dd>
+              <dt>Localizacao do dispositivo</dt><dd>LOCAL-REAL</dd>
+              <dt>Historico de erros</dt><dd>ERRO-ANTIGO</dd>
+            </dl>
+          </body>
+        </html>
+        """
+
+        info = parse_brother_dcp_l1632w_maintenance_info(html)
+        serialized = str(info)
+
+        self.assertEqual(info["unidade_tambor_percentual"], 55)
+        self.assertEqual(info["toner_percentual"], 30)
+        self.assertNotIn("SERIAL-REAL", serialized)
+        self.assertNotIn("1.2.3", serialized)
+        self.assertNotIn("LOCAL-REAL", serialized)
+        self.assertNotIn("ERRO-ANTIGO", serialized)
 
     def test_parser_brother_l2540dw_mantem_trocar_cilindro(self):
         html = """
@@ -308,10 +361,13 @@ class HtmlStatusParserSecurityScopeTest(TestCase):
             "cookie",
             "authorization",
             "csrf",
+            "csrftoken",
             "grupo" + "si" + "mec",
             "si" + "mec",
             "10.",
             "192.168.",
+            "http://",
+            "https://",
             "mac:",
             "uuid",
             "numero de serie",

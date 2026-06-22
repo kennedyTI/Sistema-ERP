@@ -1813,6 +1813,130 @@ status para Canon, HP e Samsung sem usar parametros dinamicos artificiais e sem
 coleta rica. A integracao com a cascata deve continuar fora do escopo ate que
 os caminhos e parsers estejam confiaveis.
 
+## Etapa 3.5.2.13 - Refinamento HTML Brother DCP-L1632W para alerta/status
+
+Esta microetapa refinou especificamente o suporte HTML da Brother DCP-L1632W
+usando os trechos reais informados de forma sanitizada. O foco continuou sendo
+alerta/status da etapa 3.5.2: ainda nao foi aberta a etapa 3.5.3 de coleta
+rica, HTML nao foi integrado na cascata SNMP -> HTML e nenhum dado foi
+persistido em tabelas definitivas.
+
+Branch usada:
+
+```text
+feature/printers-html-brother-l1632w-status-refine
+```
+
+Base usada:
+
+```text
+feature/printers-html-parsers-real-fixes
+commit base: d6fbcc4
+```
+
+### HTMLs analisados de forma sanitizada
+
+Foram usadas fixtures sinteticas, derivadas somente dos trechos relevantes:
+
+```text
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_status_real_shape.html
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_maintenance_real_shape.html
+```
+
+A fixture de status contem apenas:
+
+- `Estado do dispositivo` com valor `Em espera`;
+- bloco `Nivel do toner`;
+- label `BK`;
+- indicador de barra/imagem `tonerremain`.
+
+A fixture de manutencao contem apenas:
+
+- `Total de paginas impressas > A4/Letter`;
+- `Vida util restante > Unidade de tambor*`;
+- `Vida util restante > Toner**`.
+
+Nao foram versionados HTML bruto, IP real, serial real, token de formulario,
+firmware real, localizacao real, URL absoluta real, credencial, Cookie ou
+Authorization.
+
+### Ajustes feitos
+
+- O parser `BrotherDcpL1632wStatusParser` passou a ler a estrutura `dt/dd`.
+- Para `Estado do dispositivo`, ele procura o `dt`, pega o `dd` seguinte e
+  prefere o texto em `#moni_data .moni`.
+- O estado extraido entra como primeira mensagem bruta e como
+  `estado_principal`.
+- O bloco `Nivel do toner` e detectado como metadado auxiliar.
+- Labels como `BK` sao registradas em metadados.
+- A barra/imagem de toner nao e convertida em percentual; `height=16` nao e
+  usado como medida de toner.
+- Foi criada a funcao `parse_brother_dcp_l1632w_maintenance_info`, limitada aos
+  campos auxiliares permitidos.
+
+Metadados esperados para status:
+
+```json
+{
+  "nivel_toner_bloco_detectado": true,
+  "nivel_toner_labels": ["BK"],
+  "nivel_toner_percentual_disponivel": false
+}
+```
+
+Informacao de manutencao esperada em fixture:
+
+```json
+{
+  "total_paginas_impressas_a4_letter": 4556,
+  "unidade_tambor_percentual": 55,
+  "toner_percentual": 30
+}
+```
+
+Esses campos sao apoio diagnostico. Eles nao atualizam cadastro e nao foram
+persistidos como toner, tambor ou contador oficial.
+
+### Resultado do diagnostico real
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260622_164521.json
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260622_164521.md
+```
+
+| Item | Resultado |
+| --- | --- |
+| Caminho status | acessado pelo cliente HTML seguro |
+| Parser | `brother_dcp_l1632w_status` |
+| Estado operacional real | ainda nao detectado no caminho cadastrado |
+| Bloco de toner | detectado |
+| Label de toner | `BK` |
+| Percentual por imagem/barra | nao calculado |
+| Caminho informacoes | acessado, mas sem campos de manutencao reconhecidos no HTML retornado |
+| Seguranca do relatorio | sem HTML bruto, IP real, senha, Cookie, Authorization, token de formulario, serial real ou localizacao real |
+
+O parser passa nos testes com o formato real sanitizado informado. O
+diagnostico real atual, porem, ainda nao recebeu no endpoint cadastrado o bloco
+`Estado do dispositivo -> Em espera` nem a estrutura de manutencao com
+`A4/Letter`, `Unidade de tambor*` e `Toner**`. Por isso, a leitura real ficou
+como falha controlada para estado/manutencao, mas ja registrou o bloco de toner
+`BK` sem inventar percentual.
+
+### Proxima etapa recomendada
+
+Validar se os caminhos cadastrados para a DCP-L1632W estao apontando para as
+mesmas telas dos HTMLs reais enviados. Se necessario, ajustar somente o caminho
+seguro que entrega `Estado do dispositivo` e a tela de manutencao esperada,
+sem introduzir scraping agressivo, coleta rica ou persistencia.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1863,7 +1987,12 @@ sinteticas e diagnostico sanitizado; ela nao integra HTML na cascata, nao
 persiste alertas HTML, nao altera Celery/task, nao altera Rules Engine, nao cria
 tabela nova, nao cria credencial por maquina, nao cria
 `tentativas_coleta_impressoras`, nao extrai dados cadastrais do HTML/SNMP e nao
-salva HTML bruto.
+salva HTML bruto. A etapa 3.5.2.13 refina apenas a leitura HTML da Brother
+DCP-L1632W para alerta/status e apoio diagnostico controlado; ela nao integra
+HTML na cascata, nao persiste alertas HTML, nao persiste toner/tambor/contador,
+nao altera Celery/task, nao altera Rules Engine, nao cria tabela nova, nao cria
+credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao extrai
+dados cadastrais do HTML/SNMP e nao salva HTML bruto.
 
 ## Próximas etapas
 

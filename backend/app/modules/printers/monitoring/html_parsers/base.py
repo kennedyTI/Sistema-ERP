@@ -33,8 +33,15 @@ class HtmlStatusParser:
         messages: list[str],
         *,
         estado_principal: str | None = None,
+        metadados: dict[str, Any] | None = None,
     ) -> HtmlStatusParseResult:
         normalized_messages = [normalize_text(message) for message in messages]
+        result_metadata = {
+            "parser": self.parser_name,
+            "origem": "html_status",
+        }
+        if metadados:
+            result_metadata.update(metadados)
         return HtmlStatusParseResult(
             sucesso=True,
             modelo_nome=self.supported_model,
@@ -44,13 +51,22 @@ class HtmlStatusParser:
             estado_principal=estado_principal or choose_primary_status(messages),
             erro_codigo=None,
             erro_detalhe_sanitizado=None,
-            metadados={
-                "parser": self.parser_name,
-                "origem": "html_status",
-            },
+            metadados=result_metadata,
         )
 
-    def error_result(self, code: str, detail: str) -> HtmlStatusParseResult:
+    def error_result(
+        self,
+        code: str,
+        detail: str,
+        *,
+        metadados: dict[str, Any] | None = None,
+    ) -> HtmlStatusParseResult:
+        result_metadata = {
+            "parser": self.parser_name,
+            "origem": "html_status",
+        }
+        if metadados:
+            result_metadata.update(metadados)
         return HtmlStatusParseResult(
             sucesso=False,
             modelo_nome=self.supported_model,
@@ -60,10 +76,7 @@ class HtmlStatusParser:
             estado_principal=None,
             erro_codigo=code,
             erro_detalhe_sanitizado=detail,
-            metadados={
-                "parser": self.parser_name,
-                "origem": "html_status",
-            },
+            metadados=result_metadata,
         )
 
 

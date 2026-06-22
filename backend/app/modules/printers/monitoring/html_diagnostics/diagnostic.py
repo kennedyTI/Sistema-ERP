@@ -26,6 +26,7 @@ from backend.app.modules.printers.monitoring.html_credentials.models import (
 )
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
     extract_visible_text_chunks,
+    parse_brother_dcp_l1632w_maintenance_info,
 )
 from backend.app.modules.printers.monitoring.html_parsers.registry import (
     get_status_parser_for_model,
@@ -255,6 +256,10 @@ def _target_model_key(target: HtmlDiagnosticTarget) -> tuple[str, str]:
 
 def _diagnostic_keywords(target: HtmlDiagnosticTarget) -> tuple[str, ...]:
     return MODEL_DIAGNOSTIC_KEYWORDS.get(_target_model_key(target), STATUS_CANDIDATE_TERMS)
+
+
+def _is_brother_l1632w(target: HtmlDiagnosticTarget) -> bool:
+    return _target_model_key(target) == ("brother", "dcp-l1632w")
 
 
 def _limited_unique(values: Iterable[str], *, limit: int = 8) -> list[str]:
@@ -609,6 +614,7 @@ def diagnose_status_path(
         "estado_principal": parse_result.estado_principal,
         "mensagens_brutas": parse_result.mensagens_brutas,
         "mensagens_normalizadas": parse_result.mensagens_normalizadas,
+        "metadados": parse_result.metadados,
         "sucesso": bool(parse_result.sucesso),
         "erro_codigo": None if parse_result.sucesso else "html_status_nao_detectado",
         "erro_detalhe_sanitizado": parse_result.erro_detalhe_sanitizado,
@@ -674,10 +680,16 @@ def diagnose_information_path(
         }
 
     capabilities = detect_information_capabilities(response.conteudo_html)
-    success = any(capabilities.values())
+    maintenance_info = (
+        parse_brother_dcp_l1632w_maintenance_info(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
+    success = any(capabilities.values()) or bool(maintenance_info)
     return {
         **base,
         "capacidades_detectadas": capabilities,
+        "maintenance_info": maintenance_info,
         "sucesso": success,
         "erro_codigo": None if success else "html_capacidades_nao_detectadas",
     }

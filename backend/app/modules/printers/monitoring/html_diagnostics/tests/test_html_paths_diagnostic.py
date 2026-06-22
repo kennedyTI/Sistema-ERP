@@ -23,6 +23,9 @@ from backend.app.modules.printers.monitoring.html_diagnostics.diagnostic import 
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[7]
+PARSER_FIXTURE_DIR = (
+    PROJECT_ROOT / "backend/app/modules/printers/monitoring/html_parsers/tests/fixtures"
+)
 
 
 def status_html(message="Em espera"):
@@ -49,6 +52,10 @@ def information_html():
       </body>
     </html>
     """
+
+
+def parser_fixture_html(name: str) -> str:
+    return (PARSER_FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
 class FakeFetcher:
@@ -349,6 +356,51 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertNotIn("Authorization", serialized)
         self.assertNotIn("Cookie", serialized)
         self.assertNotIn("CSRF", serialized)
+
+    def test_diagnostico_l1632w_inclui_metadados_status_e_manutencao(self):
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_real_shape.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                ),
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_maintenance_real_shape.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                ),
+            ]
+        )
+
+        report = build_report(targets=[self.target()], confirmar=True, fetcher=fetcher)
+        result = report["resultados"][0]
+
+        self.assertTrue(result["status"]["sucesso"])
+        self.assertEqual(result["status"]["estado_principal"], "Em espera")
+        self.assertTrue(result["status"]["metadados"]["nivel_toner_bloco_detectado"])
+        self.assertEqual(result["status"]["metadados"]["nivel_toner_labels"], ["BK"])
+        self.assertFalse(
+            result["status"]["metadados"]["nivel_toner_percentual_disponivel"]
+        )
+        self.assertEqual(
+            result["informacoes"]["maintenance_info"],
+            {
+                "total_paginas_impressas_a4_letter": 4556,
+                "unidade_tambor_percentual": 55,
+                "toner_percentual": 30,
+            },
+        )
 
     def test_markdown_contem_matriz_por_modelo(self):
         report = build_report(targets=[self.target()], confirmar=False)
