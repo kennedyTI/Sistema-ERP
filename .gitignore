@@ -28,6 +28,11 @@ dist/
 backend/.env
 backend/.env.*
 !backend/.env.example
+*.local.ini
+backend/*.local.ini
+backend/Portal RH.url
+**/credencial.txt
+**/senha_temporaria.txt
 
 # Local import data
 backend/scripts/*.local.json
