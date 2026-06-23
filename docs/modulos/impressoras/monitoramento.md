@@ -2434,6 +2434,211 @@ Investigar, ainda com relatorios sanitizados, se a Brother preenche o texto de
 posterior ao login. Essa proxima etapa deve continuar diagnostica e nao deve
 integrar HTML na cascata nem persistir alertas.
 
+## Etapa 3.5.2.16 - Descoberta da atualizacao dinamica do status Brother DCP-L1632W
+
+Esta microetapa investigou, de forma segura e sanitizada, se o texto de status
+da Brother DCP-L1632W e preenchido por JavaScript, chamada assincrona ou fluxo
+dinamico posterior ao carregamento inicial da pagina.
+
+Branch usada:
+
+```text
+feature/printers-html-brother-l1632w-dynamic-status
+```
+
+Base usada:
+
+```text
+feature/printers-html-brother-l1632w-status-compare
+commit base: 6454e58
+```
+
+O objetivo foi descobrir a origem do preenchimento de:
+
+```html
+<div id="moni_data">
+  <span class="moni moniOk">...</span>
+</div>
+```
+
+sem salvar HTML bruto, sem salvar JS bruto, sem expor credenciais e sem
+integrar o HTML na cascata SNMP -> HTML.
+
+### Problema identificado
+
+A etapa 3.5.2.15 confirmou que o HTML retornado ao cliente seguro continha:
+
+- `#moni_data`;
+- `span.moni.moniOk`;
+- texto visivel vazio;
+- causa sanitizada `moni_data_vazio`.
+
+Como o HTML salvo pelo navegador mostrava `Em espera` dentro do mesmo `span`, a
+hipotese desta etapa foi que o texto poderia ser preenchido por JavaScript,
+chamada assincrona, cookie/sessao complementar ou parametro adicional.
+
+### Diagnostico opt-in
+
+Foi criada a opcao opt-in:
+
+```bash
+python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --diagnosticar-status-dinamico
+```
+
+O diagnostico dinamico:
+
+- reutiliza a mesma sessao/cookies em memoria do login Brother;
+- lista scripts referenciados pela pagina de status;
+- baixa scripts apenas em memoria;
+- resume termos encontrados sem gravar JS bruto;
+- extrai endpoints candidatos somente quando aparecem como caminhos relativos
+  seguros;
+- ignora endpoints administrativos ou fora de escopo;
+- executa chamadas candidatas apenas quando sao seguras;
+- grava relatorios sanitizados em `tmp/diagnosticos/html_modelos/`.
+
+### Scripts inspecionados
+
+O diagnostico real detectou e inspecionou:
+
+```text
+/common/js/ews.js
+/common/js/cookie.js
+/common/js/language.js
+/common/js/lcddisplay.js
+/common/js/mobilemenucontrl.js
+inline_status_1
+inline_status_2
+```
+
+Resumo sanitizado relevante:
+
+| Script | Termos encontrados | Funcoes candidatas | Endpoints candidatos |
+| --- | --- | --- | --- |
+| `inline_status_1` | `judge_refresh`, `refresh` | `judge_refresh` | - |
+| `/common/js/lcddisplay.js` | `moni_data`, `moni`, `refreshLCD`, `judge_refresh`, `XMLHttpRequest`, `GET`, `status`, `lcd`, `refresh` | `refreshLCD`, `judge_refresh`, `XMLHttpRequest` | - |
+| `/common/js/mobilemenucontrl.js` | `GET`, `display` | - | - |
+
+O script `lcddisplay.js` confirma que existe logica dinamica ligada ao bloco
+LCD/status, mas nesta etapa nao apareceu endpoint relativo literal que pudesse
+ser chamado de forma segura pelo diagnostico.
+
+### Resultado do diagnostico real
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --diagnosticar-status-dinamico
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_brother_l1632w_dynamic_status_20260623_134401.json
+tmp/diagnosticos/html_modelos/diagnostico_brother_l1632w_dynamic_status_20260623_134401.md
+```
+
+Resultado controlado:
+
+| Item | Resultado |
+| --- | --- |
+| HTTP inicial | 200 |
+| `#moni_data` | detectado |
+| Classe contendo `moni` | detectada |
+| `span` dentro de `#moni_data` | detectado |
+| Texto inicial de `#moni_data` | vazio |
+| Scripts detectados | 5 scripts externos e 2 inline |
+| `lcddisplay.js` | inspecionado em memoria |
+| `refreshLCD` | detectado |
+| `judge_refresh` | detectado |
+| `XMLHttpRequest` | detectado |
+| Endpoints candidatos seguros | nenhum endpoint literal encontrado |
+| Chamadas candidatas executadas | nenhuma |
+| Mensagem `Em espera` encontrada | nao |
+| Causa sanitizada | `scripts_sem_endpoint_candidato` |
+
+Nenhum HTML bruto, JS bruto, IP real, hostname, senha, cookie, Authorization,
+CSRFToken real, serial, MAC, URL absoluta real ou header sensivel foi
+documentado ou versionado.
+
+### Fixtures e testes
+
+Foram criadas fixtures sinteticas e sanitizadas para:
+
+- pagina de status com scripts relativos e `#moni_data` vazio;
+- trecho sintetico de `lcddisplay.js` com `refreshLCD`;
+- resposta dinamica com `Em espera`;
+- resposta dinamica vazia.
+
+Os testes cobrem:
+
+- listagem de scripts relativos;
+- sanitizacao de URL absoluta com IP para caminho relativo;
+- deteccao de `lcddisplay.js`;
+- deteccao de `refreshLCD`, `judge_refresh`, `moni_data` e `XMLHttpRequest`;
+- extracao de endpoint relativo candidato em JS sintetico;
+- ausencia de JS bruto no resumo;
+- ignorar endpoint administrativo;
+- uso de mesma sessao em memoria;
+- ausencia de CSRFToken, Cookie, Authorization e senha em relatorios;
+- resposta dinamica com `Em espera`;
+- resposta dinamica vazia como falha controlada;
+- causa `scripts_sem_endpoint_candidato` quando aplicavel;
+- ausencia de rede real nos testes.
+
+### Validacoes
+
+Validacoes executadas:
+
+```text
+py -3.11 -m pytest -q backend/app/modules/printers/monitoring/html_diagnostics/tests/test_html_paths_diagnostic.py backend/app/modules/printers/monitoring/html_parsers/tests/test_status_parsers.py
+77 passed
+
+py -3.11 -m compileall -q backend/app/modules/printers/monitoring/html_diagnostics backend/pyteste
+OK
+
+py -3.11 -m compileall -q backend
+OK
+
+py -3.11 -m pytest -q
+337 passed, 38 warnings
+
+py -3.11 manage.py check
+System check identified no issues
+
+npm.cmd audit
+found 0 vulnerabilities
+
+npm.cmd run build
+OK, com aviso conhecido de chunks grandes do Vite
+
+docker compose --env-file .env.docker up -d --no-build
+OK
+
+docker compose --env-file .env.docker ps -a
+migrations Exited (0); stack Up
+```
+
+### Limites preservados
+
+Esta etapa nao integrou HTML na cascata SNMP -> HTML, nao alterou
+`collect_and_sync_machine_alerts`, nao alterou
+`sync_machine_alerts_from_collection_result`, nao alterou Rules Engine, nao
+alterou Celery/task, nao persistiu alertas HTML, nao gravou em
+`alertas_impressoras`, nao gravou em `historico_alertas_impressoras`, nao
+persistiu toner, tambor ou contador, nao criou API publica, nao criou
+frontend, nao criou dashboard, nao criou tabela nova, nao criou credencial por
+maquina, nao criou `tentativas_coleta_impressoras`, nao salvou HTML bruto, nao
+salvou JS bruto e nao usou HTML/SNMP para alterar dados cadastrais.
+
+### Proxima etapa recomendada
+
+Investigar de forma ainda controlada se `lcddisplay.js` monta a URL dinamica
+em tempo de execucao por variavel global, parametro de pagina ou chamada
+indireta. Se isso depender de execucao real de JavaScript no navegador, a etapa
+seguinte deve tratar Playwright/headless apenas como diagnostico documentado,
+sem integrar HTML na cascata e sem persistir alertas.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,

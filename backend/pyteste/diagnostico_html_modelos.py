@@ -32,6 +32,11 @@ from backend.app.modules.printers.monitoring.html_diagnostics.diagnostic import 
     select_diagnostic_targets,
     write_reports,
 )
+from backend.app.modules.printers.monitoring.html_diagnostics.dynamic_status import (  # noqa: E402
+    build_dynamic_status_markdown,
+    build_dynamic_status_report,
+    write_dynamic_status_reports,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Grava relatorio Markdown sanitizado em tmp/diagnosticos/html_modelos.",
     )
+    parser.add_argument(
+        "--diagnosticar-status-dinamico",
+        action="store_true",
+        help="Executa diagnostico opt-in da atualizacao dinamica de status Brother.",
+    )
     return parser.parse_args()
 
 
@@ -82,22 +92,38 @@ def main() -> int:
             rows,
             incluir_offline=args.incluir_offline,
         )
-        report = build_report(targets=targets, confirmar=args.confirmar)
+        if args.diagnosticar_status_dinamico:
+            report = build_dynamic_status_report(
+                targets=targets,
+                confirmar=args.confirmar,
+            )
+        else:
+            report = build_report(targets=targets, confirmar=args.confirmar)
 
         should_write_json = bool(args.saida_json or args.confirmar)
         should_write_md = bool(args.saida_md or args.confirmar)
         if should_write_json or should_write_md:
-            json_path, md_path = write_reports(
-                report,
-                write_json=should_write_json,
-                write_md=should_write_md,
-            )
+            if args.diagnosticar_status_dinamico:
+                json_path, md_path = write_dynamic_status_reports(
+                    report,
+                    write_json=should_write_json,
+                    write_md=should_write_md,
+                )
+            else:
+                json_path, md_path = write_reports(
+                    report,
+                    write_json=should_write_json,
+                    write_md=should_write_md,
+                )
             if json_path:
                 emitir(f"Relatorio JSON sanitizado: {json_path}")
             if md_path:
                 emitir(f"Relatorio Markdown sanitizado: {md_path}")
         else:
-            emitir(build_markdown(report))
+            if args.diagnosticar_status_dinamico:
+                emitir(build_dynamic_status_markdown(report))
+            else:
+                emitir(build_markdown(report))
         return 0
     finally:
         db.close()

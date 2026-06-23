@@ -20,12 +20,23 @@ from backend.app.modules.printers.monitoring.html_diagnostics.diagnostic import 
     select_diagnostic_targets,
     write_reports,
 )
+from backend.app.modules.printers.monitoring.html_diagnostics.dynamic_status import (
+    DynamicHttpResult,
+    analyze_dynamic_script,
+    build_dynamic_status_report,
+    classify_dynamic_endpoint,
+    diagnose_dynamic_status,
+    extract_script_references,
+    sanitize_relative_asset_path,
+    write_dynamic_status_reports,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[7]
 PARSER_FIXTURE_DIR = (
     PROJECT_ROOT / "backend/app/modules/printers/monitoring/html_parsers/tests/fixtures"
 )
+DIAGNOSTIC_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def status_html(message="Em espera"):
@@ -58,6 +69,10 @@ def parser_fixture_html(name: str) -> str:
     return (PARSER_FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
+def diagnostic_fixture_text(name: str) -> str:
+    return (DIAGNOSTIC_FIXTURE_DIR / name).read_text(encoding="utf-8")
+
+
 class FakeFetcher:
     def __init__(self, responses=None):
         self.responses = list(responses or [])
@@ -73,6 +88,7 @@ class FakeFetcher:
                 "porta": config.porta,
                 "validar_ssl": config.validar_ssl,
                 "protocolo_preferencial": config.protocolo_preferencial,
+                "session_id": id(session) if session is not None else None,
             }
         )
         if self.responses:
@@ -87,6 +103,32 @@ class FakeFetcher:
             erro_detalhe_sanitizado=None,
             protocolo_usado="http",
             tipo_autenticacao=config.tipo_autenticacao,
+        )
+
+
+class FakeDynamicFetcher:
+    def __init__(self, responses=None):
+        self.responses = dict(responses or {})
+        self.calls = []
+
+    def __call__(self, target, session, path, *, method="GET", protocol=None, referer_path=None):
+        self.calls.append(
+            {
+                "path": path,
+                "method": method,
+                "protocol": protocol,
+                "referer_path": referer_path,
+                "session_id": id(session) if session is not None else None,
+            }
+        )
+        key = (method.upper(), path)
+        value = self.responses.get(key, "")
+        if isinstance(value, DynamicHttpResult):
+            return value
+        return DynamicHttpResult(
+            sucesso=True,
+            status_code=200,
+            conteudo=value,
         )
 
 
@@ -590,6 +632,233 @@ class HtmlPathsDiagnosticTest(TestCase):
             result["comparacao_shape_moni_data"]["provavel_causa"],
             "moni_data_vazio",
         )
+
+    def test_diagnostico_dinamico_lista_scripts_relativos(self):
+        scripts = extract_script_references(
+            diagnostic_fixture_text("brother_l1632w_status_page_with_scripts.html")
+        )
+
+        self.assertEqual(scripts["scripts_detectados"], ["/common/js/lcddisplay.js"])
+        self.assertEqual(scripts["scripts_inline"], ["inline_status_1"])
+        self.assertNotIn("<script", json.dumps(scripts, ensure_ascii=False))
+
+    def test_diagnostico_dinamico_sanitiza_url_absoluta_com_ip(self):
+        path = sanitize_relative_asset_path("http://192.0.2.10/common/js/lcddisplay.js")
+
+        self.assertEqual(path, "/common/js/lcddisplay.js")
+
+    def test_analisador_js_detecta_termos_e_endpoint_candidato(self):
+        analysis = analyze_dynamic_script(
+            diagnostic_fixture_text("brother_l1632w_lcddisplay_candidate.js"),
+            script_path="/common/js/lcddisplay.js",
+        )
+        serialized = json.dumps(analysis, ensure_ascii=False)
+
+        self.assertIn("refreshLCD", analysis["termos_encontrados"])
+        self.assertIn("judge_refresh", analyze_dynamic_script("judge_refresh(60000);", script_path="inline_status_1")["termos_encontrados"])
+        self.assertIn("XMLHttpRequest", analysis["termos_encontrados"])
+        self.assertIn("/home/status.html", analysis["endpoints_candidatos"])
+        self.assertIn("POST", analysis["metodos_candidatos"])
+        self.assertIn("pageid", analysis["parametros_candidatos"])
+        self.assertIn("Refresh", analysis["parametros_candidatos"])
+        self.assertNotIn("xhr.open", serialized)
+
+    def test_diagnostico_dinamico_ignora_endpoint_administrativo(self):
+        allowed, reason = classify_dynamic_endpoint("/admin/config.html")
+
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "endpoint administrativo fora do escopo")
+
+    def test_diagnostico_dinamico_confirma_resposta_com_em_espera(self):
+        status_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    diagnostic_fixture_text("brother_l1632w_status_page_with_scripts.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    {"cookies_recebidos": True, "csrf_detected": True},
+                )
+            ]
+        )
+        dynamic_fetcher = FakeDynamicFetcher(
+            {
+                ("GET", "/common/js/lcddisplay.js"): diagnostic_fixture_text(
+                    "brother_l1632w_lcddisplay_candidate.js"
+                ),
+                ("POST", "/home/status.html"): diagnostic_fixture_text(
+                    "brother_l1632w_dynamic_status_response.html"
+                ),
+            }
+        )
+
+        result = diagnose_dynamic_status(
+            self.target(tipo_autenticacao="form"),
+            status_fetcher=status_fetcher,
+            resource_fetcher=dynamic_fetcher,
+        )
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        self.assertTrue(result["texto_operacional_encontrado"])
+        self.assertEqual(result["mensagem_operacional_encontrada"], "Em espera")
+        self.assertEqual(
+            result["endpoint_dinamico_confirmado"]["endpoint"],
+            "/home/status.html",
+        )
+        self.assertEqual(dynamic_fetcher.calls[0]["session_id"], status_fetcher.calls[0]["session_id"])
+        self.assertNotIn("<html", serialized.lower())
+        self.assertNotIn("Cookie", serialized)
+        self.assertNotIn("Authorization", serialized)
+        self.assertNotIn("CSRFToken", serialized)
+        self.assertNotIn("senha-ficticia", serialized)
+
+    def test_diagnostico_dinamico_registra_resposta_vazia_controlada(self):
+        status_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    diagnostic_fixture_text("brother_l1632w_status_page_with_scripts.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    {"cookies_recebidos": True},
+                )
+            ]
+        )
+        dynamic_fetcher = FakeDynamicFetcher(
+            {
+                ("GET", "/common/js/lcddisplay.js"): diagnostic_fixture_text(
+                    "brother_l1632w_lcddisplay_candidate.js"
+                ),
+                ("POST", "/home/status.html"): diagnostic_fixture_text(
+                    "brother_l1632w_dynamic_status_response_empty.html"
+                ),
+            }
+        )
+
+        result = diagnose_dynamic_status(
+            self.target(tipo_autenticacao="form"),
+            status_fetcher=status_fetcher,
+            resource_fetcher=dynamic_fetcher,
+        )
+
+        self.assertFalse(result["texto_operacional_encontrado"])
+        self.assertEqual(result["causa_sanitizada"], "endpoint_candidato_sem_texto_operacional")
+        self.assertEqual(result["chamadas_candidatas_executadas"][0]["mensagens_detectadas"], [])
+
+    def test_diagnostico_dinamico_registra_causa_sem_endpoint(self):
+        status_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    "<html><body><script>judge_refresh(60000);</script></body></html>",
+                    None,
+                    None,
+                    "http",
+                    "form",
+                )
+            ]
+        )
+
+        report = build_dynamic_status_report(
+            targets=[self.target(tipo_autenticacao="form")],
+            confirmar=True,
+            status_fetcher=status_fetcher,
+            resource_fetcher=FakeDynamicFetcher(),
+        )
+        result = report["resultados"][0]
+
+        self.assertEqual(result["causa_sanitizada"], "scripts_sem_endpoint_candidato")
+        self.assertEqual(result["endpoints_candidatos"], [])
+
+    def test_relatorio_dinamico_nao_contem_html_js_ou_segredos(self):
+        status_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    diagnostic_fixture_text("brother_l1632w_status_page_with_scripts.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    {"cookies_recebidos": True, "csrf_detected": True},
+                )
+            ]
+        )
+        dynamic_fetcher = FakeDynamicFetcher(
+            {
+                ("GET", "/common/js/lcddisplay.js"): diagnostic_fixture_text(
+                    "brother_l1632w_lcddisplay_candidate.js"
+                ),
+                ("POST", "/home/status.html"): diagnostic_fixture_text(
+                    "brother_l1632w_dynamic_status_response.html"
+                ),
+            }
+        )
+        report = build_dynamic_status_report(
+            targets=[self.target(tipo_autenticacao="form")],
+            confirmar=True,
+            status_fetcher=status_fetcher,
+            resource_fetcher=dynamic_fetcher,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path, md_path = write_dynamic_status_reports(
+                report,
+                output_dir=Path(tmpdir),
+            )
+            content = json_path.read_text(encoding="utf-8") + md_path.read_text(encoding="utf-8")
+
+        for forbidden in (
+            "<html",
+            "<script",
+            "xhr.open",
+            "CAR_PRINT_002",
+            "192.0.2.10",
+            "senha-ficticia",
+            "Authorization",
+            "Cookie",
+            "CSRFToken",
+            "senha_criptografada",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, content)
+
+    def test_diagnostico_dinamico_nao_acessa_rede_em_teste(self):
+        with patch("requests.sessions.Session.request") as request:
+            report = build_dynamic_status_report(
+                targets=[self.target(tipo_autenticacao="form")],
+                confirmar=True,
+                status_fetcher=FakeFetcher(
+                    [
+                        HtmlClientResponse(
+                            True,
+                            200,
+                            "http://x",
+                            "<html><body></body></html>",
+                            None,
+                            None,
+                            "http",
+                            "form",
+                        )
+                    ]
+                ),
+                resource_fetcher=FakeDynamicFetcher(),
+            )
+
+        self.assertTrue(report["executado"])
+        request.assert_not_called()
 
     def test_markdown_contem_matriz_por_modelo(self):
         report = build_report(targets=[self.target()], confirmar=False)

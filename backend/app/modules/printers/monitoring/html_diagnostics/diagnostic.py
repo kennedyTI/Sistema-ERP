@@ -231,10 +231,15 @@ def sanitize_text(value: Any) -> Any:
     if not isinstance(value, str):
         return value
     sanitized = " ".join(value.replace("\xa0", " ").split())
-    for marker in SENSITIVE_MARKERS:
-        sanitized = sanitized.replace(marker, "[segredo_oculto]")
-        sanitized = sanitized.replace(marker.upper(), "[segredo_oculto]")
-        sanitized = sanitized.replace(marker.title(), "[segredo_oculto]")
+    safe_relative_path = (
+        sanitized.startswith("/")
+        and not any(char in sanitized for char in (" ", "\t", "\r", "\n", "<", ">"))
+    )
+    if not safe_relative_path:
+        for marker in SENSITIVE_MARKERS:
+            sanitized = sanitized.replace(marker, "[segredo_oculto]")
+            sanitized = sanitized.replace(marker.upper(), "[segredo_oculto]")
+            sanitized = sanitized.replace(marker.title(), "[segredo_oculto]")
     for pattern, replacement in SENSITIVE_PATTERNS:
         sanitized = pattern.sub(replacement, sanitized)
     return sanitized[:1000]
