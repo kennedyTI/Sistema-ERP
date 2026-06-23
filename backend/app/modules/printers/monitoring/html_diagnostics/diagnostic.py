@@ -25,8 +25,12 @@ from backend.app.modules.printers.monitoring.html_credentials.models import (
     PrinterCollectionCredential,
 )
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
+    build_brother_l1632w_maintenance_debug,
+    build_brother_l1632w_moni_data_debug,
     classify_brother_html_auth_state,
+    compare_brother_l1632w_moni_shape,
     detect_brother_l1632w_maintenance_markers,
+    detect_brother_l1632w_status_terms,
     extract_visible_text_chunks,
     parse_brother_dcp_l1632w_maintenance_info,
 )
@@ -615,10 +619,28 @@ def diagnose_status_path(
         if _is_brother_l1632w(target)
         else {}
     )
+    moni_data_debug = (
+        build_brother_l1632w_moni_data_debug(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
+    status_terms_detected = (
+        detect_brother_l1632w_status_terms(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else []
+    )
+    shape_comparison = (
+        compare_brother_l1632w_moni_shape(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
     return {
         **base,
         "parser_status": "disponivel",
         "auth_state": auth_state,
+        "moni_data_debug": moni_data_debug,
+        "status_terms_detected": status_terms_detected,
+        "comparacao_shape_moni_data": shape_comparison,
         "estado_detectado": parse_result.sucesso,
         "estado_principal": parse_result.estado_principal,
         "mensagens_brutas": parse_result.mensagens_brutas,
@@ -700,11 +722,17 @@ def diagnose_information_path(
         if _is_brother_l1632w(target)
         else {}
     )
+    maintenance_debug = (
+        build_brother_l1632w_maintenance_debug(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
     success = any(capabilities.values()) or bool(maintenance_info)
     return {
         **base,
         "capacidades_detectadas": capabilities,
         "maintenance_state": maintenance_state,
+        "maintenance_debug": maintenance_debug,
         "maintenance_info": maintenance_info,
         "sucesso": success,
         "erro_codigo": None if success else "html_capacidades_nao_detectadas",

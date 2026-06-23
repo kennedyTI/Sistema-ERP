@@ -463,6 +463,17 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertFalse(
             result["status"]["metadados"]["nivel_toner_percentual_disponivel"]
         )
+        self.assertTrue(result["status"]["moni_data_debug"]["tem_moni_data"])
+        self.assertTrue(result["status"]["moni_data_debug"]["tem_moni_class"])
+        self.assertEqual(result["status"]["moni_data_debug"]["tags_filhas"], ["span"])
+        self.assertEqual(
+            result["status"]["status_terms_detected"],
+            ["Em espera"],
+        )
+        self.assertEqual(
+            result["status"]["comparacao_shape_moni_data"]["provavel_causa"],
+            "moni_data_com_moni_detectado",
+        )
         self.assertEqual(
             result["informacoes"]["maintenance_info"],
             {
@@ -506,10 +517,78 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertEqual(result["status"]["auth_state"]["login_requerido"], False)
         self.assertTrue(result["informacoes"]["maintenance_state"]["tem_dl_items"])
         self.assertTrue(result["informacoes"]["maintenance_state"]["tem_dl_items_info_1line"])
+        self.assertTrue(result["informacoes"]["maintenance_debug"]["tem_dl_items"])
+        self.assertIn(
+            "Contador pag.",
+            result["informacoes"]["maintenance_debug"]["labels_detectados"],
+        )
+        self.assertTrue(
+            result["informacoes"]["maintenance_debug"]["campos_extraidos"][
+                "contador_paginas"
+            ]
+        )
         self.assertEqual(result["informacoes"]["maintenance_info"]["contador_paginas"], 4556)
         self.assertEqual(
             result["informacoes"]["maintenance_info"]["total_paginas_impressas_a4_letter"],
             4556,
+        )
+
+    def test_diagnostico_l1632w_registra_texto_direto_moni_data(self):
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_moni_text_without_class.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                )
+            ]
+        )
+
+        result = diagnose_status_path(self.target(), fetcher=fetcher)
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["estado_principal"], "Em espera")
+        self.assertFalse(result["moni_data_debug"]["tem_moni_class"])
+        self.assertEqual(
+            result["comparacao_shape_moni_data"]["provavel_causa"],
+            "moni_data_com_texto_sem_classe_moni",
+        )
+        self.assertNotIn("<div", serialized)
+        self.assertNotIn("Cookie", serialized)
+        self.assertNotIn("Authorization", serialized)
+        self.assertNotIn("CSRF", serialized)
+
+    def test_diagnostico_l1632w_registra_moni_data_vazio(self):
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_moni_empty.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                )
+            ]
+        )
+
+        result = diagnose_status_path(self.target(), fetcher=fetcher)
+
+        self.assertFalse(result["sucesso"])
+        self.assertEqual(result["erro_codigo"], "html_sessao_brother_invalida")
+        self.assertEqual(result["moni_data_debug"]["tags_filhas"], [])
+        self.assertTrue(result["moni_data_debug"]["parece_vazio"])
+        self.assertEqual(
+            result["comparacao_shape_moni_data"]["provavel_causa"],
+            "moni_data_vazio",
         )
 
     def test_markdown_contem_matriz_por_modelo(self):

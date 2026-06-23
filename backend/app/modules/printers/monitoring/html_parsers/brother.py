@@ -15,6 +15,7 @@ from backend.app.modules.printers.monitoring.state.rules import normalize_text
 BROTHER_DCP_L1632W_STATUS_MESSAGES = (
     "Subs. o toner",
     "Substituir toner",
+    "Trocar toner",
     "Toner baixo",
     "Sem papel",
     "Atolamento",
@@ -47,18 +48,32 @@ class BrotherHtmlAuthSnapshot:
     has_csrf: bool = False
     has_moni_data: bool = False
     status_moni_messages: list[str] = field(default_factory=list)
+    moni_data_chunks: list[str] = field(default_factory=list)
+    moni_data_child_tags: list[str] = field(default_factory=list)
+    moni_data_child_classes: list[str] = field(default_factory=list)
+    has_moni_data_span: bool = False
+    has_moni_class: bool = False
 
     @property
     def has_status_moni(self) -> bool:
         return bool(self.status_moni_messages)
 
+    @property
+    def has_operational_status(self) -> bool:
+        if self.has_status_moni:
+            return True
+        return bool(_find_known_messages(
+            self.moni_data_chunks,
+            BROTHER_DCP_L1632W_STATUS_MESSAGES,
+        ))
+
     def as_auth_state(self) -> dict[str, object]:
-        authenticated = self.has_status_moni
-        login_required = self.has_log_in_out_box and self.has_logbox and not authenticated
+        authenticated = self.has_operational_status
+        login_required = self.has_logbox and not authenticated
         error_code = None
         if login_required:
             error_code = "html_autenticacao_requerida"
-        elif self.has_log_in_out_box and not authenticated:
+        elif (self.has_moni_data or self.has_log_in_out_box) and not authenticated:
             error_code = "html_sessao_brother_invalida"
         elif not authenticated:
             error_code = "html_status_nao_detectado"
@@ -70,6 +85,7 @@ class BrotherHtmlAuthSnapshot:
             "tem_csrf": self.has_csrf,
             "tem_moni_data": self.has_moni_data,
             "tem_status_moni": self.has_status_moni,
+            "tem_moni_class": self.has_moni_class,
             "erro_codigo": error_code,
         }
 
@@ -84,6 +100,7 @@ class BrotherHtmlAuthStateParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         normalized_tag = tag.lower()
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
+        inside_moni_data = self._inside_moni_data()
         self._element_stack.append((normalized_tag, attrs_dict))
         if normalized_tag in {"script", "style", "noscript"}:
             self._ignored_stack.append(normalized_tag)
@@ -96,6 +113,14 @@ class BrotherHtmlAuthStateParser(HTMLParser):
             self.snapshot.has_csrf = True
         if attrs_dict.get("id") == "moni_data":
             self.snapshot.has_moni_data = True
+        elif inside_moni_data:
+            self.snapshot.moni_data_child_tags.append(normalized_tag)
+            if normalized_tag == "span":
+                self.snapshot.has_moni_data_span = True
+            for class_name in _split_classes(attrs_dict.get("class")):
+                self.snapshot.moni_data_child_classes.append(class_name)
+            if _class_has_moni(attrs_dict.get("class")):
+                self.snapshot.has_moni_class = True
 
     def handle_endtag(self, tag):
         normalized_tag = tag.lower()
@@ -110,7 +135,11 @@ class BrotherHtmlAuthStateParser(HTMLParser):
         if self._ignored_stack:
             return
         text = " ".join(data.replace("\xa0", " ").split())
-        if text and self._inside_moni_status():
+        if not text:
+            return
+        if self._inside_moni_data():
+            self.snapshot.moni_data_chunks.append(text)
+        if self._inside_moni_status():
             self.snapshot.status_moni_messages.append(text)
 
     def handle_startendtag(self, tag, attrs):
@@ -118,14 +147,12 @@ class BrotherHtmlAuthStateParser(HTMLParser):
         self.handle_endtag(tag)
 
     def _inside_moni_status(self) -> bool:
-        has_moni_data = any(
-            attrs.get("id") == "moni_data" for _tag, attrs in self._element_stack
-        )
-        has_moni_class = any(
-            "moni" in attrs.get("class", "").split()
-            for _tag, attrs in self._element_stack
-        )
+        has_moni_data = self._inside_moni_data()
+        has_moni_class = any(_class_has_moni(attrs.get("class")) for _tag, attrs in self._element_stack)
         return has_moni_data and has_moni_class
+
+    def _inside_moni_data(self) -> bool:
+        return any(attrs.get("id") == "moni_data" for _tag, attrs in self._element_stack)
 
 BROTHER_DCP_L2540DW_STATUS_MESSAGES = (
     "Há pouco toner",
@@ -179,6 +206,14 @@ def _is_csrf_name(value: str | None) -> bool:
     return (value or "").casefold() == "csrftoken"
 
 
+def _split_classes(value: str | None) -> list[str]:
+    return [chunk for chunk in (value or "").split() if chunk]
+
+
+def _class_has_moni(value: str | None) -> bool:
+    return any("moni" in class_name.casefold() for class_name in _split_classes(value))
+
+
 def brother_html_auth_snapshot(html: str) -> BrotherHtmlAuthSnapshot:
     parser = BrotherHtmlAuthStateParser()
     parser.feed(html or "")
@@ -193,6 +228,77 @@ def classify_brother_html_auth_state(html: str) -> dict[str, object]:
 def extract_brother_moni_status_messages(html: str) -> list[str]:
     snapshot = brother_html_auth_snapshot(html)
     return unique_messages(snapshot.status_moni_messages)
+
+
+def extract_brother_moni_data_direct_messages(html: str) -> list[str]:
+    snapshot = brother_html_auth_snapshot(html)
+    return _find_known_messages(snapshot.moni_data_chunks, BROTHER_DCP_L1632W_STATUS_MESSAGES)
+
+
+def _sanitize_preview(value: str, *, limit: int = 200) -> str:
+    preview = " ".join((value or "").replace("\xa0", " ").split())
+    preview = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "[ip_oculto]", preview)
+    preview = re.sub(r"\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b", "[mac_oculto]", preview)
+    for marker in ("senha", "password", "authorization", "cookie", "csrf", "token"):
+        preview = re.sub(re.escape(marker), "[segredo_oculto]", preview, flags=re.IGNORECASE)
+    return preview[:limit]
+
+
+def detect_brother_l1632w_status_terms(html: str) -> list[str]:
+    chunks = extract_visible_text_chunks(html or "")
+    return _find_known_messages(chunks, BROTHER_DCP_L1632W_STATUS_MESSAGES)
+
+
+def build_brother_l1632w_moni_data_debug(html: str) -> dict[str, object]:
+    snapshot = brother_html_auth_snapshot(html)
+    text = _sanitize_preview(" ".join(snapshot.moni_data_chunks), limit=200)
+    return {
+        "tem_moni_data": snapshot.has_moni_data,
+        "tem_moni_class": snapshot.has_moni_class,
+        "tem_span": snapshot.has_moni_data_span,
+        "tags_filhas": unique_messages(snapshot.moni_data_child_tags),
+        "classes_filhas": unique_messages(snapshot.moni_data_child_classes),
+        "texto_visivel_preview": text,
+        "texto_visivel_tamanho": len(text),
+        "parece_vazio": not bool(text),
+    }
+
+
+def compare_brother_l1632w_moni_shape(html: str) -> dict[str, object]:
+    debug = build_brother_l1632w_moni_data_debug(html)
+    auth_state = classify_brother_html_auth_state(html)
+    terms = detect_brother_l1632w_status_terms(html)
+    moni_terms = extract_brother_moni_data_direct_messages(html)
+
+    if auth_state["login_requerido"]:
+        cause = "login_requerido"
+    elif not debug["tem_moni_data"]:
+        cause = "moni_data_ausente"
+    elif debug["parece_vazio"]:
+        cause = "moni_data_vazio"
+    elif debug["tem_moni_class"]:
+        cause = "moni_data_com_moni_detectado"
+    elif moni_terms:
+        cause = "moni_data_com_texto_sem_classe_moni"
+    elif auth_state["erro_codigo"] == "html_sessao_brother_invalida":
+        cause = "sessao_brother_invalida"
+    elif not terms:
+        cause = "html_sem_texto_operacional"
+    else:
+        cause = "moni_data_sem_elemento_moni_no_html_retornado"
+
+    return {
+        "expected_shape": {
+            "seletor_prioritario": "#moni_data .moni",
+            "esperado": True,
+        },
+        "actual_shape": {
+            "tem_moni_data": debug["tem_moni_data"],
+            "tem_moni_class": debug["tem_moni_class"],
+            "tem_texto_operacional": bool(moni_terms or terms),
+        },
+        "provavel_causa": cause,
+    }
 
 
 class BrotherMaintenanceMarkerParser(HTMLParser):
@@ -244,6 +350,33 @@ def detect_brother_l1632w_maintenance_markers(html: str) -> dict[str, bool]:
         "tem_toner": "toner" in text,
         "tem_contador_paginas": "contador pag" in text,
         "tem_a4_letter": "a4/letter" in text,
+    }
+
+
+def build_brother_l1632w_maintenance_debug(html: str) -> dict[str, object]:
+    markers = detect_brother_l1632w_maintenance_markers(html)
+    info = parse_brother_dcp_l1632w_maintenance_info(html)
+    labels: list[str] = []
+    for _section, label, _value in definition_sections(html):
+        normalized_label = normalize_text(label).replace("*", "")
+        if "contador pag" in normalized_label:
+            labels.append("Contador pag.")
+        if "unidade de tambor" in normalized_label:
+            labels.append("Unidade de tambor*")
+        if normalized_label == "toner":
+            labels.append("Toner**")
+        if "a4/letter" in normalized_label:
+            labels.append("A4/Letter")
+    return {
+        "tem_dl_items": markers["tem_dl_items"],
+        "tem_dl_items_info_1line": markers["tem_dl_items_info_1line"],
+        "labels_detectados": unique_messages(labels),
+        "campos_extraidos": {
+            "contador_paginas": "contador_paginas" in info,
+            "total_paginas_impressas_a4_letter": "total_paginas_impressas_a4_letter" in info,
+            "unidade_tambor_percentual": "unidade_tambor_percentual" in info,
+            "toner_percentual": "toner_percentual" in info,
+        },
     }
 
 
@@ -302,10 +435,7 @@ class DefinitionItemsParser(HTMLParser):
         has_moni_data = any(
             attrs.get("id") == "moni_data" for _tag, attrs in self._element_stack
         )
-        has_moni_class = any(
-            "moni" in attrs.get("class", "").split()
-            for _tag, attrs in self._element_stack
-        )
+        has_moni_class = any(_class_has_moni(attrs.get("class")) for _tag, attrs in self._element_stack)
         return has_moni_data and has_moni_class
 
 
@@ -413,6 +543,9 @@ def extract_brother_l1632w_status_message(html: str) -> list[str]:
     moni_messages = extract_brother_moni_status_messages(html)
     if moni_messages:
         return moni_messages
+    direct_messages = extract_brother_moni_data_direct_messages(html)
+    if direct_messages:
+        return direct_messages
 
     for label, block in definition_pairs(html):
         if normalize_text(label) not in {"estado do dispositivo", "device status"}:

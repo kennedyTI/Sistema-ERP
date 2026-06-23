@@ -7,8 +7,11 @@ from backend.app.modules.printers.monitoring.html_client.models import HtmlClien
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
     BrotherDcpL1632wStatusParser,
     BrotherDcpL2540dwStatusParser,
+    build_brother_l1632w_moni_data_debug,
     classify_brother_html_auth_state,
+    compare_brother_l1632w_moni_shape,
     detect_brother_l1632w_maintenance_markers,
+    detect_brother_l1632w_status_terms,
     extract_brother_moni_status_messages,
     extract_visible_text_chunks,
     parse_brother_dcp_l1632w_maintenance_info,
@@ -208,6 +211,129 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(messages, ["Toner baixo"])
         self.assertTrue(result.sucesso)
         self.assertEqual(result.estado_principal, "Toner baixo")
+
+    def test_parser_brother_l1632w_extrai_estado_de_span_moni(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_moni_span.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Em espera"])
+        self.assertEqual(result.estado_principal, "Em espera")
+
+    def test_parser_brother_l1632w_extrai_estado_de_div_moni(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_moni_div.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Toner baixo"])
+        self.assertEqual(result.estado_principal, "Toner baixo")
+
+    def test_parser_brother_l1632w_aceita_classes_moni_variadas(self):
+        for class_name, expected in (
+            ("moniOk", "Em espera"),
+            ("moniWarning", "Toner baixo"),
+            ("moniError", "Erro"),
+            ("moni", "Pronto"),
+        ):
+            with self.subTest(class_name=class_name):
+                html = f'<div id="moni_data"><p class="{class_name}">{expected}</p></div>'
+                result = parse_status_html_for_model(DummyModel(), html)
+
+                self.assertTrue(result.sucesso)
+                self.assertEqual(result.estado_principal, expected)
+
+    def test_parser_brother_l1632w_usa_texto_direto_do_moni_data(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_moni_text_without_class.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Em espera"])
+        self.assertEqual(result.metadados["auth_state"]["tem_status_moni"], False)
+        self.assertEqual(result.metadados["auth_state"]["tem_moni_class"], False)
+
+    def test_parser_brother_l1632w_moni_data_vazio_retorna_sessao_invalida(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_moni_empty.html"),
+        )
+
+        self.assertFalse(result.sucesso)
+        self.assertEqual(result.erro_codigo, "html_sessao_brother_invalida")
+
+    def test_parser_brother_l1632w_usa_dt_estado_como_fallback_final(self):
+        html = """
+        <dl class="items">
+          <dt>Estado do dispositivo</dt>
+          <dd>Pronto</dd>
+        </dl>
+        """
+
+        result = parse_status_html_for_model(DummyModel(), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.estado_principal, "Pronto")
+
+    def test_debug_moni_data_sanitizado_lista_shape_sem_html_bruto(self):
+        html = """
+        <div id="moni_data">
+          <span class="moni moniOk">Em espera</span>
+        </div>
+        """
+
+        debug = build_brother_l1632w_moni_data_debug(html)
+        serialized = str(debug)
+
+        self.assertTrue(debug["tem_moni_data"])
+        self.assertTrue(debug["tem_moni_class"])
+        self.assertTrue(debug["tem_span"])
+        self.assertEqual(debug["tags_filhas"], ["span"])
+        self.assertEqual(debug["classes_filhas"], ["moni", "moniOk"])
+        self.assertEqual(debug["texto_visivel_preview"], "Em espera")
+        self.assertNotIn("<span", serialized)
+
+    def test_debug_moni_data_limita_preview_e_oculta_segredos(self):
+        html = f"""
+        <div id="moni_data">
+          senha Cookie Authorization CSRF 10.0.0.10 {"Em espera " * 80}
+        </div>
+        """
+
+        debug = build_brother_l1632w_moni_data_debug(html)
+
+        self.assertLessEqual(len(debug["texto_visivel_preview"]), 200)
+        self.assertNotIn("senha", debug["texto_visivel_preview"].lower())
+        self.assertNotIn("Cookie", debug["texto_visivel_preview"])
+        self.assertNotIn("Authorization", debug["texto_visivel_preview"])
+        self.assertNotIn("CSRF", debug["texto_visivel_preview"])
+        self.assertNotIn("10.0.0.10", debug["texto_visivel_preview"])
+
+    def test_comparacao_moni_data_registra_causas_sanitizadas(self):
+        detected = compare_brother_l1632w_moni_shape(
+            fixture_html("brother_dcp_l1632w_status_moni_span.html")
+        )
+        direct = compare_brother_l1632w_moni_shape(
+            fixture_html("brother_dcp_l1632w_status_moni_text_without_class.html")
+        )
+        empty = compare_brother_l1632w_moni_shape(
+            fixture_html("brother_dcp_l1632w_status_moni_empty.html")
+        )
+
+        self.assertEqual(detected["provavel_causa"], "moni_data_com_moni_detectado")
+        self.assertEqual(direct["provavel_causa"], "moni_data_com_texto_sem_classe_moni")
+        self.assertEqual(empty["provavel_causa"], "moni_data_vazio")
+
+    def test_termos_operacionais_sao_detectados_sem_html_bruto(self):
+        terms = detect_brother_l1632w_status_terms(
+            fixture_html("brother_dcp_l1632w_status_moni_div.html")
+        )
+
+        self.assertEqual(terms, ["Toner baixo"])
 
     def test_parser_brother_l1632w_detecta_bloco_toner_sem_percentual(self):
         result = parse_status_html_for_model(

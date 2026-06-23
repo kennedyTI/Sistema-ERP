@@ -2213,6 +2213,227 @@ adicional apos o POST para preencher `.moni` dentro de `#moni_data`, ou se a
 Brother exige algum parametro/cookie adicional de sessao. A proxima etapa deve
 continuar diagnostica, sem salvar HTML bruto e sem integrar HTML na cascata.
 
+## Etapa 3.5.2.15 - Comparacao segura do HTML Brother DCP-L1632W retornado
+
+Esta microetapa comparou, de forma sanitizada, o shape esperado do HTML salvo
+com o HTML retornado pelo diagnostico real da Brother DCP-L1632W. O foco foi
+explicar por que o seletor prioritario `#moni_data .moni` existe no HTML de
+referencia, mas o diagnostico real ainda nao extrai estado operacional.
+
+Branch usada:
+
+```text
+feature/printers-html-brother-l1632w-status-compare
+```
+
+Base usada:
+
+```text
+feature/printers-html-brother-l1632w-auth-flow
+commit base: ec32b79
+```
+
+HTML continua fora da cascata SNMP -> HTML. Nenhum alerta HTML, toner, tambor
+ou contador foi persistido. Dados cadastrais continuam vindo das tabelas do
+ERP, sem sobrescrita por HTML ou SNMP.
+
+### Problema investigado
+
+O HTML salvo pelo navegador continha o shape esperado:
+
+```html
+<div id="moni_data">
+  <span class="moni moniOk">Em espera</span>
+</div>
+```
+
+O diagnostico real anterior indicava `#moni_data` detectado, mas sem mensagem
+operacional extraida. Nesta etapa, o diagnostico passou a registrar o shape
+seguro de `#moni_data`:
+
+- existencia de `#moni_data`;
+- existencia de elemento com classe contendo `moni`;
+- existencia de `span`;
+- tags filhas;
+- classes filhas;
+- preview textual sanitizado e limitado;
+- termos operacionais conhecidos detectados;
+- comparacao entre shape esperado e shape real.
+
+Nenhum HTML bruto, cookie, senha, Authorization, CSRF, IP, MAC ou serial entra
+no relatorio.
+
+### Fallbacks do parser Brother
+
+A regra atual do parser da Brother DCP-L1632W ficou:
+
+1. procurar primeiro `#moni_data .moni`;
+2. aceitar qualquer classe que contenha `moni`, como `moni`, `moniOk`,
+   `moniWarning` e `moniError`;
+3. aceitar qualquer tag com essa classe, como `span`, `div` ou `p`;
+4. se `#moni_data` existir sem classe `moni`, tentar texto visivel direto do
+   proprio `#moni_data`;
+5. se ainda nao houver estado, usar `dt Estado do dispositivo` e o `dd`
+   seguinte como fallback final;
+6. se houver `input#LogBox` sem estado, retornar
+   `html_autenticacao_requerida`;
+7. se `#moni_data` vier vazio ou sem texto operacional, retornar
+   `html_sessao_brother_invalida`.
+
+### Diagnostico sanitizado adicionado
+
+O relatorio passou a incluir:
+
+```json
+{
+  "moni_data_debug": {
+    "tem_moni_data": true,
+    "tem_moni_class": true,
+    "tem_span": true,
+    "tags_filhas": ["span"],
+    "classes_filhas": ["moni", "moniOk"],
+    "texto_visivel_preview": "",
+    "texto_visivel_tamanho": 0,
+    "parece_vazio": true
+  },
+  "status_terms_detected": [],
+  "comparacao_shape_moni_data": {
+    "expected_shape": {
+      "seletor_prioritario": "#moni_data .moni",
+      "esperado": true
+    },
+    "actual_shape": {
+      "tem_moni_data": true,
+      "tem_moni_class": true,
+      "tem_texto_operacional": false
+    },
+    "provavel_causa": "moni_data_vazio"
+  }
+}
+```
+
+Tambem foi adicionado debug de manutencao para explicar marcadores presentes
+sem extrair campos sensiveis ou cadastrais:
+
+```json
+{
+  "maintenance_debug": {
+    "tem_dl_items": true,
+    "tem_dl_items_info_1line": true,
+    "labels_detectados": ["Toner**", "A4/Letter"],
+    "campos_extraidos": {
+      "contador_paginas": false,
+      "total_paginas_impressas_a4_letter": false,
+      "unidade_tambor_percentual": false,
+      "toner_percentual": false
+    }
+  }
+}
+```
+
+### Fixtures e testes
+
+Foram adicionadas fixtures sinteticas e sanitizadas para cobrir:
+
+- `#moni_data` com `span.moni`;
+- `#moni_data` com `div.moni`;
+- `#moni_data` com texto direto sem classe;
+- `#moni_data` vazio.
+
+Os testes cobrem extracao de `Em espera`, `Toner baixo`, classes `moniOk`,
+`moniWarning`, `moniError` e `moni`, fallback por texto direto, fallback por
+`dt Estado do dispositivo`, erro `html_autenticacao_requerida`, erro
+`html_sessao_brother_invalida`, diagnostico de tags/classes e sanitizacao de
+preview sem HTML bruto ou segredos.
+
+### Resultado do diagnostico real
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260623_131903.json
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260623_131903.md
+```
+
+Resultado controlado:
+
+| Item | Resultado |
+| --- | --- |
+| `#moni_data` | detectado |
+| Classe contendo `moni` | detectada |
+| `span` dentro de `#moni_data` | detectado |
+| Classes filhas | `moni`, `moniOk` |
+| Texto visivel dentro de `#moni_data` | vazio |
+| Termo operacional conhecido | nao detectado |
+| Estado principal | nao detectado |
+| Erro controlado | `html_sessao_brother_invalida` |
+| Causa sanitizada | `moni_data_vazio` |
+| `maintenance_info` real | `{}` |
+| HTML bruto/segredos | nao versionados e nao expostos |
+
+O diagnostico real mostrou que o shape estrutural esperado esta presente, mas
+o elemento operacional retornou sem texto visivel. A falha restante, portanto,
+nao e falta de seletor: e ausencia de mensagem operacional no HTML retornado ao
+cliente seguro naquele fluxo.
+
+### Validacoes
+
+Resultados executados nesta microetapa:
+
+```text
+py -3.11 -m pytest -q backend/app/modules/printers/monitoring/html_parsers/tests/test_status_parsers.py backend/app/modules/printers/monitoring/html_diagnostics/tests/test_html_paths_diagnostic.py
+68 passed
+
+py -3.11 -m compileall -q backend/app/modules/printers/monitoring/html_parsers backend/app/modules/printers/monitoring/html_diagnostics
+OK
+
+py -3.11 -m compileall -q backend
+OK
+
+py -3.11 -m pytest -q
+328 passed, 38 warnings
+
+py -3.11 manage.py check
+System check identified no issues
+
+npm.cmd audit
+found 0 vulnerabilities
+
+npm.cmd run build
+OK, com aviso conhecido de chunks grandes do Vite
+
+docker compose --env-file .env.docker up -d --no-build
+OK
+
+docker compose --env-file .env.docker ps -a
+migrations Exited (0); stack Up
+```
+
+### Limites preservados
+
+Esta etapa nao integrou HTML na cascata SNMP -> HTML, nao alterou
+`collect_and_sync_machine_alerts`, nao alterou
+`sync_machine_alerts_from_collection_result`, nao alterou Rules Engine, nao
+alterou Celery/task, nao persistiu alertas HTML, nao gravou em
+`alertas_impressoras`, nao gravou em `historico_alertas_impressoras`, nao
+persistiu toner, tambor ou contador, nao criou API publica, nao criou
+frontend, nao criou tabela nova, nao criou credencial por maquina, nao criou
+`tentativas_coleta_impressoras`, nao salvou HTML bruto e nao usou HTML/SNMP
+para alterar dados cadastrais.
+
+### Proxima etapa recomendada
+
+Investigar, ainda com relatorios sanitizados, se a Brother preenche o texto de
+`.moni` por requisicao assincrona, parametro adicional ou estado de sessao
+posterior ao login. Essa proxima etapa deve continuar diagnostica e nao deve
+integrar HTML na cascata nem persistir alertas.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
