@@ -1,4 +1,5 @@
 from unittest import TestCase
+from pathlib import Path
 
 import requests
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
@@ -6,6 +7,7 @@ from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 from backend.app.modules.printers.monitoring.html_client.client import (
     build_html_url,
     fetch_html_page,
+    parse_brother_login_form,
     protocol_sequence,
     validate_port,
     validate_relative_html_path,
@@ -14,23 +16,41 @@ from backend.app.modules.printers.monitoring.html_client.exceptions import HtmlC
 from backend.app.modules.printers.monitoring.html_client.models import HtmlAccessConfig
 
 
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
 class FakeResponse:
-    def __init__(self, status_code=200, text="<html>ok</html>"):
+    def __init__(self, status_code=200, text="<html>ok</html>", cookies=None):
         self.status_code = status_code
         self.text = text
+        self.cookies = cookies or {}
 
 
 class FakeSession:
     def __init__(self, *results):
         self.results = list(results)
+        self.post_results = []
         self.calls = []
+        self.cookies = {}
 
     def get(self, url, **kwargs):
-        self.calls.append({"url": url, **kwargs})
+        self.calls.append({"method": "GET", "url": url, **kwargs})
         result = self.results.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
+
+    def post(self, url, **kwargs):
+        self.calls.append({"method": "POST", "url": url, **kwargs})
+        result = self.post_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        self.cookies.update(getattr(result, "cookies", {}) or {})
+        return result
+
+
+def fixture_html(name: str) -> str:
+    return (FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
 def config(**overrides):
@@ -187,23 +207,21 @@ class HtmlClientRequestTest(TestCase):
         self.assertTrue(result.sucesso)
         self.assertIsInstance(session.calls[0]["auth"], HTTPDigestAuth)
 
-    def test_form_e_cookie_retornam_erro_controlado(self):
-        for auth_type in ("form", "cookie"):
-            with self.subTest(auth_type=auth_type):
-                session = FakeSession(FakeResponse())
+    def test_cookie_retorna_erro_controlado(self):
+        session = FakeSession(FakeResponse())
 
-                result = fetch_html_page(
-                    "10.0.0.10",
-                    config(tipo_autenticacao=auth_type),
-                    session=session,
-                )
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="cookie"),
+            session=session,
+        )
 
-                self.assertFalse(result.sucesso)
-                self.assertEqual(
-                    result.erro_codigo,
-                    "autenticacao_nao_suportada_nesta_etapa",
-                )
-                self.assertEqual(session.calls, [])
+        self.assertFalse(result.sucesso)
+        self.assertEqual(
+            result.erro_codigo,
+            "autenticacao_nao_suportada_nesta_etapa",
+        )
+        self.assertEqual(session.calls, [])
 
     def test_ip_invalido_retorna_erro_controlado(self):
         session = FakeSession(FakeResponse())
@@ -239,3 +257,179 @@ class HtmlClientRequestTest(TestCase):
         self.assertFalse(result.sucesso)
         self.assertIsNone(result.conteudo_html)
         self.assertNotIn("conteudo bruto autenticado", str(result))
+
+
+class HtmlClientBrotherFormLoginTest(TestCase):
+    def test_parser_detecta_container_formulario_logbox_csrf_e_hiddens(self):
+        form = parse_brother_login_form(fixture_html("brother_l1632w_login_form.html"))
+
+        self.assertTrue(form.container_detected)
+        self.assertTrue(form.form_detected)
+        self.assertEqual(form.action, "/home/status.html")
+        self.assertEqual(form.method, "post")
+        self.assertTrue(form.password_input_detected)
+        self.assertEqual(form.password_field_name, "LogBox")
+        self.assertTrue(form.csrf_detected)
+        self.assertEqual(len(form.hidden_fields), 2)
+
+    def test_login_brother_form_faz_get_post_e_novo_get_status(self):
+        session = FakeSession(
+            FakeResponse(200, fixture_html("brother_l1632w_login_form.html")),
+            FakeResponse(200, fixture_html("brother_l1632w_authenticated_status.html")),
+        )
+        session.post_results = [FakeResponse(302, "", cookies={"sid": "valor-ficticio"})]
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertIn("Estado do dispositivo", result.conteudo_html)
+        self.assertEqual([call["method"] for call in session.calls], ["GET", "POST", "GET"])
+        self.assertEqual(session.calls[0]["url"], "http://10.0.0.10/home/status.html")
+        self.assertEqual(session.calls[1]["url"], "http://10.0.0.10/home/status.html")
+        self.assertEqual(session.calls[2]["url"], "http://10.0.0.10/home/status.html")
+        self.assertEqual(session.calls[1]["data"]["LogBox"], "senha-ficticia")
+        self.assertIn("CSRFToken", session.calls[1]["data"])
+        self.assertEqual(result.metadados["login_container_detected"], True)
+        self.assertEqual(result.metadados["login_form_detected"], True)
+        self.assertEqual(result.metadados["password_input_detected"], True)
+        self.assertEqual(result.metadados["csrf_detected"], True)
+        self.assertEqual(result.metadados["hidden_fields_count"], 2)
+        self.assertEqual(result.metadados["post_executado"], True)
+        self.assertEqual(result.metadados["cookies_recebidos"], True)
+
+    def test_login_brother_form_usa_name_do_logbox_no_payload(self):
+        login_html = """
+        <div id="LogInOutBox">
+          <form method="post" action="/home/status.html">
+            <input type="hidden" name="CSRFToken" value="CSRF_SANITIZADO">
+            <input id="LogBox" name="senhaAdmin" type="password">
+          </form>
+        </div>
+        """
+        session = FakeSession(
+            FakeResponse(200, login_html),
+            FakeResponse(200, fixture_html("brother_l1632w_authenticated_status.html")),
+        )
+        session.post_results = [FakeResponse(200, "ok")]
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(session.calls[1]["data"]["senhaAdmin"], "senha-ficticia")
+        self.assertNotIn("LogBox", session.calls[1]["data"])
+
+    def test_login_brother_form_rejeita_action_absoluto_para_host_diferente(self):
+        login_html = """
+        <div id="LogInOutBox">
+          <form method="post" action="http://10.0.0.99/home/status.html">
+            <input id="LogBox" name="LogBox" type="password">
+          </form>
+        </div>
+        """
+        session = FakeSession(FakeResponse(200, login_html))
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertFalse(result.sucesso)
+        self.assertEqual(result.erro_codigo, "login_form_action_host_invalido")
+        self.assertEqual([call["method"] for call in session.calls], ["GET"])
+
+    def test_login_brother_form_aceita_action_relativo_sem_barra(self):
+        login_html = """
+        <div id="LogInOutBox">
+          <form method="post" action="status.html">
+            <input id="LogBox" name="LogBox" type="password">
+          </form>
+        </div>
+        """
+        session = FakeSession(
+            FakeResponse(200, login_html),
+            FakeResponse(200, fixture_html("brother_l1632w_authenticated_status.html")),
+        )
+        session.post_results = [FakeResponse(200, "ok")]
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(session.calls[1]["url"], "http://10.0.0.10/home/status.html")
+
+    def test_login_brother_form_ausente_trata_como_pagina_ja_autenticada(self):
+        session = FakeSession(
+            FakeResponse(200, fixture_html("brother_l1632w_authenticated_status.html")),
+            FakeResponse(200, fixture_html("brother_l1632w_authenticated_status.html")),
+        )
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual([call["method"] for call in session.calls], ["GET", "GET"])
+        self.assertFalse(result.metadados["login_form_detected"])
+        self.assertFalse(result.metadados["post_executado"])
+
+    def test_login_brother_form_retorna_erro_controlado_sem_logbox(self):
+        login_html = """
+        <div id="LogInOutBox">
+          <form method="post" action="/home/status.html">
+            <input type="hidden" name="CSRFToken" value="CSRF_SANITIZADO">
+          </form>
+        </div>
+        """
+        session = FakeSession(FakeResponse(200, login_html))
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+        serialized = str(result)
+
+        self.assertFalse(result.sucesso)
+        self.assertEqual(result.erro_codigo, "login_password_input_nao_detectado")
+        self.assertTrue(result.metadados["login_form_detected"])
+        self.assertFalse(result.metadados["password_input_detected"])
+        self.assertIsNone(result.conteudo_html)
+        self.assertNotIn("senha-ficticia", serialized)
+        self.assertNotIn("CSRF_SANITIZADO", serialized)
+        self.assertNotIn("<form", serialized)
+
+    def test_login_brother_form_nao_retorna_payload_segredos_ou_cookie(self):
+        session = FakeSession(
+            FakeResponse(200, fixture_html("brother_l1632w_login_form.html")),
+            requests.ConnectionError("Cookie Authorization CSRFToken senha-ficticia"),
+        )
+        session.post_results = [FakeResponse(200, "ok", cookies={"sid": "valor-ficticio"})]
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(tipo_autenticacao="form", protocolo_preferencial="http"),
+            session=session,
+        )
+        serialized = str(result)
+
+        self.assertFalse(result.sucesso)
+        self.assertNotIn("senha-ficticia", serialized)
+        self.assertNotIn("CSRF_SANITIZADO", serialized)
+        self.assertNotIn("Authorization", serialized)
+        self.assertNotIn("Cookie", serialized)
+        self.assertNotIn("valor-ficticio", serialized)
+        self.assertIsNone(result.conteudo_html)

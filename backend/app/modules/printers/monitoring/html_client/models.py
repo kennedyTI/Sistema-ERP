@@ -1,6 +1,7 @@
 """Objetos de transferencia do cliente HTML seguro."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -28,3 +29,4 @@ class HtmlClientResponse:
     erro_detalhe_sanitizado: str | None
     protocolo_usado: str | None
     tipo_autenticacao: str
+    metadados: dict[str, Any] | None = None

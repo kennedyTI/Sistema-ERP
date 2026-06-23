@@ -25,6 +25,8 @@ from backend.app.modules.printers.monitoring.html_credentials.models import (
     PrinterCollectionCredential,
 )
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
+    classify_brother_html_auth_state,
+    detect_brother_l1632w_maintenance_markers,
     extract_visible_text_chunks,
     parse_brother_dcp_l1632w_maintenance_info,
 )
@@ -51,7 +53,7 @@ INFORMATION_CAPABILITIES = {
     "digitalizacoes": ("digitalizacao", "digitalizacoes", "scan", "scanner"),
     "erros": ("erro", "erros", "error", "warning", "alert"),
 }
-UNSUPPORTED_AUTH_TYPES = {"form", "cookie"}
+UNSUPPORTED_AUTH_TYPES = {"cookie"}
 SENSITIVE_MARKERS = (
     "senha",
     "password",
@@ -530,7 +532,7 @@ def unsupported_auth_result(
         "autenticacao": target.tipo_autenticacao,
         "sucesso": False,
         "erro_codigo": "autenticacao_nao_suportada_nesta_etapa",
-        "erro_detalhe_sanitizado": "Autenticacao form/cookie ainda nao suportada.",
+        "erro_detalhe_sanitizado": "Autenticacao cookie ainda nao suportada.",
     }
 
 
@@ -572,6 +574,7 @@ def diagnose_status_path(
         "status_code": response.status_code,
         "autenticacao": target.tipo_autenticacao,
         "html_recebido": bool(response.conteudo_html),
+        "diagnostico_login": response.metadados or {},
     }
     if not response.sucesso:
         return {
@@ -607,16 +610,22 @@ def diagnose_status_path(
         {"manufacturer": target.fabricante, "name": target.modelo},
         response,
     )
+    auth_state = parse_result.metadados.get("auth_state") or (
+        classify_brother_html_auth_state(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
     return {
         **base,
         "parser_status": "disponivel",
+        "auth_state": auth_state,
         "estado_detectado": parse_result.sucesso,
         "estado_principal": parse_result.estado_principal,
         "mensagens_brutas": parse_result.mensagens_brutas,
         "mensagens_normalizadas": parse_result.mensagens_normalizadas,
         "metadados": parse_result.metadados,
         "sucesso": bool(parse_result.sucesso),
-        "erro_codigo": None if parse_result.sucesso else "html_status_nao_detectado",
+        "erro_codigo": None if parse_result.sucesso else parse_result.erro_codigo,
         "erro_detalhe_sanitizado": parse_result.erro_detalhe_sanitizado,
         "diagnostico_parser": (
             None
@@ -662,6 +671,7 @@ def diagnose_information_path(
         "status_code": response.status_code,
         "autenticacao": target.tipo_autenticacao,
         "html_recebido": bool(response.conteudo_html),
+        "diagnostico_login": response.metadados or {},
     }
     if not response.sucesso:
         return {
@@ -685,10 +695,16 @@ def diagnose_information_path(
         if _is_brother_l1632w(target)
         else {}
     )
+    maintenance_state = (
+        detect_brother_l1632w_maintenance_markers(response.conteudo_html)
+        if _is_brother_l1632w(target)
+        else {}
+    )
     success = any(capabilities.values()) or bool(maintenance_info)
     return {
         **base,
         "capacidades_detectadas": capabilities,
+        "maintenance_state": maintenance_state,
         "maintenance_info": maintenance_info,
         "sucesso": success,
         "erro_codigo": None if success else "html_capacidades_nao_detectadas",
@@ -710,7 +726,9 @@ def diagnose_target(
         "status_previo": target.status_previo,
         "caminho_login_configurado": bool(target.caminho_login),
         "login_observacao": (
-            "login_form_nao_implementado"
+            "login_brother_form"
+            if target.tipo_autenticacao == "form"
+            else "login_cookie_nao_implementado"
             if target.tipo_autenticacao in UNSUPPORTED_AUTH_TYPES
             else "nao_usado_para_basic_digest"
         ),

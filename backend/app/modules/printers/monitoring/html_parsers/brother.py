@@ -39,6 +39,94 @@ class HtmlDefinitionBlock:
     def text(self) -> str:
         return " ".join(self.chunks)
 
+
+@dataclass
+class BrotherHtmlAuthSnapshot:
+    has_log_in_out_box: bool = False
+    has_logbox: bool = False
+    has_csrf: bool = False
+    has_moni_data: bool = False
+    status_moni_messages: list[str] = field(default_factory=list)
+
+    @property
+    def has_status_moni(self) -> bool:
+        return bool(self.status_moni_messages)
+
+    def as_auth_state(self) -> dict[str, object]:
+        authenticated = self.has_status_moni
+        login_required = self.has_log_in_out_box and self.has_logbox and not authenticated
+        error_code = None
+        if login_required:
+            error_code = "html_autenticacao_requerida"
+        elif self.has_log_in_out_box and not authenticated:
+            error_code = "html_sessao_brother_invalida"
+        elif not authenticated:
+            error_code = "html_status_nao_detectado"
+        return {
+            "autenticado": authenticated,
+            "login_requerido": login_required,
+            "tem_log_in_out_box": self.has_log_in_out_box,
+            "tem_logbox": self.has_logbox,
+            "tem_csrf": self.has_csrf,
+            "tem_moni_data": self.has_moni_data,
+            "tem_status_moni": self.has_status_moni,
+            "erro_codigo": error_code,
+        }
+
+
+class BrotherHtmlAuthStateParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.snapshot = BrotherHtmlAuthSnapshot()
+        self._ignored_stack: list[str] = []
+        self._element_stack: list[tuple[str, dict[str, str]]] = []
+
+    def handle_starttag(self, tag, attrs):
+        normalized_tag = tag.lower()
+        attrs_dict = {key.lower(): value or "" for key, value in attrs}
+        self._element_stack.append((normalized_tag, attrs_dict))
+        if normalized_tag in {"script", "style", "noscript"}:
+            self._ignored_stack.append(normalized_tag)
+
+        if attrs_dict.get("id") == "LogInOutBox":
+            self.snapshot.has_log_in_out_box = True
+        if attrs_dict.get("id") == "LogBox":
+            self.snapshot.has_logbox = True
+        if _is_csrf_name(attrs_dict.get("id")) or _is_csrf_name(attrs_dict.get("name")):
+            self.snapshot.has_csrf = True
+        if attrs_dict.get("id") == "moni_data":
+            self.snapshot.has_moni_data = True
+
+    def handle_endtag(self, tag):
+        normalized_tag = tag.lower()
+        if self._ignored_stack and self._ignored_stack[-1] == normalized_tag:
+            self._ignored_stack.pop()
+        for index in range(len(self._element_stack) - 1, -1, -1):
+            if self._element_stack[index][0] == normalized_tag:
+                del self._element_stack[index:]
+                break
+
+    def handle_data(self, data):
+        if self._ignored_stack:
+            return
+        text = " ".join(data.replace("\xa0", " ").split())
+        if text and self._inside_moni_status():
+            self.snapshot.status_moni_messages.append(text)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def _inside_moni_status(self) -> bool:
+        has_moni_data = any(
+            attrs.get("id") == "moni_data" for _tag, attrs in self._element_stack
+        )
+        has_moni_class = any(
+            "moni" in attrs.get("class", "").split()
+            for _tag, attrs in self._element_stack
+        )
+        return has_moni_data and has_moni_class
+
 BROTHER_DCP_L2540DW_STATUS_MESSAGES = (
     "Há pouco toner",
     "Trocar Toner",
@@ -85,6 +173,78 @@ def extract_visible_text_chunks(html: str) -> list[str]:
     parser.feed(html or "")
     parser.close()
     return parser.chunks
+
+
+def _is_csrf_name(value: str | None) -> bool:
+    return (value or "").casefold() == "csrftoken"
+
+
+def brother_html_auth_snapshot(html: str) -> BrotherHtmlAuthSnapshot:
+    parser = BrotherHtmlAuthStateParser()
+    parser.feed(html or "")
+    parser.close()
+    return parser.snapshot
+
+
+def classify_brother_html_auth_state(html: str) -> dict[str, object]:
+    return brother_html_auth_snapshot(html).as_auth_state()
+
+
+def extract_brother_moni_status_messages(html: str) -> list[str]:
+    snapshot = brother_html_auth_snapshot(html)
+    return unique_messages(snapshot.status_moni_messages)
+
+
+class BrotherMaintenanceMarkerParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.has_dl_items = False
+        self.has_dl_items_info_1line = False
+        self._ignored_stack: list[str] = []
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        normalized_tag = tag.lower()
+        attrs_dict = {key.lower(): value or "" for key, value in attrs}
+        if normalized_tag in {"script", "style", "noscript"}:
+            self._ignored_stack.append(normalized_tag)
+        if normalized_tag == "dl":
+            classes = set(attrs_dict.get("class", "").split())
+            if "items" in classes:
+                self.has_dl_items = True
+            if "items_info_1line" in classes:
+                self.has_dl_items_info_1line = True
+
+    def handle_endtag(self, tag):
+        normalized_tag = tag.lower()
+        if self._ignored_stack and self._ignored_stack[-1] == normalized_tag:
+            self._ignored_stack.pop()
+
+    def handle_data(self, data):
+        if self._ignored_stack:
+            return
+        text = " ".join(data.replace("\xa0", " ").split())
+        if text:
+            self._chunks.append(text)
+
+    @property
+    def normalized_text(self) -> str:
+        return normalize_text(" ".join(self._chunks))
+
+
+def detect_brother_l1632w_maintenance_markers(html: str) -> dict[str, bool]:
+    parser = BrotherMaintenanceMarkerParser()
+    parser.feed(html or "")
+    parser.close()
+    text = parser.normalized_text
+    return {
+        "tem_dl_items": parser.has_dl_items,
+        "tem_dl_items_info_1line": parser.has_dl_items_info_1line,
+        "tem_unidade_tambor": "unidade de tambor" in text,
+        "tem_toner": "toner" in text,
+        "tem_contador_paginas": "contador pag" in text,
+        "tem_a4_letter": "a4/letter" in text,
+    }
 
 
 class DefinitionItemsParser(HTMLParser):
@@ -250,6 +410,10 @@ def _extract_percent(value: str) -> int | None:
 
 
 def extract_brother_l1632w_status_message(html: str) -> list[str]:
+    moni_messages = extract_brother_moni_status_messages(html)
+    if moni_messages:
+        return moni_messages
+
     for label, block in definition_pairs(html):
         if normalize_text(label) not in {"estado do dispositivo", "device status"}:
             continue
@@ -307,6 +471,11 @@ def parse_brother_dcp_l1632w_maintenance_info(html: str) -> dict[str, int]:
         normalized_section = normalize_text(section)
         normalized_label = normalize_text(label).replace("*", "")
 
+        if "contador pag" in normalized_label:
+            total = _extract_first_int(value)
+            if total is not None:
+                info["contador_paginas"] = total
+
         if "vida" in normalized_section and "restante" in normalized_section:
             if "unidade de tambor" in normalized_label:
                 percent = _extract_percent(value)
@@ -335,11 +504,21 @@ class BrotherDcpL1632wStatusParser(HtmlStatusParser):
     supported_model = "DCP-L1632W"
 
     def parse(self, html: str) -> HtmlStatusParseResult:
+        auth_state = classify_brother_html_auth_state(html)
         messages = self._extract_status_messages(html)
-        metadata = extract_brother_l1632w_toner_status_metadata(html)
+        metadata = {
+            **extract_brother_l1632w_toner_status_metadata(html),
+            "auth_state": auth_state,
+        }
+        if auth_state["login_requerido"] and not auth_state["autenticado"]:
+            return self.error_result(
+                "html_autenticacao_requerida",
+                "Pagina Brother retornou formulario de login.",
+                metadados=metadata,
+            )
         if not messages:
             return self.error_result(
-                "html_status_nao_encontrado",
+                str(auth_state["erro_codigo"] or "html_status_nao_detectado"),
                 "Estado da maquina nao encontrado no HTML de status.",
                 metadados=metadata,
             )

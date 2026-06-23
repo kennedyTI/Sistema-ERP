@@ -1,0 +1,32 @@
+<html>
+  <body>
+    <div id="LogInOutBox">
+      <form method="post" action="/home/status.html">
+        <input type="hidden" id="CSRFToken" name="CSRFToken" value="CSRF_SANITIZADO">
+        <input id="logout" type="submit" value="Terminar sessao">
+      </form>
+    </div>
+
+    <dl class="items">
+      <dt>Estado do dispositivo</dt>
+      <dd>
+        <div id="moni_data">
+          <span class="moni moniOk">Em espera</span>
+        </div>
+      </dd>
+      <dt>Nivel do toner</dt>
+      <dd>
+        <div id="ink_level">
+          <table id="inkLevelMono">
+            <tr>
+              <td>
+                <img src="/common/images/black.gif" alt="Black" class="tonerremain" height="16">
+              </td>
+            </tr>
+            <tr><th>BK</th></tr>
+          </table>
+        </div>
+      </dd>
+    </dl>
+  </body>
+</html>

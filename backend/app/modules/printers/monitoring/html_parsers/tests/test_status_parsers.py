@@ -7,6 +7,9 @@ from backend.app.modules.printers.monitoring.html_client.models import HtmlClien
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
     BrotherDcpL1632wStatusParser,
     BrotherDcpL2540dwStatusParser,
+    classify_brother_html_auth_state,
+    detect_brother_l1632w_maintenance_markers,
+    extract_brother_moni_status_messages,
     extract_visible_text_chunks,
     parse_brother_dcp_l1632w_maintenance_info,
 )
@@ -140,6 +143,72 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(result.mensagens_normalizadas, ["em espera"])
         self.assertEqual(result.estado_principal, "Em espera")
 
+    def test_parser_brother_l1632w_detecta_estado_autenticado_com_logout(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_authenticated.html"),
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Em espera"])
+        self.assertEqual(result.metadados["auth_state"]["autenticado"], True)
+        self.assertEqual(result.metadados["auth_state"]["login_requerido"], False)
+        self.assertEqual(result.metadados["auth_state"]["tem_log_in_out_box"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_logbox"], False)
+        self.assertEqual(result.metadados["auth_state"]["tem_csrf"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_moni_data"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_status_moni"], True)
+
+    def test_parser_brother_l1632w_detecta_login_requerido(self):
+        result = parse_status_html_for_model(
+            DummyModel(),
+            fixture_html("brother_dcp_l1632w_status_login_required.html"),
+        )
+
+        self.assertFalse(result.sucesso)
+        self.assertEqual(result.erro_codigo, "html_autenticacao_requerida")
+        self.assertEqual(result.metadados["auth_state"]["autenticado"], False)
+        self.assertEqual(result.metadados["auth_state"]["login_requerido"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_log_in_out_box"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_logbox"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_csrf"], True)
+        self.assertEqual(result.metadados["auth_state"]["tem_moni_data"], False)
+        self.assertEqual(result.metadados["auth_state"]["tem_status_moni"], False)
+        self.assertNotIn("CSRF_SANITIZADO", str(result))
+
+    def test_classificador_brother_diferencia_autenticado_login_e_parcial(self):
+        authenticated = classify_brother_html_auth_state(
+            fixture_html("brother_dcp_l1632w_status_authenticated.html")
+        )
+        login_required = classify_brother_html_auth_state(
+            fixture_html("brother_dcp_l1632w_status_login_required.html")
+        )
+        partial = classify_brother_html_auth_state(
+            '<div id="LogInOutBox"><form></form></div>'
+        )
+
+        self.assertTrue(authenticated["autenticado"])
+        self.assertFalse(authenticated["login_requerido"])
+        self.assertIsNone(authenticated["erro_codigo"])
+        self.assertFalse(login_required["autenticado"])
+        self.assertTrue(login_required["login_requerido"])
+        self.assertEqual(login_required["erro_codigo"], "html_autenticacao_requerida")
+        self.assertEqual(partial["erro_codigo"], "html_sessao_brother_invalida")
+
+    def test_parser_brother_l1632w_aceita_classe_moni_nao_ok(self):
+        html = """
+        <div id="moni_data">
+          <span class="moni moniWarning">Toner baixo</span>
+        </div>
+        """
+
+        messages = extract_brother_moni_status_messages(html)
+        result = parse_status_html_for_model(DummyModel(), html)
+
+        self.assertEqual(messages, ["Toner baixo"])
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.estado_principal, "Toner baixo")
+
     def test_parser_brother_l1632w_detecta_bloco_toner_sem_percentual(self):
         result = parse_status_html_for_model(
             DummyModel(),
@@ -160,6 +229,20 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(info["total_paginas_impressas_a4_letter"], 4556)
         self.assertEqual(info["unidade_tambor_percentual"], 55)
         self.assertEqual(info["toner_percentual"], 30)
+
+    def test_parser_brother_l1632w_manutencao_extrai_contador_paginas(self):
+        html = fixture_html("brother_dcp_l1632w_maintenance_authenticated.html")
+        info = parse_brother_dcp_l1632w_maintenance_info(html)
+        markers = detect_brother_l1632w_maintenance_markers(html)
+
+        self.assertEqual(info["contador_paginas"], 4556)
+        self.assertEqual(info["total_paginas_impressas_a4_letter"], 4556)
+        self.assertEqual(info["unidade_tambor_percentual"], 55)
+        self.assertEqual(info["toner_percentual"], 30)
+        self.assertTrue(markers["tem_dl_items"])
+        self.assertTrue(markers["tem_dl_items_info_1line"])
+        self.assertTrue(markers["tem_contador_paginas"])
+        self.assertTrue(markers["tem_a4_letter"])
 
     def test_parser_brother_l1632w_manutencao_ignora_campos_cadastrais(self):
         html = """
@@ -285,7 +368,7 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(result.mensagens_brutas, [])
         self.assertEqual(result.mensagens_normalizadas, [])
         self.assertIsNone(result.estado_principal)
-        self.assertEqual(result.erro_codigo, "html_status_nao_encontrado")
+        self.assertEqual(result.erro_codigo, "html_status_nao_detectado")
         self.assertNotIn("Sem mensagem operacional", str(result))
 
 
@@ -356,12 +439,10 @@ class HtmlStatusParserSecurityScopeTest(TestCase):
         content_casefold = content.casefold()
 
         for forbidden in (
-            "senha",
-            "password",
+            "senha-ficticia",
+            "senha_criptografada",
             "cookie",
             "authorization",
-            "csrf",
-            "csrftoken",
             "grupo" + "si" + "mec",
             "si" + "mec",
             "10.",

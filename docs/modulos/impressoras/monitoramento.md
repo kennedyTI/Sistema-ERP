@@ -1937,6 +1937,282 @@ mesmas telas dos HTMLs reais enviados. Se necessario, ajustar somente o caminho
 seguro que entrega `Estado do dispositivo` e a tela de manutencao esperada,
 sem introduzir scraping agressivo, coleta rica ou persistencia.
 
+## Etapa 3.5.2.14 - Ajuste de autenticacao HTML Brother DCP-L1632W
+
+Esta microetapa ajustou o diagnostico/coleta HTML da Brother DCP-L1632W para
+diferenciar pagina autenticada, pagina de login e pagina parcial/sem sessao
+valida. O objetivo foi explicar por que o parser ja passa com o shape correto,
+mas o diagnostico real ainda nao recebe o mesmo conteudo operacional visto no
+navegador.
+
+HTML continua fora da cascata SNMP -> HTML. Nenhum alerta HTML, toner, tambor
+ou contador foi persistido.
+
+Branch usada:
+
+```text
+feature/printers-html-brother-l1632w-auth-flow
+```
+
+Base usada:
+
+```text
+feature/printers-html-brother-l1632w-status-refine
+commit base: 81331e7
+```
+
+### Problema identificado
+
+A etapa 3.5.2.13 deixou o parser pronto para o HTML real sanitizado da
+Brother DCP-L1632W, mas o diagnostico real ainda recebia uma pagina diferente
+daquela salva pelo navegador.
+
+Nesta etapa, o diagnostico passou a registrar um `auth_state` sanitizado para
+separar:
+
+- pagina autenticada com `#moni_data .moni`;
+- pagina que exige login com `#LogInOutBox` e `#LogBox`;
+- pagina parcial/sem sessao valida, quando ha marcadores Brother mas falta o
+  texto operacional.
+
+### Seletores de autenticacao, status e manutencao
+
+Seletores de autenticacao:
+
+- `#LogInOutBox`;
+- `input#LogBox`;
+- hidden `CSRFToken`, detectado apenas como booleano.
+
+Seletores de status:
+
+- `#moni_data`;
+- `#moni_data .moni`;
+- fallback por `dt Estado do dispositivo` e `dd` seguinte;
+- bloco `Nivel do toner`;
+- `#ink_level`;
+- `#inkLevelMono`;
+- `.tonerremain`;
+- label `BK`.
+
+Seletores de manutencao:
+
+- `dl.items`;
+- `dl.items_info_1line`;
+- `Unidade de tambor*`;
+- `Toner**`;
+- `Contador pag.`;
+- `Total de paginas impressas > A4/Letter`.
+
+### Fluxo seguro e classificador Brother
+
+O tipo de autenticacao `form`, ja existente em `credenciais_coleta_impressoras`,
+representa o fluxo minimo e controlado da Brother. Nao houve migration, tabela
+nova ou credencial por maquina.
+
+O cliente HTML seguro executa:
+
+```text
+GET caminho_login ou caminho_status
+detecta #LogInOutBox
+detecta form dentro do container
+detecta input #LogBox
+coleta hidden inputs
+valida action do form
+POST com senha somente em memoria
+mantem cookies somente na sessao em memoria
+GET da pagina alvo
+```
+
+O `action` do formulario aceita caminhos relativos seguros. Actions absolutos
+so sao aceitos quando apontam para o mesmo host e porta da maquina consultada.
+Actions para outro host sao rejeitados com erro controlado.
+
+O parser Brother ganhou o helper `classify_brother_html_auth_state`, que retorna
+somente flags sanitizadas:
+
+```json
+{
+  "autenticado": false,
+  "login_requerido": false,
+  "tem_log_in_out_box": true,
+  "tem_logbox": false,
+  "tem_csrf": true,
+  "tem_moni_data": true,
+  "tem_status_moni": false,
+  "erro_codigo": "html_sessao_brother_invalida"
+}
+```
+
+Regras aplicadas:
+
+- se houver `#moni_data .moni` com texto, a pagina e considerada autenticada e
+  util para status;
+- se houver `#LogInOutBox` + `#LogBox` sem `#moni_data .moni`, o erro e
+  `html_autenticacao_requerida`;
+- se houver marcadores Brother, mas sem `.moni` operacional, o erro e
+  `html_sessao_brother_invalida`;
+- valores de CSRF, senha, cookie, Authorization e HTML bruto nunca entram no
+  resultado.
+
+O diagnostico tambem registra os metadados do fluxo de login sem valores:
+
+```json
+{
+  "login_container_detected": true,
+  "login_form_detected": true,
+  "login_container_id": "LogInOutBox",
+  "password_input_detected": true,
+  "password_input_id": "LogBox",
+  "csrf_detected": false,
+  "hidden_fields_count": 1,
+  "post_executado": true,
+  "cookies_recebidos": true
+}
+```
+
+### Fixtures e testes
+
+Foram criadas fixtures sinteticas e sanitizadas em:
+
+```text
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_status_authenticated.html
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_status_login_required.html
+backend/app/modules/printers/monitoring/html_parsers/tests/fixtures/brother_dcp_l1632w_maintenance_authenticated.html
+backend/app/modules/printers/monitoring/html_client/tests/fixtures/brother_l1632w_login_form.html
+backend/app/modules/printers/monitoring/html_client/tests/fixtures/brother_l1632w_authenticated_status.html
+```
+
+Elas contem apenas a estrutura minima do formulario e da pagina autenticada.
+Nao ha IP real, token real, senha, cookie, serial, MAC, hostname ou HTML bruto
+salvo do navegador.
+
+Os testes unitarios cobrem:
+
+- classificacao de pagina autenticada, login requerido e sessao parcial;
+- deteccao de `#LogInOutBox`;
+- deteccao de `#LogBox`;
+- deteccao de `CSRFToken` sem retorno de valor;
+- uso de `#moni_data .moni` como seletor principal de estado;
+- aceitacao de classes `moni`, `moniOk`, `moniWarning` ou equivalentes;
+- fallback por `dt Estado do dispositivo`;
+- deteccao de bloco de toner e label `BK`;
+- nao conversao de `height=16` em percentual;
+- extracao controlada de `Contador pag.`, `A4/Letter`, tambor e toner;
+- exclusao de campos cadastrais como serial, firmware e localizacao;
+- captura controlada de hidden inputs no fluxo de login;
+- uso do atributo `name` do input de senha no payload;
+- POST para action relativo seguro;
+- rejeicao de action absoluto para host externo;
+- ausencia de formulario como pagina ja autenticada ou sem formulario;
+- erro controlado quando o input de senha nao existe;
+- ausencia de senha, token, cookie, Authorization e HTML bruto no resultado;
+- propagacao dos metadados sanitizados para o diagnostico;
+- regressao dos parsers Brother DCP-L1632W.
+
+Resultado focado:
+
+```text
+82 passed
+```
+
+Resultado completo desta branch:
+
+```text
+py -3.11 -m compileall -q backend
+py -3.11 -m pytest -q
+316 passed, 38 warnings
+py -3.11 manage.py check
+System check identified no issues
+npm.cmd audit
+found 0 vulnerabilities
+npm.cmd run build
+OK, com aviso conhecido de chunks grandes do Vite
+```
+
+### Resultado do diagnostico real
+
+Antes da validacao real, a credencial ativa da Brother DCP-L1632W ainda estava
+como `basic`. Para acionar o novo fluxo, o cadastro local do modelo foi
+ajustado para:
+
+```text
+tipo_autenticacao=form
+caminho_login=/home/status.html
+```
+
+A senha criptografada existente nao foi alterada, nao foi exibida e nenhuma
+credencial por maquina foi criada.
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --saida-json --saida-md
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260623_115211.json
+tmp/diagnosticos/html_modelos/diagnostico_html_modelos_20260623_115211.md
+```
+
+| Item | Resultado |
+| --- | --- |
+| Login por formulario | executado |
+| Container `#LogInOutBox` | detectado |
+| Formulario de login | detectado |
+| Input `#LogBox` | detectado |
+| Hidden fields | 1 campo detectado |
+| POST do login | executado |
+| Cookies de sessao | recebidos em memoria |
+| `#moni_data` | detectado |
+| `#moni_data .moni` | nao detectado |
+| Estado do dispositivo | nao detectado |
+| Auth state | `html_sessao_brother_invalida` |
+| Nivel do toner | bloco detectado |
+| Label de toner | `BK` |
+| Percentual por imagem/barra | nao calculado |
+| Manutencao `dl.items` | detectado |
+| Manutencao `dl.items_info_1line` | detectado |
+| A4/Letter | detectado como marcador |
+| Contador/tambor/toner controlados | nao extraidos em `maintenance_info` real |
+| HTML bruto/segredos no relatorio | nao encontrados |
+
+O fluxo de login por formulario foi acionado corretamente. O diagnostico real,
+porem, mostrou que a pagina de status retornada depois do POST fica em estado
+parcial para a leitura operacional: ha `#LogInOutBox`, ha CSRF e ha
+`#moni_data`, mas nao ha texto em `.moni`. Por isso o erro correto passou a ser
+`html_sessao_brother_invalida`, em vez de uma falha generica do parser.
+
+A pagina de informacoes retornou marcadores de manutencao, incluindo
+`dl.items`, `dl.items_info_1line` e `A4/Letter`, mas os campos permitidos ainda
+nao vieram no formato necessario para preencher:
+
+```json
+{
+  "maintenance_info": {}
+}
+```
+
+### Limites preservados
+
+Esta etapa nao integrou HTML na cascata SNMP -> HTML, nao alterou
+`collect_and_sync_machine_alerts`, nao alterou
+`sync_machine_alerts_from_collection_result`, nao alterou Rules Engine, nao
+alterou Celery/task, nao persistiu alertas HTML, nao gravou em
+`alertas_impressoras`, nao gravou em `historico_alertas_impressoras`, nao
+persistiu toner, tambor ou contador, nao criou API publica, nao criou
+frontend, nao criou tabela nova, nao criou credencial por maquina, nao criou
+`tentativas_coleta_impressoras`, nao salvou HTML bruto e nao usou HTML/SNMP
+para alterar dados cadastrais.
+
+### Proxima etapa recomendada
+
+Descobrir, ainda de forma sanitizada, se o navegador faz uma requisicao
+adicional apos o POST para preencher `.moni` dentro de `#moni_data`, ou se a
+Brother exige algum parametro/cookie adicional de sessao. A proxima etapa deve
+continuar diagnostica, sem salvar HTML bruto e sem integrar HTML na cascata.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -1992,7 +2268,14 @@ DCP-L1632W para alerta/status e apoio diagnostico controlado; ela nao integra
 HTML na cascata, nao persiste alertas HTML, nao persiste toner/tambor/contador,
 nao altera Celery/task, nao altera Rules Engine, nao cria tabela nova, nao cria
 credencial por maquina, nao cria `tentativas_coleta_impressoras`, nao extrai
-dados cadastrais do HTML/SNMP e nao salva HTML bruto.
+dados cadastrais do HTML/SNMP e nao salva HTML bruto. A etapa 3.5.2.14 adiciona
+somente ajuste de autenticacao e classificacao HTML Brother no cliente seguro,
+parser e diagnostico;
+ela nao integra HTML na cascata, nao persiste alertas HTML, nao persiste
+toner/tambor/contador, nao altera Celery/task, nao altera Rules Engine, nao
+cria tabela nova, nao cria credencial por maquina, nao cria
+`tentativas_coleta_impressoras`, nao cria API publica, nao altera frontend, nao
+extrai dados cadastrais do HTML/SNMP e nao salva HTML bruto.
 
 ## Próximas etapas
 

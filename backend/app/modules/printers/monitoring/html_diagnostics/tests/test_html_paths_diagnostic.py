@@ -245,24 +245,94 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertEqual(fetcher.calls[0]["page_type"], "informacoes")
         self.assertEqual(fetcher.calls[0]["tipo_autenticacao"], "digest")
 
-    def test_form_e_cookie_retornam_erro_controlado(self):
-        for auth_type in ("form", "cookie"):
-            with self.subTest(auth_type=auth_type):
-                fetcher = FakeFetcher()
-                target = self.target(tipo_autenticacao=auth_type)
+    def test_cookie_retorna_erro_controlado(self):
+        fetcher = FakeFetcher()
+        target = self.target(tipo_autenticacao="cookie")
 
-                status_result = diagnose_status_path(target, fetcher=fetcher)
-                info_result = diagnose_information_path(target, fetcher=fetcher)
+        status_result = diagnose_status_path(target, fetcher=fetcher)
+        info_result = diagnose_information_path(target, fetcher=fetcher)
 
-                self.assertEqual(
-                    status_result["erro_codigo"],
-                    "autenticacao_nao_suportada_nesta_etapa",
+        self.assertEqual(
+            status_result["erro_codigo"],
+            "autenticacao_nao_suportada_nesta_etapa",
+        )
+        self.assertEqual(
+            info_result["erro_codigo"],
+            "autenticacao_nao_suportada_nesta_etapa",
+        )
+        self.assertEqual(fetcher.calls, [])
+
+    def test_form_brother_registra_metadados_login_sem_expor_segredos(self):
+        metadata = {
+            "login_container_detected": True,
+            "login_form_detected": True,
+            "login_container_id": "LogInOutBox",
+            "password_input_detected": True,
+            "password_input_id": "LogBox",
+            "csrf_detected": True,
+            "hidden_fields_count": 2,
+            "post_executado": True,
+            "cookies_recebidos": True,
+        }
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_real_shape.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    metadata,
                 )
-                self.assertEqual(
-                    info_result["erro_codigo"],
-                    "autenticacao_nao_suportada_nesta_etapa",
+            ]
+        )
+
+        result = diagnose_status_path(self.target(tipo_autenticacao="form"), fetcher=fetcher)
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["auth_state"]["autenticado"], True)
+        self.assertEqual(result["auth_state"]["tem_moni_data"], True)
+        self.assertEqual(result["auth_state"]["tem_status_moni"], True)
+        self.assertEqual(result["diagnostico_login"]["login_form_detected"], True)
+        self.assertEqual(result["diagnostico_login"]["password_input_detected"], True)
+        self.assertEqual(result["diagnostico_login"]["csrf_detected"], True)
+        self.assertEqual(result["diagnostico_login"]["hidden_fields_count"], 2)
+        self.assertEqual(fetcher.calls[0]["tipo_autenticacao"], "form")
+        self.assertNotIn("senha-ficticia", serialized)
+        self.assertNotIn("CSRF_SANITIZADO", serialized)
+        self.assertNotIn("Cookie:", serialized)
+
+    def test_diagnostico_brother_registra_login_requerido(self):
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_login_required.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
                 )
-                self.assertEqual(fetcher.calls, [])
+            ]
+        )
+
+        result = diagnose_status_path(self.target(), fetcher=fetcher)
+        serialized = json.dumps(result, ensure_ascii=False)
+
+        self.assertFalse(result["sucesso"])
+        self.assertEqual(result["erro_codigo"], "html_autenticacao_requerida")
+        self.assertEqual(result["auth_state"]["login_requerido"], True)
+        self.assertEqual(result["auth_state"]["tem_log_in_out_box"], True)
+        self.assertEqual(result["auth_state"]["tem_logbox"], True)
+        self.assertEqual(result["auth_state"]["tem_csrf"], True)
+        self.assertEqual(result["auth_state"]["tem_moni_data"], False)
+        self.assertNotIn("CSRF_SANITIZADO", serialized)
 
     def test_status_sem_parser_retorna_erro_controlado(self):
         fetcher = FakeFetcher()
@@ -400,6 +470,46 @@ class HtmlPathsDiagnosticTest(TestCase):
                 "unidade_tambor_percentual": 55,
                 "toner_percentual": 30,
             },
+        )
+
+    def test_diagnostico_l1632w_inclui_estado_manutencao_controlado(self):
+        fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_status_authenticated.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                ),
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_maintenance_authenticated.html"),
+                    None,
+                    None,
+                    "http",
+                    "basic",
+                ),
+            ]
+        )
+
+        report = build_report(targets=[self.target()], confirmar=True, fetcher=fetcher)
+        result = report["resultados"][0]
+
+        self.assertTrue(result["status"]["sucesso"])
+        self.assertEqual(result["status"]["auth_state"]["autenticado"], True)
+        self.assertEqual(result["status"]["auth_state"]["login_requerido"], False)
+        self.assertTrue(result["informacoes"]["maintenance_state"]["tem_dl_items"])
+        self.assertTrue(result["informacoes"]["maintenance_state"]["tem_dl_items_info_1line"])
+        self.assertEqual(result["informacoes"]["maintenance_info"]["contador_paginas"], 4556)
+        self.assertEqual(
+            result["informacoes"]["maintenance_info"]["total_paginas_impressas_a4_letter"],
+            4556,
         )
 
     def test_markdown_contem_matriz_por_modelo(self):

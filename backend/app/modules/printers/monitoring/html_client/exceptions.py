@@ -12,6 +12,6 @@ class UnsupportedAuthenticationError(HtmlClientError):
     def __init__(self):
         super().__init__(
             "autenticacao_nao_suportada_nesta_etapa",
-            "Autenticacao form/cookie sera implementada em etapa futura.",
+            "Autenticacao cookie sera implementada em etapa futura.",
         )
 
