@@ -30,6 +30,13 @@ from backend.app.modules.printers.monitoring.html_diagnostics.dynamic_status imp
     sanitize_relative_asset_path,
     write_dynamic_status_reports,
 )
+from backend.app.modules.printers.monitoring.html_diagnostics.public_status import (
+    PublicStatusHttpResult,
+    build_public_status_report,
+    diagnose_public_status_path,
+    diagnose_public_status_target,
+    write_public_status_reports,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[7]
@@ -130,6 +137,22 @@ class FakeDynamicFetcher:
             status_code=200,
             conteudo=value,
         )
+
+
+class FakePublicStatusFetcher:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def __call__(self, target, session):
+        self.calls.append(
+            {
+                "path": target.caminho_status,
+                "session_id": id(session),
+                "session": session,
+            }
+        )
+        return self.response
 
 
 class HtmlPathsDiagnosticTest(TestCase):
@@ -860,6 +883,195 @@ class HtmlPathsDiagnosticTest(TestCase):
         self.assertTrue(report["executado"])
         request.assert_not_called()
 
+    def test_status_publico_brother_l1632w_usa_sessao_sem_autenticacao(self):
+        public_fetcher = FakePublicStatusFetcher(
+            PublicStatusHttpResult(
+                sucesso=True,
+                status_code=200,
+                conteudo=diagnostic_fixture_text(
+                    "brother_dcp_l1632w_public_status_with_text.html"
+                ),
+                protocolo_usado="http",
+            )
+        )
+        maintenance_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_maintenance_authenticated.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    {"post_executado": True, "csrf_detected": True},
+                )
+            ]
+        )
+
+        result = diagnose_public_status_target(
+            self.target(tipo_autenticacao="form"),
+            public_fetcher=public_fetcher,
+            maintenance_fetcher=maintenance_fetcher,
+        )
+        status_result = result["status_publico"]
+        maintenance_result = result["manutencao"]
+
+        self.assertTrue(status_result["sucesso"])
+        self.assertEqual(status_result["estado_principal"], "Em espera")
+        self.assertEqual(status_result["origem"], "html_publico")
+        self.assertFalse(status_result["autenticacao_usada"])
+        self.assertFalse(status_result["login_executado"])
+        self.assertFalse(status_result["post_executado"])
+        self.assertFalse(status_result["cookie_autenticado_usado"])
+        self.assertEqual(public_fetcher.calls[0]["path"], "/home/status.html")
+        self.assertEqual(maintenance_fetcher.calls[0]["page_type"], "informacoes")
+        self.assertTrue(maintenance_result["autenticacao_usada"])
+        self.assertTrue(maintenance_result["login_executado"])
+        self.assertEqual(maintenance_result["maintenance_info"]["contador_paginas"], 4556)
+        self.assertNotEqual(
+            public_fetcher.calls[0]["session_id"],
+            maintenance_fetcher.calls[0]["session_id"],
+        )
+        self.assertEqual(result["decisao_final"]["status"], "resolvida")
+
+    def test_status_publico_brother_l1632w_moni_data_vazio_e_controlado(self):
+        public_fetcher = FakePublicStatusFetcher(
+            PublicStatusHttpResult(
+                sucesso=True,
+                status_code=200,
+                conteudo=diagnostic_fixture_text(
+                    "brother_dcp_l1632w_public_status_empty.html"
+                ),
+                protocolo_usado="http",
+            )
+        )
+
+        result = diagnose_public_status_path(
+            self.target(tipo_autenticacao="form"),
+            public_fetcher=public_fetcher,
+        )
+
+        self.assertFalse(result["sucesso"])
+        self.assertEqual(result["erro_codigo"], "html_status_publico_vazio")
+        self.assertEqual(result["causa_sanitizada"], "moni_data_vazio_sem_login")
+        self.assertFalse(result["autenticacao_usada"])
+        self.assertFalse(result["login_executado"])
+        self.assertFalse(result["post_executado"])
+
+    def test_status_publico_brother_l1632w_sem_moni_data_e_controlado(self):
+        public_fetcher = FakePublicStatusFetcher(
+            PublicStatusHttpResult(
+                sucesso=True,
+                status_code=200,
+                conteudo="<html><body>Status indisponivel</body></html>",
+                protocolo_usado="http",
+            )
+        )
+
+        result = diagnose_public_status_path(
+            self.target(tipo_autenticacao="form"),
+            public_fetcher=public_fetcher,
+        )
+
+        self.assertFalse(result["sucesso"])
+        self.assertEqual(result["erro_codigo"], "html_status_publico_nao_detectado")
+        self.assertEqual(result["causa_sanitizada"], "moni_data_ausente_sem_login")
+
+    def test_relatorio_status_publico_nao_contem_html_ips_ou_segredos(self):
+        public_fetcher = FakePublicStatusFetcher(
+            PublicStatusHttpResult(
+                sucesso=True,
+                status_code=200,
+                conteudo=(
+                    "<html><body><div id='moni_data'>Em espera "
+                    "senha-ficticia Authorization Cookie CSRFToken "
+                    "10.0.0.10 CAR_PRINT_002</div></body></html>"
+                ),
+                protocolo_usado="http",
+            )
+        )
+        maintenance_fetcher = FakeFetcher(
+            [
+                HtmlClientResponse(
+                    True,
+                    200,
+                    "http://x",
+                    parser_fixture_html("brother_dcp_l1632w_maintenance_authenticated.html"),
+                    None,
+                    None,
+                    "http",
+                    "form",
+                    {"post_executado": True, "csrf_detected": True},
+                )
+            ]
+        )
+        report = build_public_status_report(
+            targets=[self.target(tipo_autenticacao="form")],
+            confirmar=True,
+            public_fetcher=public_fetcher,
+            maintenance_fetcher=maintenance_fetcher,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_path, md_path = write_public_status_reports(
+                report,
+                output_dir=Path(tmpdir),
+            )
+            content = json_path.read_text(encoding="utf-8") + md_path.read_text(encoding="utf-8")
+
+        for forbidden in (
+            "<html",
+            "CAR_PRINT_002",
+            "10.0.0.10",
+            "senha-ficticia",
+            "Authorization",
+            "Cookie",
+            "CSRFToken",
+            "senha_criptografada",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, content)
+        self.assertIn("html_publico", content)
+        self.assertIn("MAQUINA_BROTHER_L1632W", content)
+
+    def test_diagnostico_status_publico_nao_acessa_rede_em_teste(self):
+        with patch("requests.sessions.Session.request") as request:
+            report = build_public_status_report(
+                targets=[self.target(tipo_autenticacao="form")],
+                confirmar=True,
+                public_fetcher=FakePublicStatusFetcher(
+                    PublicStatusHttpResult(
+                        sucesso=True,
+                        status_code=200,
+                        conteudo=diagnostic_fixture_text(
+                            "brother_dcp_l1632w_public_status_with_text.html"
+                        ),
+                        protocolo_usado="http",
+                    )
+                ),
+                maintenance_fetcher=FakeFetcher(
+                    [
+                        HtmlClientResponse(
+                            True,
+                            200,
+                            "http://x",
+                            parser_fixture_html(
+                                "brother_dcp_l1632w_maintenance_authenticated.html"
+                            ),
+                            None,
+                            None,
+                            "http",
+                            "form",
+                        )
+                    ]
+                ),
+            )
+
+        self.assertTrue(report["executado"])
+        request.assert_not_called()
+
     def test_markdown_contem_matriz_por_modelo(self):
         report = build_report(targets=[self.target()], confirmar=False)
         markdown = build_markdown(report)
@@ -886,6 +1098,8 @@ class HtmlPathsDiagnosticTest(TestCase):
         files = [
             PROJECT_ROOT
             / "backend/app/modules/printers/monitoring/html_diagnostics/diagnostic.py",
+            PROJECT_ROOT
+            / "backend/app/modules/printers/monitoring/html_diagnostics/public_status.py",
             PROJECT_ROOT / "backend/pyteste/diagnostico_html_modelos.py",
         ]
         content = "\n".join(path.read_text(encoding="utf-8") for path in files)

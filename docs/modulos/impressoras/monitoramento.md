@@ -2639,6 +2639,107 @@ indireta. Se isso depender de execucao real de JavaScript no navegador, a etapa
 seguinte deve tratar Playwright/headless apenas como diagnostico documentado,
 sem integrar HTML na cascata e sem persistir alertas.
 
+## Etapa 3.5.2.17 - Ultima tentativa Brother DCP-L1632W com status sem autenticacao
+
+Esta microetapa executou a ultima tentativa diagnostica controlada para a
+Brother DCP-L1632W antes de avancar para os demais modelos. A nova hipotese era
+que `/home/status.html` pudesse expor o estado operacional sem login, enquanto
+`/general/information.html?kind=item` continuaria sendo consultado em fluxo
+autenticado apenas para manutencao.
+
+Foi criada a opcao opt-in:
+
+```bash
+python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --diagnosticar-status-publico
+```
+
+O diagnostico de status publico:
+
+- usa uma sessao HTTP limpa;
+- nao envia credenciais;
+- nao executa login;
+- nao injeta cookies;
+- nao executa POST;
+- consulta somente o caminho de status configurado;
+- mantem a consulta de manutencao em sessao separada e autenticada;
+- grava somente relatorio sanitizado em `tmp/diagnosticos/html_modelos/`.
+
+### Fixtures e testes
+
+Foram adicionadas fixtures sinteticas e sanitizadas para:
+
+- `/home/status.html` com `#moni_data` e texto operacional;
+- `/home/status.html` com `#moni_data` vazio;
+- tela de manutencao exigindo login.
+
+Os testes cobrem:
+
+- status publico resolvido sem autenticacao quando existe texto operacional;
+- `#moni_data` vazio como falha controlada
+  `html_status_publico_vazio`;
+- ausencia de `#moni_data` como falha controlada
+  `html_status_publico_nao_detectado`;
+- manutencao autenticada em sessao separada;
+- relatorios sem HTML bruto, IP, nome real de maquina, senha, cookie,
+  Authorization, CSRFToken ou `senha_criptografada`;
+- ausencia de chamada real de rede nos testes.
+
+### Resultado do diagnostico real
+
+Comando executado:
+
+```bash
+docker compose --env-file .env.docker exec -T admin python backend/pyteste/diagnostico_html_modelos.py --confirmar --modelo "Brother DCP-L1632W" --diagnosticar-status-publico
+```
+
+Relatorios sanitizados gerados localmente em pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/html_modelos/diagnostico_brother_l1632w_public_status_20260623_160319.json
+tmp/diagnosticos/html_modelos/diagnostico_brother_l1632w_public_status_20260623_160319.md
+```
+
+Resultado controlado:
+
+| Item | Resultado |
+| --- | --- |
+| HTTP do status publico | 200 |
+| Autenticacao no status | nao usada |
+| Login no status | nao executado |
+| POST no status | nao executado |
+| Cookie autenticado no status | nao usado |
+| `#moni_data` | detectado |
+| Texto visivel em `#moni_data` | vazio |
+| Estado principal | nao detectado |
+| Erro controlado | `html_status_publico_vazio` |
+| Causa sanitizada | `moni_data_vazio_sem_login` |
+| Manutencao autenticada | sim |
+| `maintenance_info` real | `{}` |
+| Decisao final | pendencia tecnica nao bloqueante |
+| Proxima etapa | avancar para os outros modelos de impressora |
+
+A Brother DCP-L1632W fica, portanto, como pendencia tecnica nao bloqueante para
+status HTML. Nao continuar investigando este modelo agora evita transformar uma
+excecao local em desenho de arquitetura prematuro.
+
+### Limites preservados
+
+Esta etapa nao integrou HTML na cascata SNMP -> HTML, nao alterou
+`collect_and_sync_machine_alerts`, nao alterou
+`sync_machine_alerts_from_collection_result`, nao alterou Rules Engine, nao
+alterou Celery/task, nao persistiu alertas HTML, nao gravou em
+`alertas_impressoras`, nao gravou em `historico_alertas_impressoras`, nao
+persistiu toner, tambor ou contador, nao criou API publica, nao criou
+frontend, nao criou dashboard, nao criou tabela nova, nao criou credencial por
+maquina, nao criou `tentativas_coleta_impressoras`, nao salvou HTML bruto, nao
+salvou JS bruto e nao usou HTML/SNMP para alterar dados cadastrais.
+
+### Proxima etapa recomendada
+
+Avancar para os outros modelos de impressora. Uma integracao futura do HTML
+publico como fallback so deve acontecer em etapa propria, com contrato separado
+e sem persistir dados de diagnostico.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -2702,6 +2803,11 @@ toner/tambor/contador, nao altera Celery/task, nao altera Rules Engine, nao
 cria tabela nova, nao cria credencial por maquina, nao cria
 `tentativas_coleta_impressoras`, nao cria API publica, nao altera frontend, nao
 extrai dados cadastrais do HTML/SNMP e nao salva HTML bruto.
+
+A etapa 3.5.2.17 executa apenas diagnostico opt-in do status publico Brother
+DCP-L1632W; ela nao integra HTML publico na cascata, nao persiste alertas HTML,
+nao cria tabela, nao altera Celery/task, nao altera Rules Engine, nao cria API
+publica, nao altera frontend e nao salva HTML bruto.
 
 ## Próximas etapas
 

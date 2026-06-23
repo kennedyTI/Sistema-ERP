@@ -37,6 +37,11 @@ from backend.app.modules.printers.monitoring.html_diagnostics.dynamic_status imp
     build_dynamic_status_report,
     write_dynamic_status_reports,
 )
+from backend.app.modules.printers.monitoring.html_diagnostics.public_status import (  # noqa: E402
+    build_public_status_markdown,
+    build_public_status_report,
+    write_public_status_reports,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Executa diagnostico opt-in da atualizacao dinamica de status Brother.",
     )
+    parser.add_argument(
+        "--diagnosticar-status-publico",
+        action="store_true",
+        help="Executa diagnostico opt-in do status publico Brother sem login.",
+    )
     return parser.parse_args()
 
 
@@ -92,7 +102,16 @@ def main() -> int:
             rows,
             incluir_offline=args.incluir_offline,
         )
-        if args.diagnosticar_status_dinamico:
+        if args.diagnosticar_status_dinamico and args.diagnosticar_status_publico:
+            emitir("Use apenas uma opcao de diagnostico opt-in por execucao.")
+            return 2
+
+        if args.diagnosticar_status_publico:
+            report = build_public_status_report(
+                targets=targets,
+                confirmar=args.confirmar,
+            )
+        elif args.diagnosticar_status_dinamico:
             report = build_dynamic_status_report(
                 targets=targets,
                 confirmar=args.confirmar,
@@ -103,7 +122,13 @@ def main() -> int:
         should_write_json = bool(args.saida_json or args.confirmar)
         should_write_md = bool(args.saida_md or args.confirmar)
         if should_write_json or should_write_md:
-            if args.diagnosticar_status_dinamico:
+            if args.diagnosticar_status_publico:
+                json_path, md_path = write_public_status_reports(
+                    report,
+                    write_json=should_write_json,
+                    write_md=should_write_md,
+                )
+            elif args.diagnosticar_status_dinamico:
                 json_path, md_path = write_dynamic_status_reports(
                     report,
                     write_json=should_write_json,
@@ -120,7 +145,9 @@ def main() -> int:
             if md_path:
                 emitir(f"Relatorio Markdown sanitizado: {md_path}")
         else:
-            if args.diagnosticar_status_dinamico:
+            if args.diagnosticar_status_publico:
+                emitir(build_public_status_markdown(report))
+            elif args.diagnosticar_status_dinamico:
                 emitir(build_dynamic_status_markdown(report))
             else:
                 emitir(build_markdown(report))
