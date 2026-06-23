@@ -8,7 +8,11 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.database import get_db
 from backend.app.main import app
 from backend.app.modules.audit.orm import AuditLog
+from backend.app.core.timezone import now_sao_paulo
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
+from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
+from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
+from backend.app.modules.printers.monitoring.state.seed import seed_alert_rules
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.tests.auth_helpers import auth_headers
 
@@ -23,10 +27,13 @@ class PrinterStatusApiTest(TestCase):
         AuditLog.__table__.create(engine)
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
+        PrinterAlertRule.__table__.create(engine)
+        AlertaImpressora.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
         LogImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
+        seed_alert_rules(self.db)
 
         def override_db():
             yield self.db
@@ -57,6 +64,23 @@ class PrinterStatusApiTest(TestCase):
             model.url_imagem = image_url
             self.db.commit()
         return response.json()["dados"]["maquina"]
+
+    def _create_current_alert(self, machine_id: int, *, code: str, message: str | None):
+        rule = self.db.query(PrinterAlertRule).filter_by(codigo=code).one()
+        alert = AlertaImpressora(
+            maquina_id=machine_id,
+            regra_alerta_id=rule.id,
+            mensagem_original=message,
+            mensagem_original_normalizada=message.casefold() if message else None,
+            origem_coleta="snmp",
+            metodo_confirmacao="snmp_walk",
+            metodo_coleta="walk",
+            chave_alerta=f"snmp:walk:{code}",
+            verificado_em=now_sao_paulo(),
+        )
+        self.db.add(alert)
+        self.db.commit()
+        return alert
 
     def test_nova_maquina_recebe_status_inicial(self):
         machine = self._create_machine(image_url="/static/imgs/printers/modelo-exemplo.png")
@@ -153,6 +177,49 @@ class PrinterStatusApiTest(TestCase):
                 "substituir_toner": 1,
             },
         )
+
+    def test_status_reflete_alerta_atual_persistido(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self._create_current_alert(
+            machine["id"],
+            code="replace_drum",
+            message="Trocar cilindro",
+        )
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["nivel_alerta"], "vermelho")
+        self.assertEqual(data["mensagem_alerta"], "Trocar cilindro")
+        self.assertIsNotNone(data["ultima_verificacao_em"])
+
+    def test_resumo_usa_alertas_atuais_persistidos(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Substituir toner",
+        )
+        self.db.commit()
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["com_alerta"], 1)
+        self.assertEqual(response.json()["data"]["substituir_toner"], 1)
 
     def test_status_operacional_nao_possui_endpoint_manual_de_edicao(self):
         machine = self._create_machine()

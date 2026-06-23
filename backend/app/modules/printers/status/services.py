@@ -3,6 +3,12 @@
 from sqlalchemy.orm import Session, joinedload
 
 from backend.app.modules.printers.machines.models import PrinterMachine
+from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
+from backend.app.modules.printers.monitoring.snmp.alert_collector import (
+    calculate_overall_classification,
+    severity_to_visual_classification,
+)
+from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
 from backend.app.modules.printers.status.schemas import (
     PrinterLogRead,
@@ -13,6 +19,71 @@ from backend.app.modules.printers.status.schemas import (
 
 class PrinterStatusNotFoundError(Exception):
     pass
+
+
+ALERT_DISPLAY_PRIORITY = {
+    "vermelho": 0,
+    "amarelo": 1,
+    "cinza": 2,
+    "verde": 3,
+}
+
+
+def _classification_from_rule(rule: PrinterAlertRule) -> str:
+    return severity_to_visual_classification(
+        rule.severidade,
+        recognized=rule.codigo not in {"unknown", "sem_retorno_alerta"},
+    )
+
+
+def _message_from_current_alert(alert: AlertaImpressora, rule: PrinterAlertRule) -> str:
+    if alert.mensagem_original:
+        return str(alert.mensagem_original)
+    return rule.descricao or "Sem alerta informado"
+
+
+def _alert_projection_for_rows(
+    db: Session,
+    machine_ids: list[int],
+) -> dict[int, dict[str, object]]:
+    if not machine_ids:
+        return {}
+
+    rows = (
+        db.query(AlertaImpressora, PrinterAlertRule)
+        .join(PrinterAlertRule, PrinterAlertRule.id == AlertaImpressora.regra_alerta_id)
+        .filter(AlertaImpressora.maquina_id.in_(machine_ids))
+        .all()
+    )
+    grouped: dict[int, list[tuple[AlertaImpressora, PrinterAlertRule]]] = {}
+    for alert, rule in rows:
+        grouped.setdefault(alert.maquina_id, []).append((alert, rule))
+
+    projections: dict[int, dict[str, object]] = {}
+    for machine_id, alerts in grouped.items():
+        classified = [
+            {
+                "alert": alert,
+                "rule": rule,
+                "classificacao": _classification_from_rule(rule),
+            }
+            for alert, rule in alerts
+        ]
+        overall = calculate_overall_classification(classified)
+        primary = min(
+            classified,
+            key=lambda item: ALERT_DISPLAY_PRIORITY.get(str(item["classificacao"]), 9),
+        )
+        projections[machine_id] = {
+            "nivel_alerta": overall,
+            "mensagem_alerta": _message_from_current_alert(
+                primary["alert"],
+                primary["rule"],
+            ),
+            "codigos_alerta": [rule.codigo for _alert, rule in alerts],
+            "verificado_em": primary["alert"].verificado_em,
+        }
+    return projections
 
 
 # ---------------------------------------------------------------------
@@ -38,8 +109,14 @@ def create_initial_status(db: Session, machine_id: int, *, origem: str = "sistem
     return status
 
 
-def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
+def _status_to_read(
+    status: StatusImpressora,
+    *,
+    alert_projection: dict[str, object] | None = None,
+) -> PrinterStatusRead:
     machine = status.maquina
+    current_alert = alert_projection or {}
+    alert_checked_at = current_alert.get("verificado_em")
     return PrinterStatusRead(
         machine_id=machine.id,
         machine_name=machine.name,
@@ -50,10 +127,14 @@ def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
         sector=machine.sector,
         cost_center=machine.cost_center,
         status_operacional="online" if status.status_operacional == "online" else "offline",
-        nivel_alerta=status.nivel_alerta,
-        mensagem_alerta=status.mensagem_alerta,
+        nivel_alerta=str(current_alert.get("nivel_alerta") or status.nivel_alerta),
+        mensagem_alerta=str(
+            current_alert.get("mensagem_alerta")
+            or status.mensagem_alerta
+            or "Sem alerta informado"
+        ),
         mensagem_operador=status.mensagem_operador,
-        ultima_verificacao_em=status.ultima_verificacao_em,
+        ultima_verificacao_em=alert_checked_at or status.ultima_verificacao_em,
         ultimo_sucesso_em=status.ultimo_sucesso_em,
         ultima_falha_em=status.ultima_falha_em,
         tempo_resposta_ms=status.tempo_resposta_ms,
@@ -79,7 +160,17 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         .order_by(PrinterMachine.name.asc(), PrinterMachine.id.asc())
         .all()
     )
-    return [_status_to_read(status) for status in statuses]
+    alert_projections = _alert_projection_for_rows(
+        db,
+        [status.maquina_id for status in statuses],
+    )
+    return [
+        _status_to_read(
+            status,
+            alert_projection=alert_projections.get(status.maquina_id),
+        )
+        for status in statuses
+    ]
 
 
 def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
@@ -89,14 +180,32 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
         .filter(PrinterMachine.is_active.is_(True))
         .all()
     )
+    alert_projections = _alert_projection_for_rows(
+        db,
+        [status.maquina_id for status in statuses],
+    )
     return PrinterStatusSummary(
         total_impressoras=len(statuses),
         online=sum(status.status_operacional == "online" for status in statuses),
         offline=sum(status.status_operacional != "online" for status in statuses),
-        com_alerta=sum(status.nivel_alerta in {"amarelo", "vermelho"} for status in statuses),
+        com_alerta=sum(
+            str(
+                alert_projections.get(status.maquina_id, {}).get("nivel_alerta")
+                or status.nivel_alerta
+            )
+            in {"amarelo", "vermelho"}
+            for status in statuses
+        ),
         # Regra transitória até existir um domínio próprio para suprimentos.
         substituir_toner=sum(
-            "substituir toner" in (status.mensagem_alerta or "").casefold()
+            "replace_toner"
+            in (alert_projections.get(status.maquina_id, {}).get("codigos_alerta") or [])
+            or "substituir toner"
+            in str(
+                alert_projections.get(status.maquina_id, {}).get("mensagem_alerta")
+                or status.mensagem_alerta
+                or ""
+            ).casefold()
             for status in statuses
         ),
     )
@@ -117,7 +226,11 @@ def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
 
 
 def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
-    return _status_to_read(get_printer_status(db, machine_id))
+    status = get_printer_status(db, machine_id)
+    return _status_to_read(
+        status,
+        alert_projection=_alert_projection_for_rows(db, [machine_id]).get(machine_id),
+    )
 
 
 def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[PrinterLogRead]:

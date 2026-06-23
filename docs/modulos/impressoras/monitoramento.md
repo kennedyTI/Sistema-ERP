@@ -2740,6 +2740,99 @@ Avancar para os outros modelos de impressora. Uma integracao futura do HTML
 publico como fallback so deve acontecer em etapa propria, com contrato separado
 e sem persistir dados de diagnostico.
 
+## Etapa 3.5.2.18 - Finalizar Status com Redis/Celery e ativar frontend
+
+Esta microetapa consolidou a fase de Status operacional do modulo Impressoras
+sem ampliar o escopo para coleta rica. A branch usada foi
+`feature/printers-status-final-celery-frontend`, criada a partir de
+`feature/printers-html-brother-l1632w-public-status`.
+
+A limpeza inicial procurou bancos e dumps locais antigos associados a v1 ou ao
+nome antigo do projeto. Nenhum banco/dump antigo foi identificado dentro do
+workspace, portanto nenhum arquivo foi removido. Os volumes Docker nao foram
+tocados e o banco valido permaneceu sendo o PostgreSQL do ambiente Docker.
+
+### Decisao tecnica
+
+O Status passa a exibir dados reais da base atual:
+
+- conectividade operacional continua sendo processada por Redis/Celery em
+  `printers_connectivity_all`, com agenda de 60 segundos;
+- mensagens de alerta continuam sendo coletadas por `printers_alerts_all`, com
+  agenda de 300 segundos;
+- a API de Status passa a projetar os alertas atuais persistidos em
+  `alertas_impressoras` sobre a resposta de `status_impressoras`;
+- o resumo de Status passa a calcular `com_alerta` e `substituir_toner` a
+  partir dos alertas atuais persistidos;
+- o frontend `/impressoras/status` passa a consumir a API real de Status,
+  exibindo a classificacao na coluna `Alerta` e a mensagem operacional na
+  coluna `Mensagem`.
+
+Nao foi criada migracao nesta etapa, porque as tabelas necessarias ja existiam.
+As tabelas envolvidas sao:
+
+- `status_impressoras`;
+- `historico_status_impressoras`;
+- `alertas_impressoras`;
+- `historico_alertas_impressoras`.
+
+### Diagnostico real sanitizado
+
+Foi executado diagnostico operacional real via Docker, mantendo relatorios em
+pasta ignorada pelo Git:
+
+```text
+tmp/diagnosticos/status_final/diagnostico_status_final_20260623_170837.json
+tmp/diagnosticos/status_final/diagnostico_status_final_20260623_170837.md
+```
+
+Resultado consolidado sanitizado:
+
+| Item | Resultado |
+| --- | --- |
+| Status atuais | 37 |
+| Alertas atuais | 49 |
+| Historico de status | 818 |
+| Historico de alertas | 401 |
+| Maquinas processadas na coleta de alertas | 35 |
+| Maquinas ignoradas na coleta de alertas | 2 |
+| Coletas de alerta com sucesso | 33 |
+| Coletas de alerta com falha | 2 |
+
+A task global de conectividade encontrou lock Redis ativo no momento da
+validacao, evidenciando protecao de concorrencia. A coleta individual de uma
+maquina ativa foi executada com sucesso e confirmou status `online` por ICMP.
+
+### Modelos validados
+
+| Modelo | Maquinas | Alertas atuais |
+| --- | ---: | ---: |
+| Brother DCP-L1632W | 18 | 25 |
+| Brother DCP-L2540DW | 7 | 9 |
+| Canon IR-C3326I | 9 | 12 |
+| HP MFP-4303 | 2 | 2 |
+| Samsung K-4350 | 1 | 1 |
+
+### Endpoints validados
+
+- `GET /api/v2/printers/status`;
+- `GET /api/v2/printers/status/summary`;
+- `GET /api/v2/printers/status/{machine_id}`.
+
+O resumo retornou dados reais do ambiente Docker, incluindo total de
+impressoras ativas, online/offline, quantidade com alerta e quantidade com
+acao de substituicao de toner.
+
+### Limites preservados
+
+Esta etapa nao continuou a investigacao do `#moni_data` da Brother DCP-L1632W,
+nao integrou HTML na cascata de alertas, nao persistiu alertas HTML, nao criou
+tabela nova, nao criou credencial por maquina, nao criou
+`tentativas_coleta_impressoras`, nao implementou percentual de toner, nao
+implementou quantidade de papel, nao implementou dashboard real, nao usou
+headless/Playwright, nao salvou HTML bruto, nao salvou JS bruto e nao alterou
+Rules Engine.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -2808,6 +2901,11 @@ A etapa 3.5.2.17 executa apenas diagnostico opt-in do status publico Brother
 DCP-L1632W; ela nao integra HTML publico na cascata, nao persiste alertas HTML,
 nao cria tabela, nao altera Celery/task, nao altera Rules Engine, nao cria API
 publica, nao altera frontend e nao salva HTML bruto.
+
+A etapa 3.5.2.18 finaliza a tela Status com API real, Redis/Celery e alertas
+atuais persistidos, mas ainda nao implementa dashboard real, percentual de
+toner, quantidade de papel, coleta rica, HTML na cascata, headless/Playwright
+ou novas tabelas de tentativa.
 
 ## Próximas etapas
 

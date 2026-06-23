@@ -48,6 +48,13 @@ const alertPriority: Record<AlertLevel, number> = {
   verde: 3,
 };
 
+const alertLabels: Record<AlertLevel, string> = {
+  cinza: "Desconhecido",
+  verde: "Normal",
+  amarelo: "Atenção",
+  vermelho: "Crítico",
+};
+
 const alertDotStyles: Record<AlertLevel, string> = {
   cinza: "bg-muted-foreground",
   verde: "bg-emerald-500",
@@ -441,23 +448,23 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
       );
     case "alert":
       return (
-        <TableCell key={column} className="max-w-[260px] whitespace-normal">
-          <span className="inline-flex items-start gap-2">
+        <TableCell key={column}>
+          <span className="inline-flex items-center gap-2">
             <span
               className={cn(
-                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                "h-2.5 w-2.5 shrink-0 rounded-full",
                 alertDotStyles[status.nivel_alerta],
               )}
               aria-hidden="true"
             />
-            <span>{status.mensagem_alerta ?? "-"}</span>
+            <span>{alertLabels[status.nivel_alerta]}</span>
           </span>
         </TableCell>
       );
     case "message":
       return (
         <TableCell key={column} className="max-w-[300px] whitespace-normal">
-          {status.mensagem_operador}
+          {status.mensagem_alerta ?? "Sem alerta informado"}
         </TableCell>
       );
     case "location":
