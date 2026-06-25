@@ -4,7 +4,14 @@ import { buildApiUrl } from "@/shared/lib/api-url";
 export type OperationalStatus = "online" | "offline";
 export type ConfirmationMethod = "icmp" | "tcp" | "snmp" | "html" | "fallback";
 export type AlertLevel = "cinza" | "verde" | "amarelo" | "vermelho";
-export type StatusSeverity = "unknown" | "green" | "medium" | "high";
+export type StatusSeverity = "unknown" | "green" | "low" | "medium" | "high";
+
+export interface PrinterOperationalAlert {
+  codigo: string;
+  mensagem: string;
+  nivel_alerta: AlertLevel;
+  severidade: StatusSeverity;
+}
 
 export interface PrinterOperationalStatus {
   machine_id: number;
@@ -27,6 +34,7 @@ export interface PrinterOperationalStatus {
   nivel_alerta: AlertLevel;
   severidade: StatusSeverity;
   alerta: string | null;
+  alertas: PrinterOperationalAlert[];
   mensagem: string | null;
   mensagem_alerta: string | null;
   mensagem_operador: string;

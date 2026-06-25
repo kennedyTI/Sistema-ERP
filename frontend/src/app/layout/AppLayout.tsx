@@ -5,6 +5,7 @@ import { Button } from "@/shared/ui/button";
 import { SidebarProvider, SidebarTrigger } from "@/shared/ui/sidebar";
 import { AppSidebar } from "./Sidebar";
 import { ThemeToggle } from "@/shared/components/ThemeToggle";
+import { cn } from "@/shared/lib/utils";
 
 const titles: Record<string, { title: string; sub: string }> = {
   "/inicio": { title: "Inicio", sub: "Base v2 do Portal industria" },
@@ -17,13 +18,14 @@ const titles: Record<string, { title: string; sub: string }> = {
 export function AppLayout() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const meta = titles[pathname] ?? { title: "Portal industria", sub: "" };
+  const isStatusPage = pathname === "/impressoras/status";
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
+      <div className="flex h-screen min-h-0 w-full overflow-hidden bg-background">
         <AppSidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/70 bg-card/86 px-4 shadow-[0_1px_0_color-mix(in_oklab,var(--industria-blue)_8%,transparent)] backdrop-blur supports-[backdrop-filter]:bg-card/74 sm:px-5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-card/86 px-4 shadow-[0_1px_0_color-mix(in_oklab,var(--industria-blue)_8%,transparent)] backdrop-blur supports-[backdrop-filter]:bg-card/74 sm:px-5">
             <SidebarTrigger className="-ml-1 text-primary hover:bg-primary-soft hover:text-primary-dark dark:hover:bg-primary/15 dark:hover:text-primary" />
             <div className="hidden sm:block">
               <h1 className="text-sm font-semibold leading-tight">{meta.title}</h1>
@@ -41,7 +43,12 @@ export function AppLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <main className="min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
+          <main
+            className={cn(
+              "min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-6",
+              isStatusPage ? "min-h-0 overflow-hidden" : "overflow-y-auto",
+            )}
+          >
             <Outlet />
           </main>
         </div>

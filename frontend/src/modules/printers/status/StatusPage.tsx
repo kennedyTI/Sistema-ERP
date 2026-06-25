@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { Activity, Columns3, GripVertical, Loader2, RotateCcw } from "lucide-react";
+import { Activity, Columns3, GripVertical, Loader2, RotateCcw, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { RequireAuth } from "@/modules/auth/RequireAuth";
@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { Input } from "@/shared/ui/input";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
@@ -65,6 +66,7 @@ const alertRowStyles: Record<AlertLevel, string> = {
 type ColumnKey = "status" | "alert" | "location" | "machine" | "model" | "ip" | "updatedAt";
 type DropSide = "before" | "after";
 const STATUS_REFRESH_INTERVAL_MS = 60_000;
+const ALERT_ROTATION_INTERVAL_MS = 4_000;
 
 interface ColumnPreferences {
   order: ColumnKey[];
@@ -121,6 +123,8 @@ function StatusContent() {
   const [dragOverColumn, setDragOverColumn] = useState<ColumnKey | null>(null);
   const [dropSide, setDropSide] = useState<DropSide>("before");
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
+  const [alertRotationIndex, setAlertRotationIndex] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const draggedColumnRef = useRef<ColumnKey | null>(null);
   const dragOverColumnRef = useRef<ColumnKey | null>(null);
   const columnPreferencesStorageKey = `${COLUMN_PREFERENCES_STORAGE_KEY}:${user?.username ?? "default"}`;
@@ -140,6 +144,13 @@ function StatusContent() {
       ),
     [statuses],
   );
+
+  const filteredStatuses = useMemo(() => {
+    const query = normalizeSearchText(searchQuery);
+    if (!query) return sortedStatuses;
+
+    return sortedStatuses.filter((status) => statusSearchText(status).includes(query));
+  }, [searchQuery, sortedStatuses]);
 
   async function loadStatuses({ showLoading = true }: { showLoading?: boolean } = {}) {
     if (showLoading) setLoading(true);
@@ -163,6 +174,14 @@ function StatusContent() {
     const intervalId = window.setInterval(() => {
       void loadStatuses({ showLoading: false });
     }, STATUS_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setAlertRotationIndex((current) => current + 1);
+    }, ALERT_ROTATION_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
   }, []);
@@ -282,7 +301,7 @@ function StatusContent() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-5.5rem)] max-w-[1540px] flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-6rem)]">
+    <div className="mx-auto flex h-full max-w-[1540px] flex-col gap-4 overflow-hidden">
       <div className="shrink-0">
         <StatusSummaryCards summary={summary} loading={loading} />
       </div>
@@ -296,9 +315,19 @@ function StatusContent() {
 
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
         <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
-          <span className="text-xs text-muted-foreground">
-            Atualização automática a cada 60s
-          </span>
+          <div className="relative min-w-0 flex-1 sm:max-w-xl">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar por IP, local, maquina, modelo, status ou alerta"
+              aria-label="Buscar status de impressoras"
+              className="h-9 bg-background/70 pl-9"
+            />
+          </div>
           <TooltipProvider>
             <DropdownMenu>
               <Tooltip>
@@ -344,7 +373,7 @@ function StatusContent() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Carregando status...
           </div>
-        ) : sortedStatuses.length === 0 ? (
+        ) : statuses.length === 0 ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
             <Activity className="h-9 w-9 text-muted-foreground" />
             <h2 className="mt-4 text-base font-semibold">Nenhum status disponível</h2>
@@ -352,10 +381,18 @@ function StatusContent() {
               Os estados operacionais aparecerão aqui quando houver impressoras cadastradas.
             </p>
           </div>
+        ) : filteredStatuses.length === 0 ? (
+          <div className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
+            <Search className="h-9 w-9 text-muted-foreground" />
+            <h2 className="mt-4 text-base font-semibold">Nenhum status encontrado</h2>
+            <p className="mt-2 max-w-md text-sm text-muted-foreground">
+              Ajuste a busca por IP, local, maquina, modelo, status ou alerta.
+            </p>
+          </div>
         ) : (
-          <div className="min-h-0 max-w-full flex-1 touch-pan-x overflow-auto overscroll-contain p-2 sm:p-3">
-            <table className="w-full min-w-[1180px] caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_var(--border)]">
+          <div className="min-h-0 max-w-full flex-1 touch-pan-x overflow-auto overscroll-contain bg-card">
+            <table className="w-full min-w-[1180px] caption-bottom border-separate border-spacing-0 text-sm">
+              <TableHeader className="sticky top-0 z-40 bg-card shadow-[0_1px_0_var(--border)]">
                 <TableRow>
                   {displayedColumns.map((column) => (
                     <TableHead
@@ -363,7 +400,7 @@ function StatusContent() {
                       data-column-key={column}
                       aria-label={`${columnLabels[column]}. Arraste para mudar a posição da coluna.`}
                       className={cn(
-                        "sticky top-0 z-20 select-none bg-card transition-[background-color,box-shadow,color,opacity] duration-150",
+                        "sticky top-0 z-40 select-none border-b border-border/70 bg-card transition-[background-color,box-shadow,color,opacity] duration-150",
                         draggedColumn === column &&
                           "bg-primary/12 text-foreground opacity-80 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_38%,transparent)]",
                         dragOverColumn === column && draggedColumn !== column && "bg-primary/8",
@@ -399,14 +436,14 @@ function StatusContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedStatuses.map((status) => (
+                {filteredStatuses.map((status) => (
                   <TableRow
                     key={status.machine_id}
                     tabIndex={0}
                     role="button"
                     aria-label={`Abrir detalhes de ${status.machine_name}`}
                     className={cn(
-                      "cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "relative z-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       alertRowStyles[status.nivel_alerta],
                     )}
                     onClick={() => openDetails(status)}
@@ -417,7 +454,9 @@ function StatusContent() {
                       }
                     }}
                   >
-                    {displayedColumns.map((column) => renderStatusCell(status, column))}
+                    {displayedColumns.map((column) =>
+                      renderStatusCell(status, column, alertRotationIndex),
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -440,7 +479,11 @@ function StatusContent() {
   );
 }
 
-function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
+function renderStatusCell(
+  status: PrinterOperationalStatus,
+  column: ColumnKey,
+  alertRotationIndex: number,
+) {
   switch (column) {
     case "status":
       return (
@@ -451,17 +494,27 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
         </TableCell>
       );
     case "alert":
+      const visibleAlert = visibleAlertForStatus(status, alertRotationIndex);
+      const alertCount = status.alertas?.length ?? 0;
       return (
         <TableCell key={column} className="max-w-[320px] whitespace-normal">
-          <span className="inline-flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-2"
+            title={status.alertas?.map((alert) => alert.mensagem).join(" | ") || visibleAlert.mensagem}
+          >
             <span
               className={cn(
                 "h-2.5 w-2.5 shrink-0 rounded-full",
-                alertDotStyles[status.nivel_alerta],
+                alertDotStyles[visibleAlert.nivel_alerta],
               )}
               aria-hidden="true"
             />
-            <span>{status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado"}</span>
+            <span>{visibleAlert.mensagem}</span>
+            {alertCount > 1 && (
+              <span className="rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                {(alertRotationIndex % alertCount) + 1}/{alertCount}
+              </span>
+            )}
           </span>
         </TableCell>
       );
@@ -482,6 +535,65 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
         <TableCell key={column}>{formatRelativeUpdate(status.verificado_em)}</TableCell>
       );
   }
+}
+
+function visibleAlertForStatus(
+  status: PrinterOperationalStatus,
+  alertRotationIndex: number,
+) {
+  const alerts = status.alertas?.length
+    ? status.alertas
+    : [
+        {
+          codigo: "status_atual",
+          mensagem: status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado",
+          nivel_alerta: status.nivel_alerta,
+          severidade: status.severidade,
+        },
+      ];
+
+  return alerts[alertRotationIndex % alerts.length];
+}
+
+function normalizeSearchText(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim();
+}
+
+function statusSearchText(status: PrinterOperationalStatus) {
+  const alertText = (status.alertas ?? [])
+    .flatMap((alert) => [alert.codigo, alert.mensagem, alert.nivel_alerta, alert.severidade])
+    .join(" ");
+
+  return normalizeSearchText(
+    [
+      status.ip_address,
+      status.ip,
+      status.sector,
+      status.local,
+      status.machine_name,
+      status.maquina,
+      status.manufacturer,
+      status.fabricante,
+      status.model,
+      status.modelo,
+      status.modelo_exibicao,
+      status.status_operacional,
+      status.status,
+      statusLabels[status.status_operacional],
+      status.nivel_alerta,
+      status.severidade,
+      status.alerta,
+      status.mensagem_alerta,
+      status.mensagem,
+      alertText,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function isValidColumnPreferences(value: unknown): value is ColumnPreferences {

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 StatusOperacional = Literal["online", "offline"]
@@ -11,6 +11,13 @@ NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
 SeveridadeStatus = Literal["unknown", "green", "medium", "high"]
 OrigemStatus = Literal["sistema", "manual", "seed", "futuro_snmp"]
 MetodoConfirmacao = Literal["icmp", "tcp", "snmp", "html", "fallback"]
+
+
+class PrinterStatusAlertRead(BaseModel):
+    codigo: str
+    mensagem: str
+    nivel_alerta: NivelAlerta
+    severidade: SeveridadeStatus
 
 
 class PrinterStatusRead(BaseModel):
@@ -36,6 +43,7 @@ class PrinterStatusRead(BaseModel):
     nivel_alerta: NivelAlerta
     severidade: SeveridadeStatus
     alerta: str | None = None
+    alertas: list[PrinterStatusAlertRead] = Field(default_factory=list)
     mensagem: str | None = None
     mensagem_alerta: str | None = None
     mensagem_operador: str

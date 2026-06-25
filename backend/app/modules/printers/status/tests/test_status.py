@@ -211,8 +211,101 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["severidade"], "high")
         self.assertEqual(data["mensagem_alerta"], "Trocar cilindro")
         self.assertEqual(data["alerta"], "Trocar cilindro")
+        self.assertEqual(
+            data["alertas"],
+            [
+                {
+                    "codigo": "replace_drum",
+                    "mensagem": "Trocar cilindro",
+                    "nivel_alerta": "vermelho",
+                    "severidade": "high",
+                }
+            ],
+        )
         self.assertIsNotNone(data["ultima_verificacao_em"])
         self.assertEqual(data["verificado_em"], status.ultima_verificacao_em.isoformat())
+
+    def test_status_retorna_alertas_atuais_da_maior_severidade_da_maquina(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_drum",
+            message="Trocar cilindro",
+        )
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Trocar toner",
+        )
+        self._create_current_alert(
+            machine["id"],
+            code="sleep",
+            message="Sleep",
+        )
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["nivel_alerta"], "vermelho")
+        self.assertEqual(data["alerta"], "Trocar cilindro")
+        self.assertEqual(
+            [alert["mensagem"] for alert in data["alertas"]],
+            ["Trocar cilindro", "Trocar toner"],
+        )
+        self.assertEqual(
+            {alert["codigo"] for alert in data["alertas"]},
+            {"replace_drum", "replace_toner"},
+        )
+
+    def test_status_traduz_alertas_snmp_conhecidos_para_portugues(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="drum_low",
+            message="drum needs to be replaced soon (black).",
+        )
+        self._create_current_alert(
+            machine["id"],
+            code="toner_low",
+            message="toner is low (yellow).",
+        )
+        self._create_current_alert(
+            machine["id"],
+            code="sleep",
+            message="Sleep",
+        )
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["nivel_alerta"], "amarelo")
+        self.assertEqual(
+            [alert["mensagem"] for alert in data["alertas"]],
+            [
+                "Substituir cilindro em breve (preto).",
+                "Toner baixo (amarelo).",
+            ],
+        )
 
     def test_offline_sobrescreve_alerta_atual_persistido(self):
         machine = self._create_machine()
@@ -243,6 +336,17 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["mensagem_alerta"], "Sem serviço")
         self.assertEqual(data["alerta"], "Sem serviço")
         self.assertEqual(data["mensagem"], "Sem serviço")
+        self.assertEqual(
+            data["alertas"],
+            [
+                {
+                    "codigo": "sem_servico",
+                    "mensagem": "Sem serviço",
+                    "nivel_alerta": "vermelho",
+                    "severidade": "high",
+                }
+            ],
+        )
         self.assertEqual(summary_response.status_code, 200)
         self.assertEqual(summary_response.json()["data"]["com_alerta"], 1)
         self.assertEqual(summary_response.json()["data"]["substituir_toner"], 0)

@@ -3029,6 +3029,70 @@ A etapa 3.5.2.19 ajusta somente Status, API, coleta de alertas e tabela
 operacional; ela nao implementa toner, papel, dashboard, HTML na cascata ou
 novas tabelas de tentativa.
 
+## Etapa 3.5.2.20 - Ajuste final do modal de Status
+
+Esta microetapa finaliza o modal de detalhes da impressora na tela
+`/impressoras/status`, mantendo a fase Status / Alertas pronta para uso
+operacional e para merge em `develop`.
+
+### Ajustes do modal
+
+- o campo visual `Alerta operacional` foi removido;
+- o campo `Mensagem de alerta` foi substituido por `Alerta`;
+- a severidade deixou de ser exibida como texto principal no modal;
+- `Status operacional` representa apenas conectividade e usa badge proprio:
+  `Online` em verde e `Offline` em vermelho;
+- `Alerta` passa a exibir a mensagem operacional do alerta em badge discreto,
+  colorido pela severidade interna;
+- impressoras offline exibem `Alerta: Sem servico` com severidade
+  `high/vermelho`, sobrescrevendo alertas antigos no detalhe;
+- `Mensagem operacional` permanece separada de `Alerta`;
+- `Resposta tecnica` e `Ultimos logs` permanecem somente consultivos.
+
+### Multiplos alertas
+
+O modal usa o mesmo conceito da tabela de Status:
+
+- se houver apenas um alerta, ele e exibido diretamente;
+- se houver mais de um alerta da maior criticidade, as mensagens alternam a
+  cada quatro segundos;
+- quando houver alternancia, o indicador `1/2`, `2/2` e equivalentes e exibido;
+- se houver alertas de criticidades diferentes, apenas a criticidade mais grave
+  entra na exibicao principal;
+- a cor do badge de `Alerta` acompanha a severidade do alerta exibido.
+
+### Consistencia com a tabela
+
+A tabela principal permanece com as colunas:
+
+```text
+Status | Alerta | Local | Maquina | Modelo | IP | Atualizado em
+```
+
+Os cards e o cabecalho continuam preservados com rolagem interna das linhas,
+polling automatico e busca por IP, local, maquina, modelo, status ou alerta.
+
+### Validacoes da microetapa
+
+A validacao final da etapa executa:
+
+- `py -3.11 -m compileall -q backend`;
+- `py -3.11 -m pytest -q`;
+- `py -3.11 manage.py check`;
+- `npm.cmd audit`;
+- `npm.cmd run build`;
+- `docker compose --env-file .env.docker up -d --no-build`;
+- `docker compose --env-file .env.docker ps -a`;
+- inspecao das tasks registradas do Celery.
+
+### Limites preservados
+
+Esta etapa nao implementa percentual de toner, quantidade de papel, dashboard,
+headless, coleta rica, tabela nova, credencial por maquina,
+`tentativas_coleta_impressoras`, fallback HTML na cascata ou retomada do
+diagnostico `#moni_data` Brother. Tambem nao versiona HTML bruto, JS bruto,
+relatorios locais, dumps, certificados ou dados reais.
+
 ## Próximas etapas
 
 - integrar o fallback HTML autenticado na cascata de alertas;
