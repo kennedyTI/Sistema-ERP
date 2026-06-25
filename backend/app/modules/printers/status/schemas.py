@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 StatusOperacional = Literal["online", "offline"]
 NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
+SeveridadeStatus = Literal["unknown", "green", "medium", "high"]
 OrigemStatus = Literal["sistema", "manual", "seed", "futuro_snmp"]
 MetodoConfirmacao = Literal["icmp", "tcp", "snmp", "html", "fallback"]
 
@@ -16,18 +17,30 @@ class PrinterStatusRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     machine_id: int
+    id: int
     machine_name: str
+    maquina: str
     ip_address: str
+    ip: str
     manufacturer: str | None = None
+    fabricante: str | None = None
     model: str | None = None
+    modelo: str | None = None
+    modelo_exibicao: str | None = None
     url_imagem: str | None = None
     sector: str | None = None
+    local: str | None = None
     cost_center: str | None = None
     status_operacional: StatusOperacional
+    status: StatusOperacional
     nivel_alerta: NivelAlerta
+    severidade: SeveridadeStatus
+    alerta: str | None = None
+    mensagem: str | None = None
     mensagem_alerta: str | None = None
     mensagem_operador: str
     ultima_verificacao_em: datetime | None = None
+    verificado_em: datetime | None = None
     ultimo_sucesso_em: datetime | None = None
     ultima_falha_em: datetime | None = None
     tempo_resposta_ms: int | None = None

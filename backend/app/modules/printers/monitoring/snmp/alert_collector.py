@@ -22,12 +22,12 @@ from backend.app.modules.printers.monitoring.config import (
     MonitoringSettings,
     get_monitoring_settings,
 )
+from backend.app.modules.printers.monitoring.eligibility import machine_is_offline
 from backend.app.modules.printers.monitoring.snmp.oids import get_active_oid_for_model
 from backend.app.modules.printers.monitoring.state.rules import (
     classify_alert,
     load_active_alert_rules,
 )
-from backend.app.modules.printers.status.models import StatusImpressora
 
 
 ALERT_RAW_METRIC_KEY = "alert_raw"
@@ -354,15 +354,6 @@ def _error_result(
     return result
 
 
-def _current_status_is_offline(db: Session, machine_id: int) -> bool:
-    status = (
-        db.query(StatusImpressora)
-        .filter(StatusImpressora.maquina_id == machine_id)
-        .one_or_none()
-    )
-    return bool(status and status.status_operacional == "offline")
-
-
 def collect_snmp_alerts_for_machine(
     db: Session,
     *,
@@ -399,7 +390,7 @@ def collect_snmp_alerts_for_machine(
             error_code="maquina_sem_modelo",
             error_detail="Maquina sem modelo vinculado.",
         )
-    if _current_status_is_offline(db, machine.id):
+    if machine_is_offline(db, machine.id):
         return _error_result(
             machine_id=machine.id,
             model_id=machine.model_id,

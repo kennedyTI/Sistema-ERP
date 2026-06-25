@@ -27,6 +27,13 @@ ALERT_DISPLAY_PRIORITY = {
     "cinza": 2,
     "verde": 3,
 }
+OFFLINE_ALERT_MESSAGE = "Sem serviço"
+SEVERITY_BY_ALERT_LEVEL = {
+    "cinza": "unknown",
+    "verde": "green",
+    "amarelo": "medium",
+    "vermelho": "high",
+}
 
 
 def _classification_from_rule(rule: PrinterAlertRule) -> str:
@@ -86,6 +93,40 @@ def _alert_projection_for_rows(
     return projections
 
 
+def _model_display(manufacturer: str | None, model: str | None) -> str | None:
+    if manufacturer and model:
+        return f"{manufacturer} - {model}"
+    return model or manufacturer
+
+
+def _severity_from_alert_level(alert_level: str) -> str:
+    return SEVERITY_BY_ALERT_LEVEL.get(alert_level, "unknown")
+
+
+def _display_alert_projection(
+    status: StatusImpressora,
+    alert_projection: dict[str, object] | None,
+) -> dict[str, object]:
+    # Offline sempre prevalece sobre alertas antigos ainda persistidos.
+    if status.status_operacional != "online":
+        return {
+            "nivel_alerta": "vermelho",
+            "mensagem_alerta": OFFLINE_ALERT_MESSAGE,
+            "codigos_alerta": [],
+        }
+
+    current_alert = alert_projection or {}
+    return {
+        "nivel_alerta": str(current_alert.get("nivel_alerta") or status.nivel_alerta),
+        "mensagem_alerta": str(
+            current_alert.get("mensagem_alerta")
+            or status.mensagem_alerta
+            or "Sem alerta informado"
+        ),
+        "codigos_alerta": current_alert.get("codigos_alerta") or [],
+    }
+
+
 # ---------------------------------------------------------------------
 # 📌 STATUS INICIAL DA MÁQUINA
 # ---------------------------------------------------------------------
@@ -115,26 +156,39 @@ def _status_to_read(
     alert_projection: dict[str, object] | None = None,
 ) -> PrinterStatusRead:
     machine = status.maquina
-    current_alert = alert_projection or {}
-    alert_checked_at = current_alert.get("verificado_em")
+    manufacturer = machine.manufacturer
+    model = machine.model
+    model_display = _model_display(manufacturer, model)
+    operational_status = "online" if status.status_operacional == "online" else "offline"
+    display_alert = _display_alert_projection(status, alert_projection)
+    alert_level = str(display_alert["nivel_alerta"])
+    alert_message = str(display_alert["mensagem_alerta"])
     return PrinterStatusRead(
         machine_id=machine.id,
+        id=machine.id,
         machine_name=machine.name,
+        maquina=machine.name,
         ip_address=machine.ip_address,
-        manufacturer=machine.manufacturer,
-        model=machine.model,
+        ip=machine.ip_address,
+        manufacturer=manufacturer,
+        fabricante=manufacturer,
+        model=model,
+        modelo=model,
+        modelo_exibicao=model_display,
         url_imagem=machine.printer_model.url_imagem if machine.printer_model else None,
         sector=machine.sector,
+        local=machine.sector,
         cost_center=machine.cost_center,
-        status_operacional="online" if status.status_operacional == "online" else "offline",
-        nivel_alerta=str(current_alert.get("nivel_alerta") or status.nivel_alerta),
-        mensagem_alerta=str(
-            current_alert.get("mensagem_alerta")
-            or status.mensagem_alerta
-            or "Sem alerta informado"
-        ),
+        status_operacional=operational_status,
+        status=operational_status,
+        nivel_alerta=alert_level,
+        severidade=_severity_from_alert_level(alert_level),
+        alerta=alert_message,
+        mensagem=alert_message,
+        mensagem_alerta=alert_message,
         mensagem_operador=status.mensagem_operador,
-        ultima_verificacao_em=alert_checked_at or status.ultima_verificacao_em,
+        ultima_verificacao_em=status.ultima_verificacao_em,
+        verificado_em=status.ultima_verificacao_em,
         ultimo_sucesso_em=status.ultimo_sucesso_em,
         ultima_falha_em=status.ultima_falha_em,
         tempo_resposta_ms=status.tempo_resposta_ms,
@@ -190,22 +244,34 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
         offline=sum(status.status_operacional != "online" for status in statuses),
         com_alerta=sum(
             str(
-                alert_projections.get(status.maquina_id, {}).get("nivel_alerta")
-                or status.nivel_alerta
+                _display_alert_projection(
+                    status,
+                    alert_projections.get(status.maquina_id),
+                )["nivel_alerta"]
             )
             in {"amarelo", "vermelho"}
             for status in statuses
         ),
         # Regra transitória até existir um domínio próprio para suprimentos.
         substituir_toner=sum(
-            "replace_toner"
-            in (alert_projections.get(status.maquina_id, {}).get("codigos_alerta") or [])
-            or "substituir toner"
-            in str(
-                alert_projections.get(status.maquina_id, {}).get("mensagem_alerta")
-                or status.mensagem_alerta
-                or ""
-            ).casefold()
+            status.status_operacional == "online"
+            and (
+                "replace_toner"
+                in (
+                    _display_alert_projection(
+                        status,
+                        alert_projections.get(status.maquina_id),
+                    ).get("codigos_alerta")
+                    or []
+                )
+                or "substituir toner"
+                in str(
+                    _display_alert_projection(
+                        status,
+                        alert_projections.get(status.maquina_id),
+                    )["mensagem_alerta"]
+                ).casefold()
+            )
             for status in statuses
         ),
     )

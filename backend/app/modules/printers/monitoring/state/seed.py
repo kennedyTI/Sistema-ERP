@@ -154,7 +154,7 @@ INITIAL_ALERT_RULES = (
         "descricao": "Operacional",
         "severidade": "green",
         "tipo_regra": "contains",
-        "padrao": "ready,online,operational,pronta,pronto,ok",
+        "padrao": "ready,online,operational,printing,imprimindo,pronta,pronto,ok",
         "prioridade": 110,
         "ativo": True,
     },

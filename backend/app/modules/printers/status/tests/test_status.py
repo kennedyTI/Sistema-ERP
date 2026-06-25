@@ -1,3 +1,4 @@
+from datetime import timedelta
 from unittest import TestCase
 
 from fastapi.testclient import TestClient
@@ -95,9 +96,15 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["machine_name"], "Impressora Status")
         self.assertEqual(data["manufacturer"], "Fabricante Exemplo")
         self.assertEqual(data["model"], "Modelo Exemplo")
+        self.assertEqual(data["modelo_exibicao"], "Fabricante Exemplo - Modelo Exemplo")
         self.assertEqual(data["url_imagem"], "/static/imgs/printers/modelo-exemplo.png")
         self.assertEqual(data["status_operacional"], "offline")
-        self.assertEqual(data["nivel_alerta"], "cinza")
+        self.assertEqual(data["status"], "offline")
+        self.assertEqual(data["nivel_alerta"], "vermelho")
+        self.assertEqual(data["severidade"], "high")
+        self.assertEqual(data["alerta"], "Sem serviço")
+        self.assertEqual(data["mensagem"], "Sem serviço")
+        self.assertEqual(data["mensagem_alerta"], "Sem serviço")
         self.assertEqual(data["mensagem_operador"], "Aguardando primeira verificacao.")
         self.assertEqual(data["origem"], "sistema")
 
@@ -152,7 +159,7 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(summary_response.status_code, 200)
         self.assertEqual(summary_response.json()["data"]["total_impressoras"], 1)
         self.assertEqual(summary_response.json()["data"]["offline"], 1)
-        self.assertEqual(summary_response.json()["data"]["com_alerta"], 0)
+        self.assertEqual(summary_response.json()["data"]["com_alerta"], 1)
 
     def test_resumo_operacional_calcula_cards(self):
         machine = self._create_machine()
@@ -181,8 +188,11 @@ class PrinterStatusApiTest(TestCase):
     def test_status_reflete_alerta_atual_persistido(self):
         machine = self._create_machine()
         status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
         status.nivel_alerta = "cinza"
         status.mensagem_alerta = "Ainda nao verificada"
+        status.ultima_verificacao_em = now_sao_paulo() - timedelta(minutes=3)
+        self.db.commit()
         self._create_current_alert(
             machine["id"],
             code="replace_drum",
@@ -198,8 +208,44 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()["data"]
         self.assertEqual(data["nivel_alerta"], "vermelho")
+        self.assertEqual(data["severidade"], "high")
         self.assertEqual(data["mensagem_alerta"], "Trocar cilindro")
+        self.assertEqual(data["alerta"], "Trocar cilindro")
         self.assertIsNotNone(data["ultima_verificacao_em"])
+        self.assertEqual(data["verificado_em"], status.ultima_verificacao_em.isoformat())
+
+    def test_offline_sobrescreve_alerta_atual_persistido(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "offline"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        status.ultima_verificacao_em = now_sao_paulo()
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Substituir toner",
+        )
+        headers = auth_headers(printers_status=True)
+
+        detail_response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+        summary_response = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(detail_response.status_code, 200)
+        data = detail_response.json()["data"]
+        self.assertEqual(data["status_operacional"], "offline")
+        self.assertEqual(data["nivel_alerta"], "vermelho")
+        self.assertEqual(data["severidade"], "high")
+        self.assertEqual(data["mensagem_alerta"], "Sem serviço")
+        self.assertEqual(data["alerta"], "Sem serviço")
+        self.assertEqual(data["mensagem"], "Sem serviço")
+        self.assertEqual(summary_response.status_code, 200)
+        self.assertEqual(summary_response.json()["data"]["com_alerta"], 1)
+        self.assertEqual(summary_response.json()["data"]["substituir_toner"], 0)
 
     def test_resumo_usa_alertas_atuais_persistidos(self):
         machine = self._create_machine()

@@ -2833,6 +2833,64 @@ implementou quantidade de papel, nao implementou dashboard real, nao usou
 headless/Playwright, nao salvou HTML bruto, nao salvou JS bruto e nao alterou
 Rules Engine.
 
+## Etapa 3.5.2.19 - Ajustes finais da tela Status e regras operacionais de atualizacao
+
+Esta microetapa aplicou ajustes operacionais e visuais na tela
+`/impressoras/status`, usando como base a branch
+`feature/printers-status-final-celery-frontend`. A branch de trabalho foi
+`feature/printers-status-ui-operational-fixes`.
+
+### Objetivo
+
+Finalizar a leitura operacional do Status antes das proximas fases de toner e
+papel, mantendo a coleta atual em Redis/Celery e sem retomar a investigacao
+HTML publica da Brother DCP-L1632W.
+
+### Regras aplicadas
+
+- impressora offline passa a sobrescrever qualquer alerta antigo;
+- offline e exibido como `Sem servico`;
+- offline usa severidade interna `high` e nivel visual `vermelho`;
+- offline e ignorado no lote atual de coleta de alertas;
+- a mesma regra ficou centralizada para ser reutilizada por futuras coletas de
+  toner e papel;
+- o lote de alertas passou a retornar `ignoradas_offline`;
+- `Atualizado em` usa a ultima verificacao operacional do status atual;
+- a tela refaz a consulta automaticamente a cada 60 segundos;
+- a coluna textual de severidade foi removida da tabela;
+- a coluna `Alerta` passou a exibir a mensagem operacional da impressora;
+- a severidade permanece apenas para estilo visual, cards e ordenacao;
+- a coluna `Modelo` passou a exibir `Fabricante - Modelo`;
+- o cabecalho da tabela ficou sticky para permanecer visivel durante a rolagem.
+
+### Contrato de API
+
+A API de Status preserva os campos ja utilizados pelo frontend e tambem expõe
+aliases de leitura para a tela:
+
+- `status_operacional` e `status`;
+- `nivel_alerta` e `severidade`;
+- `mensagem_alerta`, `alerta` e `mensagem`;
+- `manufacturer`, `model` e `modelo_exibicao`;
+- `ultima_verificacao_em` e `verificado_em`.
+
+Os dados cadastrais continuam vindo do banco do ERP. HTML/SNMP nao alteram
+modelo, fabricante, nome, IP, setor, centro de custo, serial, MAC, firmware ou
+imagem cadastrada.
+
+### Limites preservados
+
+Esta etapa nao implementou percentual de toner, quantidade de papel, frontend
+de toner, frontend de papel, dashboard, headless/Playwright, tabela nova,
+credencial por maquina, `tentativas_coleta_impressoras`, HTML na cascata,
+persistencia de alertas HTML, HTML bruto, JS bruto ou retomada do `#moni_data`
+Brother.
+
+### Proxima etapa recomendada
+
+Avancar para percentual de toner ou quantidade de papel somente depois de
+validar a regra operacional de Status em uso real por alguns ciclos de coleta.
+
 ## Fora do escopo
 
 As etapas 3.5.1 e 3.5.2.0 não implementam a coleta de alertas em cinco minutos,
@@ -2906,6 +2964,10 @@ A etapa 3.5.2.18 finaliza a tela Status com API real, Redis/Celery e alertas
 atuais persistidos, mas ainda nao implementa dashboard real, percentual de
 toner, quantidade de papel, coleta rica, HTML na cascata, headless/Playwright
 ou novas tabelas de tentativa.
+
+A etapa 3.5.2.19 ajusta somente Status, API, coleta de alertas e tabela
+operacional; ela nao implementa toner, papel, dashboard, HTML na cascata ou
+novas tabelas de tentativa.
 
 ## Próximas etapas
 

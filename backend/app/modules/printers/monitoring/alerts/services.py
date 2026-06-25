@@ -18,6 +18,10 @@ from backend.app.modules.printers.monitoring.config import (
     MonitoringSettings,
     get_monitoring_settings,
 )
+from backend.app.modules.printers.monitoring.eligibility import (
+    OFFLINE_SKIP_REASON,
+    status_collection_skip_reason,
+)
 from backend.app.modules.printers.monitoring.locks import acquire_lock, release_lock
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     calculate_overall_classification,
@@ -27,7 +31,6 @@ from backend.app.modules.printers.monitoring.snmp.alert_collector import (
 from backend.app.modules.printers.monitoring.snmp.oids import get_active_oid_for_model
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.monitoring.state.rules import normalize_text
-from backend.app.modules.printers.status.models import StatusImpressora
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +44,7 @@ SNMP_ALERT_MAX_ATTEMPTS = 2
 ALERT_BATCH_IGNORED_REASONS = {
     "sem_ip",
     "sem_modelo",
-    "offline",
+    OFFLINE_SKIP_REASON,
     "sem_oid_alert_raw",
     "lock_ativo",
 }
@@ -538,13 +541,9 @@ def _skip_reason_for_alerts(db: Session, machine: PrinterMachine) -> str | None:
     if machine.model_id is None:
         return "sem_modelo"
 
-    status = (
-        db.query(StatusImpressora)
-        .filter(StatusImpressora.maquina_id == machine.id)
-        .one_or_none()
-    )
-    if status is not None and status.status_operacional == "offline":
-        return "offline"
+    operational_skip_reason = status_collection_skip_reason(db, machine.id)
+    if operational_skip_reason is not None:
+        return operational_skip_reason
 
     oid_config = get_active_oid_for_model(
         db,
@@ -638,6 +637,11 @@ def run_alerts_batch(
         "total_maquinas": len(machines),
         "processadas": processadas,
         "ignoradas": ignoradas,
+        "ignoradas_offline": sum(
+            result.get("processada") is False
+            and result.get("motivo") == OFFLINE_SKIP_REASON
+            for result in results
+        ),
         "sucesso": sum(
             result.get("processada") is True
             and result.get("sincronizado") is True

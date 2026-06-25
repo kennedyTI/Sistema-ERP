@@ -251,6 +251,13 @@ class AlertRulesEngineTest(TestCase):
         self.assertEqual(result["codigo"], "sleep")
         self.assertEqual(result["severidade"], "green")
 
+    def test_imprimindo_retorna_green(self):
+        rule = next(item for item in INITIAL_ALERT_RULES if item["codigo"] == "ok")
+        result = classify_alert("Imprimindo", [make_rule(**rule)])
+
+        self.assertEqual(result["codigo"], "ok")
+        self.assertEqual(result["severidade"], "green")
+
     def test_toner_low_retorna_medium(self):
         rule = next(
             item for item in INITIAL_ALERT_RULES if item["codigo"] == "toner_low"

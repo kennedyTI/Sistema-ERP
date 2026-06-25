@@ -48,13 +48,6 @@ const alertPriority: Record<AlertLevel, number> = {
   verde: 3,
 };
 
-const alertLabels: Record<AlertLevel, string> = {
-  cinza: "Desconhecido",
-  verde: "Normal",
-  amarelo: "Atenção",
-  vermelho: "Crítico",
-};
-
 const alertDotStyles: Record<AlertLevel, string> = {
   cinza: "bg-muted-foreground",
   verde: "bg-emerald-500",
@@ -69,8 +62,9 @@ const alertRowStyles: Record<AlertLevel, string> = {
   vermelho: "border-l-4 border-l-red-500 bg-red-500/[0.045] hover:bg-red-500/12",
 };
 
-type ColumnKey = "status" | "alert" | "message" | "location" | "machine" | "ip" | "updatedAt";
+type ColumnKey = "status" | "alert" | "location" | "machine" | "model" | "ip" | "updatedAt";
 type DropSide = "before" | "after";
+const STATUS_REFRESH_INTERVAL_MS = 60_000;
 
 interface ColumnPreferences {
   order: ColumnKey[];
@@ -87,9 +81,9 @@ const COLUMN_PREFERENCES_STORAGE_KEY = "sistema-erp-printer-status-columns";
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
   "status",
   "alert",
-  "message",
   "location",
   "machine",
+  "model",
   "ip",
   "updatedAt",
 ];
@@ -97,9 +91,9 @@ const DEFAULT_COLUMN_ORDER: ColumnKey[] = [
 const columnLabels: Record<ColumnKey, string> = {
   status: "Status",
   alert: "Alerta",
-  message: "Mensagem",
   location: "Local",
   machine: "Máquina",
+  model: "Modelo",
   ip: "IP",
   updatedAt: "Atualizado em",
 };
@@ -147,8 +141,8 @@ function StatusContent() {
     [statuses],
   );
 
-  async function loadStatuses() {
-    setLoading(true);
+  async function loadStatuses({ showLoading = true }: { showLoading?: boolean } = {}) {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const [statusData, summaryData] = await Promise.all([
@@ -160,12 +154,17 @@ function StatusContent() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar os status.");
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
   useEffect(() => {
     void loadStatuses();
+    const intervalId = window.setInterval(() => {
+      void loadStatuses({ showLoading: false });
+    }, STATUS_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -294,7 +293,10 @@ function StatusContent() {
       )}
 
       <section className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
-        <div className="flex min-h-14 items-center justify-end border-b border-border/70 px-3 py-2.5 sm:px-4">
+        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
+          <span className="text-xs text-muted-foreground">
+            Atualização automática a cada 60s
+          </span>
           <TooltipProvider>
             <DropdownMenu>
               <Tooltip>
@@ -351,7 +353,7 @@ function StatusContent() {
         ) : (
           <div className="max-w-full touch-pan-x overflow-x-auto overscroll-x-contain p-2 sm:p-3">
             <Table className="min-w-[1180px]">
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_var(--border)]">
                 <TableRow>
                   {displayedColumns.map((column) => (
                     <TableHead
@@ -359,7 +361,7 @@ function StatusContent() {
                       data-column-key={column}
                       aria-label={`${columnLabels[column]}. Arraste para mudar a posição da coluna.`}
                       className={cn(
-                        "relative select-none transition-[background-color,box-shadow,color,opacity] duration-150",
+                        "sticky top-0 z-20 select-none bg-card transition-[background-color,box-shadow,color,opacity] duration-150",
                         draggedColumn === column &&
                           "bg-primary/12 text-foreground opacity-80 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_38%,transparent)]",
                         dragOverColumn === column && draggedColumn !== column && "bg-primary/8",
@@ -448,7 +450,7 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
       );
     case "alert":
       return (
-        <TableCell key={column}>
+        <TableCell key={column} className="max-w-[320px] whitespace-normal">
           <span className="inline-flex items-center gap-2">
             <span
               className={cn(
@@ -457,14 +459,8 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
               )}
               aria-hidden="true"
             />
-            <span>{alertLabels[status.nivel_alerta]}</span>
+            <span>{status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado"}</span>
           </span>
-        </TableCell>
-      );
-    case "message":
-      return (
-        <TableCell key={column} className="max-w-[300px] whitespace-normal">
-          {status.mensagem_alerta ?? "Sem alerta informado"}
         </TableCell>
       );
     case "location":
@@ -475,11 +471,13 @@ function renderStatusCell(status: PrinterOperationalStatus, column: ColumnKey) {
           {status.machine_name}
         </TableCell>
       );
+    case "model":
+      return <TableCell key={column}>{status.modelo_exibicao ?? "-"}</TableCell>;
     case "ip":
       return <TableCell key={column}>{status.ip_address}</TableCell>;
     case "updatedAt":
       return (
-        <TableCell key={column}>{formatRelativeUpdate(status.ultima_verificacao_em)}</TableCell>
+        <TableCell key={column}>{formatRelativeUpdate(status.verificado_em)}</TableCell>
       );
   }
 }

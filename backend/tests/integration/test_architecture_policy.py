@@ -86,9 +86,9 @@ class CleanBasePolicyTest(TestCase):
         expected_columns = (
             '"status"',
             '"alert"',
-            '"message"',
             '"location"',
             '"machine"',
+            '"model"',
             '"ip"',
             '"updatedAt"',
         )
@@ -101,7 +101,13 @@ class CleanBasePolicyTest(TestCase):
         self.assertIn("onPointerMove", status_page)
         self.assertIn("localStorage.setItem", status_page)
         self.assertIn("renderStatusCell", status_page)
+        self.assertIn("STATUS_REFRESH_INTERVAL_MS", status_page)
+        self.assertIn("setInterval", status_page)
+        self.assertIn("clearInterval", status_page)
+        self.assertIn("modelo_exibicao", status_page)
+        self.assertIn("sticky top-0", status_page)
         self.assertNotIn("Status operacional", status_page)
+        self.assertNotIn("alertLabels", status_page)
         self.assertNotIn("<TableHead>Resposta</TableHead>", status_page)
         self.assertNotIn("Copiar IP", status_page + details_dialog)
         self.assertNotIn("Solicitar toner", status_page + details_dialog)

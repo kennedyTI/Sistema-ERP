@@ -180,6 +180,7 @@ class AlertCeleryBatchTest(TestCase):
 
         collector.assert_not_called()
         self.assertEqual(result["ignoradas"], 1)
+        self.assertEqual(result["ignoradas_offline"], 1)
         self.assertEqual(result["resultados"][0]["motivo"], "offline")
 
     def test_ignora_maquinas_sem_ip_sem_modelo_ou_sem_oid(self):
@@ -196,6 +197,7 @@ class AlertCeleryBatchTest(TestCase):
         )
 
         self.assertEqual(result["ignoradas"], 3)
+        self.assertEqual(result["ignoradas_offline"], 0)
         self.assertEqual(
             [item["motivo"] for item in result["resultados"]],
             ["sem_ip", "sem_modelo", "sem_oid_alert_raw"],
@@ -273,6 +275,7 @@ class AlertCeleryBatchTest(TestCase):
         self.assertEqual(result["total_maquinas"], 3)
         self.assertEqual(result["processadas"], 2)
         self.assertEqual(result["ignoradas"], 1)
+        self.assertEqual(result["ignoradas_offline"], 1)
         self.assertEqual(result["sucesso"], 1)
         self.assertEqual(result["falha"], 1)
         self.assertEqual(len(result["resultados"]), 3)
