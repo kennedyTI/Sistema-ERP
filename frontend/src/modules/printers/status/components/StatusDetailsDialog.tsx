@@ -5,8 +5,11 @@ import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
 import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
+  type AlertLevel,
   type PrinterOperationalLog,
+  type PrinterOperationalAlert,
   type PrinterOperationalStatus,
+  type StatusSeverity,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
@@ -41,6 +44,35 @@ const alertDotStyles = {
   vermelho: "bg-red-500",
 } as const;
 
+const statusBadgeStyles = {
+  online: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  offline: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+} as const;
+
+const alertPillStyles: Record<AlertLevel, string> = {
+  cinza: "border-muted-foreground/30 bg-muted/70 text-muted-foreground",
+  verde: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  amarelo: "border-amber-400/40 bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  vermelho: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+};
+
+const severityPriority: Record<StatusSeverity, number> = {
+  high: 0,
+  medium: 1,
+  low: 1,
+  unknown: 2,
+  green: 3,
+};
+
+const alertLevelPriority: Record<AlertLevel, number> = {
+  vermelho: 0,
+  amarelo: 1,
+  cinza: 2,
+  verde: 3,
+};
+
+const ALERT_ROTATION_INTERVAL_MS = 4_000;
+
 export function StatusDetailsDialog({
   status,
   open,
@@ -54,6 +86,7 @@ export function StatusDetailsDialog({
   const [logs, setLogs] = useState<PrinterOperationalLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alertRotationIndex, setAlertRotationIndex] = useState(0);
 
   // ---------------------------------------------------------------------------
   // 📌 MODAL ESTRITAMENTE CONSULTIVO
@@ -68,6 +101,7 @@ export function StatusDetailsDialog({
     setLogs([]);
     setError(null);
     setLoading(true);
+    setAlertRotationIndex(0);
 
     void Promise.all([
       fetchPrinterStatusDetail(status.machine_id),
@@ -92,6 +126,19 @@ export function StatusDetailsDialog({
   }, [open, status]);
 
   const current = details ?? status;
+  const displayAlerts = current ? alertsForModal(current) : [];
+  const visibleAlert = displayAlerts.length
+    ? displayAlerts[alertRotationIndex % displayAlerts.length]
+    : null;
+
+  useEffect(() => {
+    if (!open || displayAlerts.length <= 1) return;
+    const intervalId = window.setInterval(() => {
+      setAlertRotationIndex((currentIndex) => currentIndex + 1);
+    }, ALERT_ROTATION_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [displayAlerts.length, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -158,25 +205,41 @@ export function StatusDetailsDialog({
                     <p className="text-xs font-medium uppercase text-muted-foreground">
                       Status operacional
                     </p>
-                    <Badge variant="outline" className="mt-2">
+                    <Badge
+                      variant="outline"
+                      className={cn("mt-2", statusBadgeStyles[current.status_operacional])}
+                    >
                       {statusLabels[current.status_operacional]}
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                      Alerta operacional
-                    </p>
-                    <span className="mt-2 inline-flex items-center gap-2 text-sm capitalize">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Alerta</p>
+                    {visibleAlert ? (
                       <span
                         className={cn(
-                          "h-2.5 w-2.5 rounded-full",
-                          alertDotStyles[current.nivel_alerta],
+                          "mt-2 inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-sm font-medium",
+                          alertPillStyles[visibleAlert.nivel_alerta],
                         )}
-                      />
-                      {current.nivel_alerta}
-                    </span>
+                        title={displayAlerts.map((alert) => alert.mensagem).join(" | ")}
+                      >
+                        <span
+                          className={cn(
+                            "h-2.5 w-2.5 shrink-0 rounded-full",
+                            alertDotStyles[visibleAlert.nivel_alerta],
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 truncate">{visibleAlert.mensagem}</span>
+                        {displayAlerts.length > 1 && (
+                          <span className="rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] leading-none opacity-80">
+                            {(alertRotationIndex % displayAlerts.length) + 1}/{displayAlerts.length}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <p className="mt-1 text-sm">-</p>
+                    )}
                   </div>
-                  <Detail label="Mensagem de alerta" value={current.mensagem_alerta} />
                   <Detail label="Mensagem operacional" value={current.mensagem_operador} />
                   <Detail
                     label="Última atualização"
@@ -267,6 +330,46 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm">{value || "-"}</p>
     </div>
+  );
+}
+
+function alertsForModal(status: PrinterOperationalStatus): PrinterOperationalAlert[] {
+  if (status.status_operacional !== "online") {
+    return [
+      {
+        codigo: "sem_servico",
+        mensagem: "Sem serviço",
+        nivel_alerta: "vermelho",
+        severidade: "high",
+      },
+    ];
+  }
+
+  const alerts = status.alertas?.length
+    ? status.alertas
+    : [
+        {
+          codigo: "status_atual",
+          mensagem: status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado",
+          nivel_alerta: status.nivel_alerta,
+          severidade: status.severidade,
+        },
+      ];
+  const highestPriority = Math.min(
+    ...alerts.map((alert) =>
+      Math.min(
+        severityPriority[alert.severidade] ?? Number.MAX_SAFE_INTEGER,
+        alertLevelPriority[alert.nivel_alerta] ?? Number.MAX_SAFE_INTEGER,
+      ),
+    ),
+  );
+
+  return alerts.filter(
+    (alert) =>
+      Math.min(
+        severityPriority[alert.severidade] ?? Number.MAX_SAFE_INTEGER,
+        alertLevelPriority[alert.nivel_alerta] ?? Number.MAX_SAFE_INTEGER,
+      ) === highestPriority,
   );
 }
 

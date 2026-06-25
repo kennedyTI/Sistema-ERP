@@ -29,5 +29,9 @@ celery_app.conf.update(
             "task": "printers_connectivity_all",
             "schedule": float(os.getenv("PRINTER_CONNECTIVITY_INTERVAL_SECONDS", "60")),
         },
+        "printers-alerts-every-5-minutes": {
+            "task": "printers_alerts_all",
+            "schedule": float(os.getenv("PRINTER_ALERTS_INTERVAL_SECONDS", "300")),
+        },
     },
 )
