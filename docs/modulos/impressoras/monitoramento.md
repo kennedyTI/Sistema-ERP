@@ -104,7 +104,7 @@ O Alembic administra a tabela `regras_alertas_impressoras`, com os campos:
 - `criado_em`;
 - `atualizado_em`.
 
-O seed oficial é idempotente: cria as 18 regras iniciais quando ausentes e
+O seed oficial é idempotente: cria as regras iniciais quando ausentes e
 atualiza seus campos controlados quando já existem. A execução ocorre no serviço
 de migrations e também pode ser feita manualmente:
 
@@ -2877,6 +2877,66 @@ aliases de leitura para a tela:
 Os dados cadastrais continuam vindo do banco do ERP. HTML/SNMP nao alteram
 modelo, fabricante, nome, IP, setor, centro de custo, serial, MAC, firmware ou
 imagem cadastrada.
+
+### Aliases de alertas confirmados
+
+A seed de `regras_alertas_impressoras` continua idempotente e agora garante os
+aliases aprovados sem criar uma regra por variacao textual. As regras canonicas
+mais relevantes para esta etapa sao:
+
+| Mensagem | Codigo canonico | Severidade | Visual |
+| --- | --- | --- | --- |
+| `Subst. toner` | `replace_toner` | `high` | vermelho |
+| `subst toner` | `replace_toner` | `high` | vermelho |
+| `subs. o toner` | `replace_toner` | `high` | vermelho |
+| `toner replace` | `replace_toner` | `high` | vermelho |
+| `Subst. cilindro` | `replace_drum` | `high` | vermelho |
+| `subst cilindro` | `replace_drum` | `high` | vermelho |
+| `subs. cilindro` | `replace_drum` | `high` | vermelho |
+| `substitua cilindro` | `replace_drum` | `high` | vermelho |
+| `troque cilindro` | `replace_drum` | `high` | vermelho |
+| `Imprimindo` | `ok` | `green` | verde |
+| `Em impressao` | `ok` | `green` | verde |
+| `Sem servico` | `sem_servico` | `high` | vermelho |
+
+A regra `sem_servico` existe para consistencia de diagnostico e mensagens
+externas. A sobrescrita visual de offline, porem, continua baseada no status
+operacional atual e nao depende da mensagem coletada.
+
+### Frontend Status
+
+A tabela final de `/impressoras/status` exibe somente:
+
+- `Status`;
+- `Alerta`;
+- `Local`;
+- `Maquina`;
+- `Modelo`;
+- `IP`;
+- `Atualizado em`.
+
+Nao ha coluna textual de severidade. A severidade interna alimenta apenas a cor
+leve da linha, a bolinha da coluna `Alerta`, cards e ordenacao. A area de
+Status usa altura de viewport: os cards, a barra de atualizacao automatica e o
+cabecalho das colunas permanecem visiveis, enquanto apenas as linhas da tabela
+rolam no container interno.
+
+O frontend nao possui suite de testes automatizados dedicada nesta base. A
+validacao desta microetapa no frontend e feita por `npm.cmd audit`,
+`npm.cmd run build` e verificacao HTTPS local.
+
+### Validacoes da microetapa
+
+Validacoes executadas ou previstas para fechamento:
+
+- `py -3.11 -m compileall -q backend`;
+- `py -3.11 -m pytest -q`;
+- `py -3.11 manage.py check`;
+- `npm.cmd audit`;
+- `npm.cmd run build`;
+- `docker compose --env-file .env.docker up -d --no-build`;
+- `docker compose --env-file .env.docker ps -a`;
+- inspeção das tasks registradas do Celery.
 
 ### Limites preservados
 

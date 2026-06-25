@@ -29,13 +29,27 @@ INITIAL_ALERT_RULES = (
         "ativo": True,
     },
     {
+        "codigo": "sem_servico",
+        "descricao": "Sem serviço",
+        "severidade": "high",
+        "tipo_regra": "contains",
+        "padrao": (
+            "sem serviço,sem servico,offline,sem resposta,not responding,"
+            "unreachable,fora de serviço,fora de servico"
+        ),
+        "prioridade": 6,
+        "ativo": True,
+    },
+    {
         "codigo": "replace_toner",
         "descricao": "Substituir toner",
         "severidade": "high",
         "tipo_regra": "contains",
         "padrao": (
             "replace toner,substituir toner,trocar toner,subs toner,"
-            "subs. toner,subst toner,subst. toner,toner empty,sem toner"
+            "subs. toner,subs o toner,subs. o toner,subst toner,"
+            "subst. toner,subst o toner,subst. o toner,substituir o toner,"
+            "toner empty,sem toner,toner replace"
         ),
         "prioridade": 8,
         "ativo": True,
@@ -47,7 +61,10 @@ INITIAL_ALERT_RULES = (
         "tipo_regra": "contains",
         "padrao": (
             "replace drum,drum end,drum replace,substituir cilindro,"
-            "trocar cilindro,subs cilindro,subst cilindro"
+            "substituir o cilindro,trocar cilindro,subs cilindro,"
+            "subs. cilindro,subs o cilindro,subs. o cilindro,"
+            "subst cilindro,subst. cilindro,subst o cilindro,"
+            "subst. o cilindro,substitua cilindro,troque cilindro"
         ),
         "prioridade": 9,
         "ativo": True,
@@ -154,7 +171,10 @@ INITIAL_ALERT_RULES = (
         "descricao": "Operacional",
         "severidade": "green",
         "tipo_regra": "contains",
-        "padrao": "ready,online,operational,printing,imprimindo,pronta,pronto,ok",
+        "padrao": (
+            "ready,online,operational,printing,imprimindo,a imprimir,"
+            "em impressao,em impressão,pronta,pronto,ok"
+        ),
         "prioridade": 110,
         "ativo": True,
     },

@@ -100,6 +100,7 @@ class AlertRuleSeedTest(TestCase):
             {
                 "error",
                 "offline",
+                "sem_servico",
                 "replace_toner",
                 "replace_drum",
                 "paper_jam",
@@ -258,6 +259,16 @@ class AlertRulesEngineTest(TestCase):
         self.assertEqual(result["codigo"], "ok")
         self.assertEqual(result["severidade"], "green")
 
+    def test_ok_reconhece_aliases_de_impressao(self):
+        rule = next(item for item in INITIAL_ALERT_RULES if item["codigo"] == "ok")
+
+        for message in ("Printing", "A imprimir", "Em impressao", "Em impressão"):
+            with self.subTest(message=message):
+                result = classify_alert(message, [make_rule(**rule)])
+
+                self.assertEqual(result["codigo"], "ok")
+                self.assertEqual(result["severidade"], "green")
+
     def test_toner_low_retorna_medium(self):
         rule = next(
             item for item in INITIAL_ALERT_RULES if item["codigo"] == "toner_low"
@@ -276,6 +287,80 @@ class AlertRulesEngineTest(TestCase):
         result = classify_alert("Substituir toner", [make_rule(**rule)])
 
         self.assertEqual(result["codigo"], "replace_toner")
+        self.assertEqual(result["severidade"], "high")
+
+    def test_replace_toner_reconhece_abreviacao_com_artigo(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_toner"
+        )
+        result = classify_alert("Subs. o toner", [make_rule(**rule)])
+
+        self.assertEqual(result["codigo"], "replace_toner")
+        self.assertEqual(result["severidade"], "high")
+
+    def test_replace_toner_reconhece_aliases_criticos(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_toner"
+        )
+
+        for message in (
+            "Subst. toner",
+            "subst toner",
+            "subs. toner",
+            "subs. o toner",
+            "toner replace",
+            "sem toner",
+        ):
+            with self.subTest(message=message):
+                result = classify_alert(message, [make_rule(**rule)])
+
+                self.assertEqual(result["codigo"], "replace_toner")
+                self.assertEqual(result["severidade"], "high")
+
+    def test_replace_drum_reconhece_abreviacao(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_drum"
+        )
+        result = classify_alert("Subst. cilindro", [make_rule(**rule)])
+
+        self.assertEqual(result["codigo"], "replace_drum")
+        self.assertEqual(result["severidade"], "high")
+
+    def test_replace_drum_reconhece_aliases_criticos(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_drum"
+        )
+
+        for message in (
+            "subst cilindro",
+            "subs. cilindro",
+            "subst. o cilindro",
+            "substitua cilindro",
+            "troque cilindro",
+        ):
+            with self.subTest(message=message):
+                result = classify_alert(message, [make_rule(**rule)])
+
+                self.assertEqual(result["codigo"], "replace_drum")
+                self.assertEqual(result["severidade"], "high")
+
+    def test_sem_servico_retorna_high(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "sem_servico"
+        )
+        result = classify_alert("Sem serviço", [make_rule(**rule)])
+
+        self.assertEqual(result["codigo"], "sem_servico")
         self.assertEqual(result["severidade"], "high")
 
     def test_paper_jam_retorna_high(self):

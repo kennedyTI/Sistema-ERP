@@ -27,7 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/lib/utils";
 
@@ -282,18 +282,20 @@ function StatusContent() {
   }
 
   return (
-    <div className="mx-auto flex max-w-[1540px] flex-col gap-4">
-      <StatusSummaryCards summary={summary} loading={loading} />
+    <div className="mx-auto flex h-[calc(100dvh-5.5rem)] max-w-[1540px] flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-6rem)]">
+      <div className="shrink-0">
+        <StatusSummaryCards summary={summary} loading={loading} />
+      </div>
 
       {error && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="shrink-0">
           <AlertTitle>Erro ao consultar status</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <section className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
-        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border/70 bg-card shadow-[var(--shadow-card)]">
+        <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
           <span className="text-xs text-muted-foreground">
             Atualização automática a cada 60s
           </span>
@@ -351,8 +353,8 @@ function StatusContent() {
             </p>
           </div>
         ) : (
-          <div className="max-w-full touch-pan-x overflow-x-auto overscroll-x-contain p-2 sm:p-3">
-            <Table className="min-w-[1180px]">
+          <div className="min-h-0 max-w-full flex-1 touch-pan-x overflow-auto overscroll-contain p-2 sm:p-3">
+            <table className="w-full min-w-[1180px] caption-bottom text-sm">
               <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_var(--border)]">
                 <TableRow>
                   {displayedColumns.map((column) => (
@@ -419,7 +421,7 @@ function StatusContent() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </table>
           </div>
         )}
       </section>
