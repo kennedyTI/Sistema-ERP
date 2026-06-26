@@ -31,6 +31,7 @@ ALERT_DISPLAY_PRIORITY = {
 }
 OFFLINE_ALERT_MESSAGE = "Sem serviço"
 NO_ALERT_MESSAGE = "Sem alerta"
+TECHNICAL_NO_ALERT_RULE_CODES = {"unknown", "sem_retorno_alerta"}
 SEVERITY_BY_ALERT_LEVEL = {
     "cinza": "unknown",
     "verde": "green",
@@ -85,6 +86,15 @@ def _translate_alert_message(message: str) -> str:
     return clean_message
 
 
+def _is_neutral_technical_alert(item: dict[str, object]) -> bool:
+    rule = item["rule"]
+    return (
+        isinstance(rule, PrinterAlertRule)
+        and rule.codigo in TECHNICAL_NO_ALERT_RULE_CODES
+        and str(item["classificacao"]) == "cinza"
+    )
+
+
 def _alert_projection_for_rows(
     db: Session,
     machine_ids: list[int],
@@ -113,6 +123,11 @@ def _alert_projection_for_rows(
             }
             for alert, rule in alerts
         ]
+        classified = [
+            item for item in classified if not _is_neutral_technical_alert(item)
+        ]
+        if not classified:
+            continue
         classified.sort(
             key=lambda item: (
                 ALERT_DISPLAY_PRIORITY.get(str(item["classificacao"]), 9),

@@ -212,6 +212,40 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["alerta"], "Sem alerta")
         self.assertEqual(data["alertas"], [])
 
+    def test_online_ignora_alertas_tecnicos_neutros_persistidos(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="sem_retorno_alerta",
+            message="Nenhuma mensagem de alerta foi retornada pela impressora",
+        )
+        self._create_current_alert(
+            machine["id"],
+            code="unknown",
+            message="0x48c420706f75636f20746f6e6572",
+        )
+        headers = auth_headers(printers_status=True)
+
+        detail_response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+        summary_response = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(detail_response.status_code, 200)
+        data = detail_response.json()["data"]
+        self.assertEqual(data["status_operacional"], "online")
+        self.assertEqual(data["nivel_alerta"], "cinza")
+        self.assertEqual(data["alerta"], "Sem alerta")
+        self.assertEqual(data["alertas"], [])
+        self.assertEqual(summary_response.status_code, 200)
+        self.assertEqual(summary_response.json()["data"]["com_alerta"], 0)
+
     def test_status_reflete_alerta_atual_persistido(self):
         machine = self._create_machine()
         status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()

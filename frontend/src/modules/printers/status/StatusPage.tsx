@@ -179,6 +179,22 @@ function StatusContent() {
   }, []);
 
   useEffect(() => {
+    function refreshVisibleTab() {
+      if (document.visibilityState === "visible") {
+        void loadStatuses({ showLoading: false });
+      }
+    }
+
+    window.addEventListener("focus", refreshVisibleTab);
+    document.addEventListener("visibilitychange", refreshVisibleTab);
+
+    return () => {
+      window.removeEventListener("focus", refreshVisibleTab);
+      document.removeEventListener("visibilitychange", refreshVisibleTab);
+    };
+  }, []);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       setAlertRotationIndex((current) => current + 1);
     }, ALERT_ROTATION_INTERVAL_MS);

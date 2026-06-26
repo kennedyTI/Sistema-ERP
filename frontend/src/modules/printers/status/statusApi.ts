@@ -82,7 +82,11 @@ interface ApiEnvelope<T> {
 async function requestStatusApi<T>(path: string): Promise<T> {
   const token = getStoredToken();
   const response = await fetch(buildApiUrl(path), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
   const payload = (await response.json()) as ApiEnvelope<T>;
 
