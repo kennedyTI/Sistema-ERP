@@ -246,6 +246,42 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(summary_response.status_code, 200)
         self.assertEqual(summary_response.json()["data"]["com_alerta"], 0)
 
+    def test_online_exibe_unknown_textual_como_alerta_visivel(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "cinza"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="unknown",
+            message="paper is out (a4).",
+        )
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["status_operacional"], "online")
+        self.assertEqual(data["nivel_alerta"], "cinza")
+        self.assertEqual(data["alerta"], "Sem papel (A4).")
+        self.assertEqual(
+            data["alertas"],
+            [
+                {
+                    "codigo": "unknown",
+                    "mensagem": "Sem papel (A4).",
+                    "nivel_alerta": "cinza",
+                    "severidade": "unknown",
+                }
+            ],
+        )
+
     def test_status_reflete_alerta_atual_persistido(self):
         machine = self._create_machine()
         status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()

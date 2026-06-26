@@ -159,6 +159,10 @@ class AlertRulesEngineTest(TestCase):
             classify_alert("Toner baixo", rules)["codigo"],
             "toner_low",
         )
+        self.assertEqual(
+            classify_alert("paper is out (a4).", rules)["codigo"],
+            "no_paper",
+        )
 
     def test_regra_contains_reconhece_alerta(self):
         result = classify_alert(

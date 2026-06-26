@@ -92,7 +92,7 @@ INITIAL_ALERT_RULES = (
         "descricao": "Sem papel",
         "severidade": "high",
         "tipo_regra": "contains",
-        "padrao": "no paper,sem papel,no tray,bandeja vazia",
+        "padrao": "no paper,paper is out,paper out,sem papel,no tray,bandeja vazia",
         "prioridade": 15,
         "ativo": True,
     },

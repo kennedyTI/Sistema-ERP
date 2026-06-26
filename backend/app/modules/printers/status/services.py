@@ -31,7 +31,7 @@ ALERT_DISPLAY_PRIORITY = {
 }
 OFFLINE_ALERT_MESSAGE = "Sem serviço"
 NO_ALERT_MESSAGE = "Sem alerta"
-TECHNICAL_NO_ALERT_RULE_CODES = {"unknown", "sem_retorno_alerta"}
+HEX_ALERT_PATTERN = re.compile(r"^0x[0-9a-f]+$", re.IGNORECASE)
 SEVERITY_BY_ALERT_LEVEL = {
     "cinza": "unknown",
     "verde": "green",
@@ -56,6 +56,10 @@ ALERT_MESSAGE_TRANSLATIONS = (
         ),
         "Substituir cilindro em breve",
     ),
+    (
+        re.compile(r"^paper is out(?:\s*\((?P<detail>[^)]+)\))?\.?$", re.IGNORECASE),
+        "Sem papel",
+    ),
 )
 
 
@@ -78,20 +82,34 @@ def _translate_alert_message(message: str) -> str:
         match = pattern.match(clean_message)
         if not match:
             continue
-        color = match.groupdict().get("color")
-        if not color:
+        detail = match.groupdict().get("color") or match.groupdict().get("detail")
+        if not detail:
             return translated_message
-        translated_color = COLOR_TRANSLATIONS.get(color.strip().casefold(), color.strip())
-        return f"{translated_message} ({translated_color})."
+        translated_detail = _translate_alert_detail(detail)
+        return f"{translated_message} ({translated_detail})."
     return clean_message
+
+
+def _translate_alert_detail(detail: str) -> str:
+    clean_detail = detail.strip()
+    translated_color = COLOR_TRANSLATIONS.get(clean_detail.casefold())
+    if translated_color:
+        return translated_color
+    if re.fullmatch(r"[a-z]+\d+", clean_detail, re.IGNORECASE):
+        return clean_detail.upper()
+    return clean_detail
 
 
 def _is_neutral_technical_alert(item: dict[str, object]) -> bool:
     rule = item["rule"]
+    message = str(item["mensagem"] or "").strip()
+    if isinstance(rule, PrinterAlertRule) and rule.codigo == "sem_retorno_alerta":
+        return True
     return (
         isinstance(rule, PrinterAlertRule)
-        and rule.codigo in TECHNICAL_NO_ALERT_RULE_CODES
+        and rule.codigo == "unknown"
         and str(item["classificacao"]) == "cinza"
+        and (not message or HEX_ALERT_PATTERN.match(message) is not None)
     )
 
 
