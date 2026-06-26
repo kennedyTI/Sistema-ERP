@@ -75,6 +75,13 @@ const operationalStatusStyles: Record<string, string> = {
   erro: "border-orange-500/30 bg-orange-500/12 text-orange-700 dark:text-orange-300",
 };
 
+const operationalAlertStyles = {
+  neutral: "border-muted-foreground/30 bg-muted/70 text-muted-foreground",
+  warning: "border-amber-400/40 bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  critical: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+  normal: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+} as const;
+
 export function MachineDetailsDialog({
   machine,
   open,
@@ -593,7 +600,15 @@ function OperationalData({ details }: { details: PrinterMachineDetails | null })
             {operationalStatusLabels[statusKey] ?? statusKey}
           </Badge>
         </div>
-        <Detail label="Alerta operacional" value={operational?.alert} />
+        <div>
+          <p className="text-xs font-medium uppercase text-muted-foreground">Alerta</p>
+          <Badge
+            variant="outline"
+            className={cn("mt-2 max-w-full", getOperationalAlertStyle(operational))}
+          >
+            <span className="truncate">{operational?.alert || "-"}</span>
+          </Badge>
+        </div>
         <Detail label="Mensagem operacional" value={operational?.message} />
         <Detail
           label="Última atualização operacional"
@@ -602,6 +617,36 @@ function OperationalData({ details }: { details: PrinterMachineDetails | null })
       </div>
     </section>
   );
+}
+
+function getOperationalAlertStyle(operational: PrinterMachineDetails["operational_status"]) {
+  if (!operational?.alert) return operationalAlertStyles.neutral;
+  if (operational.status === "offline") return operationalAlertStyles.critical;
+
+  const alertText = operational.alert
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (
+    alertText.includes("sem servico") ||
+    alertText.includes("falha") ||
+    alertText.includes("critico")
+  ) {
+    return operationalAlertStyles.critical;
+  }
+
+  if (
+    alertText.includes("toner") ||
+    alertText.includes("cilindro") ||
+    alertText.includes("tambor") ||
+    alertText.includes("substituir")
+  ) {
+    return operationalAlertStyles.warning;
+  }
+
+  if (operational.status === "online") return operationalAlertStyles.normal;
+  return operationalAlertStyles.neutral;
 }
 
 function RecentLogs({ logs }: { logs: PrinterMachineDetails["recent_logs"] }) {
