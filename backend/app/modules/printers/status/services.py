@@ -30,6 +30,7 @@ ALERT_DISPLAY_PRIORITY = {
     "verde": 3,
 }
 OFFLINE_ALERT_MESSAGE = "Sem serviço"
+NO_ALERT_MESSAGE = "Sem alerta"
 SEVERITY_BY_ALERT_LEVEL = {
     "cinza": "unknown",
     "verde": "green",
@@ -174,7 +175,15 @@ def _display_alert_projection(
             ],
         }
 
-    current_alert = alert_projection or {}
+    if not alert_projection:
+        return {
+            "nivel_alerta": "cinza",
+            "mensagem_alerta": NO_ALERT_MESSAGE,
+            "codigos_alerta": [],
+            "alertas": [],
+        }
+
+    current_alert = alert_projection
     alert_level = str(current_alert.get("nivel_alerta") or status.nivel_alerta)
     alert_message = str(
         current_alert.get("mensagem_alerta")

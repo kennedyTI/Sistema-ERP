@@ -29,6 +29,7 @@ from backend.app.modules.printers.monitoring.snmp.oids import (  # noqa: E402
     oid_to_dict,
 )
 from backend.app.modules.printers.monitoring.snmp.seed import (  # noqa: E402
+    HR_PRINTER_STATUS_OID,
     INITIAL_SNMP_OIDS,
     INVALIDATED_SNMP_OIDS,
     PRT_ALERT_DESCRIPTION_BASE_OID,
@@ -252,9 +253,9 @@ class PrinterSnmpOidSeedTest(TestCase):
     def test_seed_idempotente_cria_oids_iniciais(self):
         result = seed_printer_snmp_oids(self.db)
 
-        self.assertEqual(result.created, 20)
+        self.assertEqual(result.created, 22)
         self.assertEqual(result.ignored, 0)
-        self.assertEqual(self.db.query(PrinterSnmpOid).count(), 20)
+        self.assertEqual(self.db.query(PrinterSnmpOid).count(), 22)
 
     def test_seed_idempotente_nao_duplica_oids(self):
         seed_printer_snmp_oids(self.db)
@@ -263,8 +264,8 @@ class PrinterSnmpOidSeedTest(TestCase):
 
         self.assertEqual(result.created, 0)
         self.assertEqual(result.updated, 0)
-        self.assertEqual(result.unchanged, 20)
-        self.assertEqual(self.db.query(PrinterSnmpOid).count(), 20)
+        self.assertEqual(result.unchanged, 22)
+        self.assertEqual(self.db.query(PrinterSnmpOid).count(), 22)
 
     def test_seed_repetido_atualiza_registros_existentes(self):
         seed_printer_snmp_oids(self.db)
@@ -309,6 +310,31 @@ class PrinterSnmpOidSeedTest(TestCase):
             row = self._oid_row(manufacturer, model_name, "alert_raw")
             self.assertEqual(row.modo_consulta, "walk")
             self.assertEqual(row.oid, PRT_ALERT_DESCRIPTION_BASE_OID)
+
+    def test_seed_define_hr_printer_status_somente_para_hp_e_samsung(self):
+        seed_printer_snmp_oids(self.db)
+
+        for manufacturer, model_name in (
+            ("HP", "MFP-4303"),
+            ("Samsung", "K-4350"),
+        ):
+            row = self._oid_row(manufacturer, model_name, "hr_printer_status")
+            self.assertEqual(row.modo_consulta, "get")
+            self.assertEqual(row.tipo_valor, "integer")
+            self.assertEqual(row.oid, HR_PRINTER_STATUS_OID)
+
+        for manufacturer, model_name in (
+            ("Brother", "DCP-L1632W"),
+            ("Brother", "DCP-L2540DW"),
+            ("Canon", "IR-C3326I"),
+        ):
+            model = self._model(manufacturer, model_name)
+            self.assertEqual(
+                self.db.query(PrinterSnmpOid)
+                .filter_by(modelo_id=model.id, chave_metrica="hr_printer_status")
+                .count(),
+                0,
+            )
 
     def test_seed_ignora_modelo_inexistente_sem_quebrar(self):
         result = seed_printer_snmp_oids(

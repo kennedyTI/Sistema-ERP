@@ -169,6 +169,11 @@ class PrinterStatusApiTest(TestCase):
         status.mensagem_alerta = "Substituir toner black"
         status.mensagem_operador = "Solicitar toner ao almoxarifado"
         self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Substituir toner",
+        )
         headers = auth_headers(printers_status=True)
 
         response = self.client.get("/api/v2/printers/status/summary", headers=headers)
@@ -184,6 +189,28 @@ class PrinterStatusApiTest(TestCase):
                 "substituir_toner": 1,
             },
         )
+
+    def test_online_sem_alerta_atual_retorna_sem_alerta_neutro(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        status.nivel_alerta = "vermelho"
+        status.mensagem_alerta = "Ainda nao verificada"
+        self.db.commit()
+        headers = auth_headers(printers_status=True)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["status_operacional"], "online")
+        self.assertEqual(data["nivel_alerta"], "cinza")
+        self.assertEqual(data["severidade"], "unknown")
+        self.assertEqual(data["alerta"], "Sem alerta")
+        self.assertEqual(data["alertas"], [])
 
     def test_status_reflete_alerta_atual_persistido(self):
         machine = self._create_machine()

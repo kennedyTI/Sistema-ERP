@@ -3093,6 +3093,67 @@ headless, coleta rica, tabela nova, credencial por maquina,
 diagnostico `#moni_data` Brother. Tambem nao versiona HTML bruto, JS bruto,
 relatorios locais, dumps, certificados ou dados reais.
 
+## Etapa 3.5.2.21 - Estrategia de status por modelo
+
+Esta microetapa corrige a coleta de mensagem operacional usando a v1 apenas
+como referencia conceitual de apresentacao de status e severidade. Nao houve
+copia de arquivos inteiros da v1.
+
+### Decisao tecnica
+
+A v2 passa a selecionar a metrica SNMP conforme o modelo/fabricante:
+
+| Modelos | Estrategia |
+| --- | --- |
+| Brother e Canon | `alert_raw` via WALK em `prtAlertDescription` (`1.3.6.1.2.1.43.18.1.1.8`) |
+| HP e Samsung | `hr_printer_status` via GET em `hrPrinterStatus` (`1.3.6.1.2.1.25.3.5.1.1.1`) |
+
+A chave `hr_printer_status` foi adicionada a configuracao de OIDs SNMP e ao
+seed oficial apenas para HP MFP-4303 e Samsung K-4350. Brother e Canon
+continuam com `alert_raw`.
+
+### Normalizacao antes das regras
+
+Valores SNMP em hexadecimal, como `0x...`, sao decodificados antes de passar
+pela Rules Engine. O frontend e a API nao devem receber hexadecimal como
+mensagem operacional.
+
+Estados de `hrPrinterStatus` sao convertidos para mensagens controladas:
+
+| Valor | Mensagem |
+| --- | --- |
+| `3` | `Em espera` |
+| `4` | `Imprimindo` |
+| `5` | `Aquecendo` |
+
+As regras oficiais tambem reconhecem aliases como `Ha pouco toner`,
+`Toner is low`, `Imprimindo`, `Aquecendo` e `Em espera`.
+
+### Sem alerta
+
+Quando a impressora esta online e a coleta nao retorna alerta real, a API de
+Status projeta:
+
+```json
+{
+  "status": "online",
+  "alerta": "Sem alerta",
+  "severidade": "unknown"
+}
+```
+
+Esse estado e neutro/cinza no frontend e nao e persistido como alerta real em
+`alertas_impressoras`. Se existiam alertas atuais antigos para a maquina, eles
+sao limpos na sincronizacao.
+
+### Limites preservados
+
+Esta etapa nao implementa percentual de toner, quantidade de papel, dashboard,
+HTML `#moni_data`, credencial por maquina, tabela nova,
+`tentativas_coleta_impressoras`, fallback HTML na cascata, persistencia de
+alertas HTML, coleta rica, alteracao de Celery/task ou alteracao da Rules
+Engine para fora dos aliases necessarios.
+
 ## Próximas etapas
 
 - integrar o fallback HTML autenticado na cascata de alertas;

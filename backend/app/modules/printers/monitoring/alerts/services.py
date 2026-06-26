@@ -24,6 +24,8 @@ from backend.app.modules.printers.monitoring.eligibility import (
 )
 from backend.app.modules.printers.monitoring.locks import acquire_lock, release_lock
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
+    ALERT_RAW_METRIC_KEY,
+    alert_metric_key_for_machine,
     calculate_overall_classification,
     collect_snmp_alerts_for_machine,
     severity_to_visual_classification,
@@ -46,6 +48,7 @@ ALERT_BATCH_IGNORED_REASONS = {
     "sem_modelo",
     OFFLINE_SKIP_REASON,
     "sem_oid_alert_raw",
+    "sem_oid_hr_printer_status",
     "lock_ativo",
 }
 
@@ -172,21 +175,7 @@ def _normalized_alert_entries(
     entries: list[dict[str, Any]] = []
 
     if not raw_alerts:
-        message = TECHNICAL_RULE_CODES["sem_retorno_alerta"]
-        entries.append(
-            {
-                "codigo": "sem_retorno_alerta",
-                "regra_codigo": "sem_retorno_alerta",
-                "mensagem_original": None,
-                "mensagem_original_normalizada": normalize_text(message),
-                "oid_retornado": None,
-                "chave_alerta": f"snmp:{metadata['metodo_coleta']}:sem_retorno_alerta",
-                "oid_snmp_id": oid_config_id,
-                "metadata": metadata,
-                "verificado_em": verified_at,
-            }
-        )
-        return entries
+        return []
 
     for index, raw_alert in enumerate(raw_alerts):
         normalized = normalized_alerts[index] if index < len(normalized_alerts) else {}
@@ -306,11 +295,12 @@ def sync_machine_alerts_from_collection_result(
 
     verified_at = now_sao_paulo()
     previous_classification = _current_overall_classification(db, machine.id)
+    metric_key = collection_result.get("chave_metrica") or ALERT_RAW_METRIC_KEY
     oid_config = (
         get_active_oid_for_model(
             db,
             model_id=machine.model_id,
-            metric_key="alert_raw",
+            metric_key=metric_key,
         )
         if machine.model_id is not None
         else None
@@ -333,6 +323,32 @@ def sync_machine_alerts_from_collection_result(
         oid_config_id=oid_config.id if oid_config is not None else None,
         verified_at=verified_at,
     )
+    if not entries:
+        existing_rows = (
+            db.query(AlertaImpressora)
+            .filter(AlertaImpressora.maquina_id == machine.id)
+            .all()
+        )
+        for row in existing_rows:
+            db.delete(row)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return {
+            "maquina_id": machine.id,
+            "sincronizado": True,
+            "classificacao_anterior": previous_classification,
+            "classificacao_nova": "cinza",
+            "alertas_atuais": 0,
+            "historico_criado": False,
+            "unknown_historicos_criados": 0,
+            "falha_tecnica_consolidada": False,
+            "sem_alerta_real": True,
+        }
+
     rules_by_code = {
         code: _rule_by_code(db, code)
         for code in {entry["regra_codigo"] for entry in entries}
@@ -545,13 +561,14 @@ def _skip_reason_for_alerts(db: Session, machine: PrinterMachine) -> str | None:
     if operational_skip_reason is not None:
         return operational_skip_reason
 
+    metric_key = alert_metric_key_for_machine(machine)
     oid_config = get_active_oid_for_model(
         db,
         model_id=machine.model_id,
-        metric_key="alert_raw",
+        metric_key=metric_key,
     )
     if oid_config is None:
-        return "sem_oid_alert_raw"
+        return f"sem_oid_{metric_key}"
 
     return None
 
@@ -570,6 +587,7 @@ def _safe_alert_task_result(result: dict[str, Any]) -> dict[str, Any]:
         "falha_tecnica_consolidada",
         "tentativas_snmp",
         "erro_codigo",
+        "sem_alerta_real",
     }
     return {key: result[key] for key in safe_keys if key in result}
 
@@ -649,5 +667,12 @@ def run_alerts_batch(
             for result in results
         ),
         "falha": falha,
+        "sem_alerta_real": sum(result.get("sem_alerta_real") is True for result in results),
+        "com_alerta_real": sum(
+            result.get("processada") is True
+            and int(result.get("alertas_atuais") or 0) > 0
+            and result.get("falha_tecnica_consolidada") is not True
+            for result in results
+        ),
         "resultados": results,
     }

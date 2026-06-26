@@ -19,6 +19,7 @@ class PrinterSnmpOidAdminModel(models.Model):
         max_length=80,
         choices=(
             ("alert_raw", "alert_raw"),
+            ("hr_printer_status", "hr_printer_status"),
             ("name", "name"),
             ("location", "location"),
             ("page_count_total", "page_count_total"),

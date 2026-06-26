@@ -143,7 +143,8 @@ INITIAL_ALERT_RULES = (
         "tipo_regra": "contains",
         "padrao": (
             "toner baixo,toner low,toner is low,low toner,cartucho baixo,"
-            "suprimento baixo,near end,quase vazio"
+            "suprimento baixo,near end,quase vazio,ha pouco toner,"
+            "pouco toner"
         ),
         "prioridade": 50,
         "ativo": True,
@@ -173,7 +174,7 @@ INITIAL_ALERT_RULES = (
         "tipo_regra": "contains",
         "padrao": (
             "ready,online,operational,printing,imprimindo,a imprimir,"
-            "em impressao,em impressão,pronta,pronto,ok"
+            "em impressao,em impressão,pronta,pronto,aquecendo,warmup,ok"
         ),
         "prioridade": 110,
         "ativo": True,

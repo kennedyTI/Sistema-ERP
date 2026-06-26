@@ -423,16 +423,23 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertEqual(len(current), 1)
         self.assertEqual(self.rule_code_for_current(current[0]), "toner_low")
 
-    def test_coleta_vazia_vira_sem_retorno_alerta_cinza(self):
+    def test_coleta_vazia_limpa_alertas_atuais_sem_persistir_sem_alerta(self):
+        self.sync(
+            [raw_alert("Substituir toner")],
+            [normalized_alert("replace_toner", severity="high", classification="vermelho")],
+        )
+
         result = self.sync([], [])
         current = self.current_alerts()
         histories = self.histories()
 
         self.assertEqual(result["classificacao_nova"], "cinza")
-        self.assertEqual(len(current), 1)
-        self.assertEqual(self.rule_code_for_current(current[0]), "sem_retorno_alerta")
+        self.assertEqual(result["alertas_atuais"], 0)
+        self.assertTrue(result["sem_alerta_real"])
+        self.assertEqual(len(current), 0)
+        self.assertEqual(len(histories), 1)
         self.assertEqual(histories[0].codigo_evento, "estado_inicial_alerta")
-        self.assertEqual(histories[0].classificacao_nova, "cinza")
+        self.assertEqual(histories[0].classificacao_nova, "vermelho")
 
     def test_falha_snmp_apos_duas_tentativas_vira_falha_consolidada_vermelha(self):
         collector = SequenceCollector(
