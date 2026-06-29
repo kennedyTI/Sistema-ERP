@@ -11,6 +11,7 @@ export interface PrinterOperationalAlert {
   mensagem: string;
   nivel_alerta: AlertLevel;
   severidade: StatusSeverity;
+  prioridade: number;
 }
 
 export interface PrinterOperationalStatus {

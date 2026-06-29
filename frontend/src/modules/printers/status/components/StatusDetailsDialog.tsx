@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { Activity, Loader2 } from "lucide-react";
 
 import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
+import { selectHighestSeverityAlerts } from "@/modules/printers/status/alertSelection";
 import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
   type AlertLevel,
   type PrinterOperationalLog,
-  type PrinterOperationalAlert,
   type PrinterOperationalStatus,
-  type StatusSeverity,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
@@ -54,21 +53,6 @@ const alertPillStyles: Record<AlertLevel, string> = {
   verde: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
   amarelo: "border-amber-400/40 bg-amber-500/12 text-amber-700 dark:text-amber-300",
   vermelho: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
-};
-
-const severityPriority: Record<StatusSeverity, number> = {
-  high: 0,
-  medium: 1,
-  low: 1,
-  unknown: 2,
-  green: 3,
-};
-
-const alertLevelPriority: Record<AlertLevel, number> = {
-  vermelho: 0,
-  amarelo: 1,
-  cinza: 2,
-  verde: 3,
 };
 
 const ALERT_ROTATION_INTERVAL_MS = 4_000;
@@ -126,7 +110,7 @@ export function StatusDetailsDialog({
   }, [open, status]);
 
   const current = details ?? status;
-  const displayAlerts = current ? alertsForModal(current) : [];
+  const displayAlerts = current ? selectHighestSeverityAlerts(current) : [];
   const visibleAlert = displayAlerts.length
     ? displayAlerts[alertRotationIndex % displayAlerts.length]
     : null;
@@ -330,46 +314,6 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm">{value || "-"}</p>
     </div>
-  );
-}
-
-function alertsForModal(status: PrinterOperationalStatus): PrinterOperationalAlert[] {
-  if (status.status_operacional !== "online") {
-    return [
-      {
-        codigo: "sem_servico",
-        mensagem: "Sem serviço",
-        nivel_alerta: "vermelho",
-        severidade: "high",
-      },
-    ];
-  }
-
-  const alerts = status.alertas?.length
-    ? status.alertas
-    : [
-        {
-          codigo: "status_atual",
-          mensagem: status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado",
-          nivel_alerta: status.nivel_alerta,
-          severidade: status.severidade,
-        },
-      ];
-  const highestPriority = Math.min(
-    ...alerts.map((alert) =>
-      Math.min(
-        severityPriority[alert.severidade] ?? Number.MAX_SAFE_INTEGER,
-        alertLevelPriority[alert.nivel_alerta] ?? Number.MAX_SAFE_INTEGER,
-      ),
-    ),
-  );
-
-  return alerts.filter(
-    (alert) =>
-      Math.min(
-        severityPriority[alert.severidade] ?? Number.MAX_SAFE_INTEGER,
-        alertLevelPriority[alert.nivel_alerta] ?? Number.MAX_SAFE_INTEGER,
-      ) === highestPriority,
   );
 }
 

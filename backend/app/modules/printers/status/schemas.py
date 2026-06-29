@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 StatusOperacional = Literal["online", "offline"]
 NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
-SeveridadeStatus = Literal["unknown", "green", "medium", "high"]
+SeveridadeStatus = Literal["unknown", "green", "low", "medium", "high"]
 OrigemStatus = Literal["sistema", "manual", "seed", "futuro_snmp"]
 MetodoConfirmacao = Literal["icmp", "tcp", "snmp", "html", "fallback"]
 
@@ -18,6 +18,7 @@ class PrinterStatusAlertRead(BaseModel):
     mensagem: str
     nivel_alerta: NivelAlerta
     severidade: SeveridadeStatus
+    prioridade: int
 
 
 class PrinterStatusRead(BaseModel):

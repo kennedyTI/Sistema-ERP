@@ -3150,9 +3150,63 @@ sao limpos na sincronizacao.
 
 Esta etapa nao implementa percentual de toner, quantidade de papel, dashboard,
 HTML `#moni_data`, credencial por maquina, tabela nova,
-`tentativas_coleta_impressoras`, fallback HTML na cascata, persistencia de
-alertas HTML, coleta rica, alteracao de Celery/task ou alteracao da Rules
-Engine para fora dos aliases necessarios.
+`tentativas_coleta_impressoras`, coleta rica, alteracao de Celery/task ou
+alteracao da Rules Engine para fora dos aliases necessarios. O fallback HTML
+autenticado foi integrado somente para Canon IR-C3326I: ele e acionado depois
+de falha tecnica ou ausencia de alerta real no SNMP e nao persiste HTML bruto.
+
+## Etapa 3.5.2.22 - Priorizacao de alertas por severidade
+
+Esta microetapa corrige a escolha do alerta principal quando uma impressora
+retorna simultaneamente um estado operacional verde e um alerta real. A v1 ja
+usava severidade nas regras; na v2, a fonte oficial permanece o campo
+`regras_alertas_impressoras.severidade`, relacionado por `regra_alerta_id`.
+
+Nao foi criada coluna nem snapshot de severidade em `alertas_impressoras` e nao
+houve migration. A API apenas projeta a severidade e a prioridade atuais da
+regra em cada item de `alertas[]`.
+
+### Ordenacao da API
+
+A ordem de exibicao usa os seguintes pesos:
+
+| Severidade | Peso |
+| --- | ---: |
+| `high` | 50 |
+| `medium` | 40 |
+| `low` | 30 |
+| `unknown` | 20 |
+| `green` | 10 |
+
+Valores nao reconhecidos sao tratados como `unknown`. Quanto maior o peso,
+mais cedo o alerta aparece. Dentro da mesma severidade, a menor prioridade
+numerica da regra vence, seguindo a direcao ja adotada pela Rules Engine. O
+desempate final usa mensagem e codigo para manter a resposta deterministica.
+
+O primeiro item ordenado define `alerta`, `mensagem`, `mensagem_alerta`,
+`severidade` e `nivel_alerta` no status principal. O array `alertas[]` preserva
+os demais alertas reais, tambem ordenados, e cada item contem `codigo`,
+`mensagem`, `severidade`, `prioridade` e `nivel_alerta`.
+
+### Exibicao no frontend
+
+A tabela Status e o modal usam o mesmo seletor compartilhado. Ambos exibem ou
+alternam somente os alertas pertencentes a maior severidade presente. Quando
+existem dois alertas `high`, por exemplo substituicao de toner e de cilindro,
+eles alternam a cada quatro segundos com indicador `1/2` e `2/2`. Um alerta de
+severidade inferior permanece no payload e na busca, mas nao entra nessa
+alternancia.
+
+Assim, `Sleep/green` nao esconde `Ha pouco toner/medium` ou `low`. Se `Sleep`
+for o unico estado recebido, ele continua verde. Online sem alerta real
+continua `Sem alerta/unknown`, e offline continua `Sem servico/high`.
+
+### Validacoes
+
+Foram mantidas as validacoes de compilacao e testes completos do backend,
+`manage.py check`, auditoria e build do frontend, stack Docker, tasks Celery e
+Beat, API real e navegacao HTTPS local. Nenhum segredo, HTML bruto ou JS bruto
+e exposto por esta mudanca.
 
 ## Próximas etapas
 

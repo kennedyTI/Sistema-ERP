@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session, joinedload
 from backend.app.modules.printers.machines.models import PrinterMachine
 from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
-    calculate_overall_classification,
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
@@ -23,11 +22,12 @@ class PrinterStatusNotFoundError(Exception):
     pass
 
 
-ALERT_DISPLAY_PRIORITY = {
-    "vermelho": 0,
-    "amarelo": 1,
-    "cinza": 2,
-    "verde": 3,
+SEVERITY_WEIGHT = {
+    "high": 50,
+    "medium": 40,
+    "low": 30,
+    "unknown": 20,
+    "green": 10,
 }
 OFFLINE_ALERT_MESSAGE = "Sem serviço"
 NO_ALERT_MESSAGE = "Sem alerta"
@@ -65,8 +65,28 @@ ALERT_MESSAGE_TRANSLATIONS = (
 
 def _classification_from_rule(rule: PrinterAlertRule) -> str:
     return severity_to_visual_classification(
-        rule.severidade,
+        _safe_severity(rule.severidade),
         recognized=rule.codigo not in {"unknown", "sem_retorno_alerta"},
+    )
+
+
+def _safe_severity(value: str | None) -> str:
+    return value if value in SEVERITY_WEIGHT else "unknown"
+
+
+def severity_weight(value: str | None) -> int:
+    return SEVERITY_WEIGHT[_safe_severity(value)]
+
+
+def _alert_sort_key(item: dict[str, object]) -> tuple[int, int, str, str]:
+    rule = item["rule"]
+    assert isinstance(rule, PrinterAlertRule)
+    # Na Rules Engine, o menor numero representa a regra mais importante.
+    return (
+        -severity_weight(str(item["severidade"])),
+        rule.prioridade,
+        str(item["mensagem"]).casefold(),
+        rule.codigo.casefold(),
     )
 
 
@@ -138,6 +158,7 @@ def _alert_projection_for_rows(
                 "rule": rule,
                 "classificacao": _classification_from_rule(rule),
                 "mensagem": _message_from_current_alert(alert, rule),
+                "severidade": _safe_severity(rule.severidade),
             }
             for alert, rule in alerts
         ]
@@ -146,33 +167,23 @@ def _alert_projection_for_rows(
         ]
         if not classified:
             continue
-        classified.sort(
-            key=lambda item: (
-                ALERT_DISPLAY_PRIORITY.get(str(item["classificacao"]), 9),
-                str(item["mensagem"]).casefold(),
-            )
-        )
-        overall = calculate_overall_classification(classified)
+        classified.sort(key=_alert_sort_key)
         primary = classified[0]
-        highest_alert_level = str(primary["classificacao"])
-        visible_alerts = [
-            item
-            for item in classified
-            if str(item["classificacao"]) == highest_alert_level
-        ]
         projections[machine_id] = {
-            "nivel_alerta": overall,
+            "nivel_alerta": primary["classificacao"],
+            "severidade": primary["severidade"],
             "mensagem_alerta": primary["mensagem"],
-            "codigos_alerta": [rule.codigo for _alert, rule in alerts],
+            "codigos_alerta": [item["rule"].codigo for item in classified],
             "verificado_em": primary["alert"].verificado_em,
             "alertas": [
                 {
                     "codigo": item["rule"].codigo,
                     "mensagem": item["mensagem"],
                     "nivel_alerta": item["classificacao"],
-                    "severidade": _severity_from_alert_level(str(item["classificacao"])),
+                    "severidade": item["severidade"],
+                    "prioridade": item["rule"].prioridade,
                 }
-                for item in visible_alerts
+                for item in classified
             ],
         }
     return projections
@@ -196,6 +207,7 @@ def _display_alert_projection(
     if status.status_operacional != "online":
         return {
             "nivel_alerta": "vermelho",
+            "severidade": "high",
             "mensagem_alerta": OFFLINE_ALERT_MESSAGE,
             "codigos_alerta": [],
             "alertas": [
@@ -204,6 +216,7 @@ def _display_alert_projection(
                     "mensagem": OFFLINE_ALERT_MESSAGE,
                     "nivel_alerta": "vermelho",
                     "severidade": "high",
+                    "prioridade": 6,
                 }
             ],
         }
@@ -211,6 +224,7 @@ def _display_alert_projection(
     if not alert_projection:
         return {
             "nivel_alerta": "cinza",
+            "severidade": "unknown",
             "mensagem_alerta": NO_ALERT_MESSAGE,
             "codigos_alerta": [],
             "alertas": [],
@@ -225,6 +239,8 @@ def _display_alert_projection(
     )
     return {
         "nivel_alerta": alert_level,
+        "severidade": current_alert.get("severidade")
+        or _severity_from_alert_level(alert_level),
         "mensagem_alerta": alert_message,
         "codigos_alerta": current_alert.get("codigos_alerta") or [],
         "alertas": current_alert.get("alertas")
@@ -234,6 +250,7 @@ def _display_alert_projection(
                 "mensagem": alert_message,
                 "nivel_alerta": alert_level,
                 "severidade": _severity_from_alert_level(alert_level),
+                "prioridade": 1000,
             }
         ],
     }
@@ -294,7 +311,7 @@ def _status_to_read(
         status_operacional=operational_status,
         status=operational_status,
         nivel_alerta=alert_level,
-        severidade=_severity_from_alert_level(alert_level),
+        severidade=str(display_alert["severidade"]),
         alerta=alert_message,
         alertas=display_alert["alertas"],
         mensagem=alert_message,
