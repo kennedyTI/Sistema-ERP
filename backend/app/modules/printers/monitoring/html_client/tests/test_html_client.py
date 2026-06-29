@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import patch
 from pathlib import Path
 
 import requests
@@ -7,6 +8,7 @@ from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 from backend.app.modules.printers.monitoring.html_client.client import (
     build_html_url,
     fetch_html_page,
+    parse_canon_login_form,
     parse_brother_login_form,
     protocol_sequence,
     validate_port,
@@ -433,3 +435,63 @@ class HtmlClientBrotherFormLoginTest(TestCase):
         self.assertNotIn("Cookie", serialized)
         self.assertNotIn("valor-ficticio", serialized)
         self.assertIsNone(result.conteudo_html)
+
+
+class HtmlClientCanonFormLoginTest(TestCase):
+    def test_parser_detecta_formulario_canon_sem_expor_campos_sensiveis(self):
+        form = parse_canon_login_form(fixture_html("canon_ir_c3326i_login_form.html"))
+        metadata = form.safe_metadata()
+        serialized = str(metadata)
+
+        self.assertTrue(form.login_form_detected)
+        self.assertEqual(form.action, "/login")
+        self.assertEqual(form.method, "post")
+        self.assertTrue(form.username_input_detected)
+        self.assertTrue(form.password_visible_input_detected)
+        self.assertTrue(form.password_hidden_input_detected)
+        self.assertTrue(form.challenge_detected)
+        self.assertTrue(form.public_key_detected)
+        self.assertNotIn("CHALLENGE_SANITIZADO", serialized)
+        self.assertNotIn("PUBLIC_KEY_SANITIZADA", serialized)
+
+    def test_login_canon_form_faz_get_post_e_novo_get_status(self):
+        session = FakeSession(
+            FakeResponse(200, fixture_html("canon_ir_c3326i_login_form.html")),
+            FakeResponse(200, "<html><body>Estado do dispositivo Impressora Modo de espera</body></html>"),
+        )
+        session.post_results = [FakeResponse(302, "", cookies={"canon_sid": "valor-ficticio"})]
+
+        with patch(
+            "backend.app.modules.printers.monitoring.html_client.client._encrypt_canon_password",
+            return_value="senha-criptografada-ficticia",
+        ) as encrypt_password:
+            result = fetch_html_page(
+                "10.0.0.10",
+                config(
+                    tipo_autenticacao="form",
+                    protocolo_preferencial="http",
+                    caminho_status="/",
+                    caminho_login="/",
+                    porta=8000,
+                ),
+                session=session,
+            )
+
+        self.assertTrue(result.sucesso)
+        self.assertIn("Estado do dispositivo", result.conteudo_html)
+        self.assertEqual([call["method"] for call in session.calls], ["GET", "POST", "GET"])
+        self.assertEqual(session.calls[0]["url"], "http://10.0.0.10:8000/")
+        self.assertEqual(session.calls[1]["url"], "http://10.0.0.10:8000/login")
+        self.assertEqual(session.calls[2]["url"], "http://10.0.0.10:8000/")
+        self.assertEqual(session.calls[1]["data"]["USERNAME"], "admin")
+        self.assertEqual(session.calls[1]["data"]["PASSWORD"], "senha-criptografada-ficticia")
+        self.assertEqual(session.calls[1]["data"]["PASSWORD_T"], "")
+        self.assertEqual(session.calls[1]["data"]["DOMAIN"], "localhost")
+        self.assertEqual(result.metadados["canon_login_form_detected"], True)
+        self.assertEqual(result.metadados["post_executado"], True)
+        self.assertEqual(result.metadados["cookies_recebidos"], True)
+        encrypt_password.assert_called_once()
+
+        serialized = str(result)
+        self.assertNotIn("senha-ficticia", serialized)
+        self.assertNotIn("valor-ficticio", serialized)

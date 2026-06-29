@@ -6,6 +6,8 @@ from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 import requests
 from requests import RequestException
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
@@ -25,6 +27,11 @@ UNSUPPORTED_AUTH_TYPES = ("cookie",)
 BROTHER_FORM_AUTH_TYPES = ("form",)
 LOGIN_CONTAINER_ID = "LogInOutBox"
 PASSWORD_INPUT_ID = "LogBox"
+CANON_CHALLENGE_FIELD = "CHALLENGE"
+CANON_PUBLIC_KEY_FIELD = "PK"
+CANON_USERNAME_FIELD = "USERNAME"
+CANON_PASSWORD_FIELD = "PASSWORD"
+CANON_PASSWORD_VISIBLE_FIELD = "PASSWORD_T"
 VOID_HTML_TAGS = {
     "area",
     "base",
@@ -127,6 +134,106 @@ class BrotherLoginFormParser(HTMLParser):
         self.handle_starttag(tag, attrs)
 
 
+@dataclass
+class CanonLoginForm:
+    form_detected: bool = False
+    action: str | None = None
+    method: str = "post"
+    hidden_fields: dict[str, str] = field(default_factory=dict)
+    username_input_detected: bool = False
+    password_visible_input_detected: bool = False
+    password_hidden_input_detected: bool = False
+    challenge_detected: bool = False
+    public_key_detected: bool = False
+
+    @property
+    def login_form_detected(self) -> bool:
+        return self.form_detected and self.challenge_detected and self.public_key_detected
+
+    def safe_metadata(self) -> dict[str, Any]:
+        return {
+            "canon_login_form_detected": self.login_form_detected,
+            "canon_challenge_detected": self.challenge_detected,
+            "canon_public_key_detected": self.public_key_detected,
+            "canon_username_input_detected": self.username_input_detected,
+            "canon_password_input_detected": self.password_visible_input_detected,
+            "canon_password_hidden_detected": self.password_hidden_input_detected,
+            "hidden_fields_count": len(self.hidden_fields),
+            "post_executado": False,
+            "cookies_recebidos": False,
+        }
+
+
+class CanonLoginFormParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.form = CanonLoginForm()
+        self._form_depth = 0
+        self._selected_form_depth = 0
+        self._candidate_forms: list[CanonLoginForm] = []
+        self._candidate_form: CanonLoginForm | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        normalized_tag = tag.lower()
+        attributes = {key.upper(): value or "" for key, value in attrs}
+        lower_attributes = {key.lower(): value or "" for key, value in attrs}
+
+        if normalized_tag == "form":
+            self._form_depth += 1
+            self._candidate_form = CanonLoginForm(
+                form_detected=True,
+                action=lower_attributes.get("action") or None,
+                method=(lower_attributes.get("method") or "post").lower(),
+            )
+            self._selected_form_depth = self._form_depth
+            return
+
+        if not self._candidate_form or self._selected_form_depth <= 0:
+            return
+
+        if normalized_tag not in VOID_HTML_TAGS:
+            self._form_depth += 1
+
+        if normalized_tag != "input":
+            return
+
+        field_name = attributes.get("NAME") or attributes.get("ID")
+        field_id = attributes.get("ID")
+        input_type = (lower_attributes.get("type") or "text").lower()
+        field_value = lower_attributes.get("value") or ""
+
+        if input_type == "hidden" and field_name:
+            self._candidate_form.hidden_fields[field_name] = field_value
+
+        if field_name == CANON_CHALLENGE_FIELD:
+            self._candidate_form.challenge_detected = bool(field_value)
+        elif field_name == CANON_PUBLIC_KEY_FIELD:
+            self._candidate_form.public_key_detected = bool(field_value)
+        elif field_name == CANON_USERNAME_FIELD:
+            self._candidate_form.username_input_detected = True
+        elif field_name == CANON_PASSWORD_FIELD:
+            self._candidate_form.password_hidden_input_detected = True
+        elif field_name == CANON_PASSWORD_VISIBLE_FIELD or field_id == CANON_PASSWORD_VISIBLE_FIELD:
+            self._candidate_form.password_visible_input_detected = True
+
+    def handle_endtag(self, tag: str):
+        normalized_tag = tag.lower()
+        if normalized_tag == "form" and self._candidate_form:
+            self._candidate_forms.append(self._candidate_form)
+            if self._candidate_form.login_form_detected and not self.form.login_form_detected:
+                self.form = self._candidate_form
+            self._candidate_form = None
+            self._selected_form_depth = 0
+            self._form_depth = 0
+            return
+
+        if self._form_depth > 0:
+            self._form_depth -= 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        self.handle_starttag(tag, attrs)
+
+
 def validate_relative_html_path(path: str | None, *, field_name: str = "caminho") -> str | None:
     if path in (None, ""):
         return None
@@ -221,12 +328,24 @@ def parse_brother_login_form(html: str | None) -> BrotherLoginForm:
     return parser.form
 
 
+def parse_canon_login_form(html: str | None) -> CanonLoginForm:
+    parser = CanonLoginFormParser()
+    parser.feed(html or "")
+    return parser.form
+
+
 def _is_csrf_field(value: str | None) -> bool:
     return (value or "").lower() == "csrftoken"
 
 
 def _safe_login_metadata(**overrides) -> dict[str, Any]:
     metadata = BrotherLoginForm().safe_metadata()
+    metadata.update(overrides)
+    return metadata
+
+
+def _safe_canon_login_metadata(**overrides) -> dict[str, Any]:
+    metadata = CanonLoginForm().safe_metadata()
     metadata.update(overrides)
     return metadata
 
@@ -274,12 +393,34 @@ def _resolve_brother_form_action(login_url: str, action: str | None) -> str:
     return urljoin(login_url, action)
 
 
+def _resolve_form_action(login_url: str, action: str | None) -> str:
+    return _resolve_brother_form_action(login_url, action)
+
+
 def _has_session_cookies(session, response=None) -> bool:
     cookies = getattr(session, "cookies", None)
     if cookies:
         return True
     response_cookies = getattr(response, "cookies", None)
     return bool(response_cookies)
+
+
+def _encrypt_canon_password(password: str, challenge: str, public_key: str) -> str:
+    try:
+        key = serialization.load_pem_public_key(public_key.encode("utf-8"))
+        encrypted = key.encrypt(
+            f"{password}{challenge}".encode("utf-8"),
+            padding.PKCS1v15(),
+        )
+    except Exception as exc:  # pragma: no cover - detalhes criptograficos nao devem vazar.
+        raise HtmlClientError(
+            "login_canon_criptografia_invalida",
+            "Nao foi possivel preparar a senha do formulario Canon.",
+        ) from exc
+
+    import base64
+
+    return base64.b64encode(encrypted).decode("ascii")
 
 
 def _failure_response(
@@ -481,6 +622,96 @@ def _fetch_brother_form_page(
                     status_code=post_response.status_code,
                     metadados=login_metadata,
                 )
+
+        if not form.container_detected:
+            canon_form = parse_canon_login_form(login_response.text)
+            login_metadata.update(canon_form.safe_metadata())
+            if canon_form.login_form_detected:
+                if not config.usuario:
+                    return _failure_response(
+                        config=config,
+                        code="credencial_html_incompleta",
+                        detail="Usuario HTML nao informado.",
+                        url=login_url,
+                        protocol=protocol,
+                        metadados=login_metadata,
+                    )
+                if not canon_form.password_hidden_input_detected:
+                    return _failure_response(
+                        config=config,
+                        code="login_password_input_nao_detectado",
+                        detail="Input de senha do formulario Canon nao encontrado.",
+                        url=login_url,
+                        protocol=protocol,
+                        metadados=login_metadata,
+                    )
+                if canon_form.method != "post":
+                    return _failure_response(
+                        config=config,
+                        code="login_form_method_invalido",
+                        detail="Formulario Canon usa metodo diferente de POST.",
+                        url=login_url,
+                        protocol=protocol,
+                        metadados=login_metadata,
+                    )
+                try:
+                    action_url = _resolve_form_action(login_url, canon_form.action)
+                    encrypted_password = _encrypt_canon_password(
+                        config.senha,
+                        canon_form.hidden_fields[CANON_CHALLENGE_FIELD],
+                        canon_form.hidden_fields[CANON_PUBLIC_KEY_FIELD],
+                    )
+                except HtmlClientError as exc:
+                    return _failure_response(
+                        config=config,
+                        code=exc.code,
+                        detail=exc.detail,
+                        url=login_url,
+                        protocol=protocol,
+                        metadados=login_metadata,
+                    )
+
+                payload = dict(canon_form.hidden_fields)
+                payload[CANON_USERNAME_FIELD] = config.usuario
+                payload[CANON_PASSWORD_FIELD] = encrypted_password
+                payload[CANON_PASSWORD_VISIBLE_FIELD] = ""
+                if not payload.get("DOMAIN"):
+                    payload["DOMAIN"] = "localhost"
+                payload.setdefault("URI", target_path)
+                try:
+                    post_response = http_session.post(
+                        action_url,
+                        data=payload,
+                        timeout=config.timeout_segundos,
+                        verify=config.validar_ssl,
+                        allow_redirects=True,
+                    )
+                except RequestException as exc:
+                    login_metadata["post_executado"] = True
+                    return _failure_response(
+                        config=config,
+                        code="falha_login_formulario_html",
+                        detail=exc.__class__.__name__,
+                        url=login_url,
+                        protocol=protocol,
+                        metadados=login_metadata,
+                    )
+
+                login_metadata["post_executado"] = True
+                login_metadata["cookies_recebidos"] = _has_session_cookies(
+                    http_session,
+                    post_response,
+                )
+                if not (200 <= post_response.status_code < 400):
+                    return _failure_response(
+                        config=config,
+                        code="login_formulario_sem_sucesso",
+                        detail=f"HTTP {post_response.status_code}",
+                        url=login_url,
+                        protocol=protocol,
+                        status_code=post_response.status_code,
+                        metadados=login_metadata,
+                    )
 
         try:
             target_response = http_session.get(

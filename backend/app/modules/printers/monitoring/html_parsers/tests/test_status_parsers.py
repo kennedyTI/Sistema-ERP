@@ -75,10 +75,7 @@ class HtmlStatusParserByModelTest(TestCase):
 
         self.assertTrue(result.sucesso)
         self.assertEqual(result.estado_principal, "Ocorreu um erro.")
-        self.assertIn("Ocorreu um erro.", result.mensagens_brutas)
-        self.assertIn("O toner Magenta está baixo.", result.mensagens_brutas)
-        self.assertIn("O toner Amarelo está baixo.", result.mensagens_brutas)
-        self.assertIn("Poderá ter ocorrido um erro.", result.mensagens_brutas)
+        self.assertEqual(result.mensagens_brutas, ["Ocorreu um erro."])
         self.assertNotEqual(result.estado_principal, "Modo de espera.")
         self.assertNotIn("Modo de espera.", result.mensagens_brutas)
 
@@ -435,10 +432,71 @@ class HtmlStatusParserByModelTest(TestCase):
         )
 
         self.assertTrue(result.sucesso)
-        self.assertEqual(result.estado_principal, "Ocorreu um erro.")
+        self.assertEqual(result.estado_principal, "Poderá ter ocorrido um erro.")
+        self.assertNotIn("Ocorreu um erro.", result.mensagens_brutas)
         self.assertIn("o toner magenta esta baixo.", result.mensagens_normalizadas)
         self.assertIn("o toner amarelo esta baixo.", result.mensagens_normalizadas)
         self.assertNotIn("Modo de espera.", result.mensagens_brutas)
+
+    def test_parser_canon_prioriza_informacoes_de_erro(self):
+        html = fixture_html("canon_ir_c3326i_status_with_error_info.html")
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(
+            result.mensagens_brutas,
+            [
+                "Poderá ter ocorrido um erro.",
+                "O toner Magenta está baixo.",
+                "O toner Amarelo está baixo.",
+            ],
+        )
+        self.assertEqual(result.estado_principal, "Poderá ter ocorrido um erro.")
+        self.assertNotIn("Ocorreu um erro.", result.mensagens_brutas)
+
+    def test_parser_canon_detecta_modo_espera_da_impressora(self):
+        html = """
+        <html>
+          <body>
+            <h1>Estado do dispositivo</h1>
+            <section>
+              <h2>Impressora</h2>
+              <p>Impressora</p>
+              <p>Modo de espera</p>
+            </section>
+          </body>
+        </html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.estado_principal, "Modo de espera")
+        self.assertEqual(result.mensagens_brutas, ["Modo de espera"])
+
+    def test_parser_canon_usa_estado_da_impressora_quando_erro_vazio(self):
+        html = """
+        <html>
+          <body>
+            <h1>Estado do dispositivo</h1>
+            <dl>
+              <dt>Impressora :</dt>
+              <dd>Modo de espera.</dd>
+              <dt>Scanner :</dt>
+              <dd>Modo de espera.</dd>
+            </dl>
+            <h2>Informações de Erro</h2>
+            <p>Nenhum</p>
+            <h2>Informações de Consumíveis</h2>
+          </body>
+        </html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Modo de espera."])
 
     def test_parser_samsung_detecta_estado_e_alerta_separados(self):
         result = parse_status_html_for_model(

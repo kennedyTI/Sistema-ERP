@@ -22,12 +22,22 @@ from backend.app.modules.printers.monitoring.eligibility import (
     OFFLINE_SKIP_REASON,
     status_collection_skip_reason,
 )
+from backend.app.modules.printers.monitoring.html_client.client import fetch_html_page
+from backend.app.modules.printers.monitoring.html_client.models import HtmlClientResponse
+from backend.app.modules.printers.monitoring.html_credentials.services import (
+    get_decrypted_html_access_for_model,
+)
+from backend.app.modules.printers.monitoring.html_parsers.registry import (
+    parse_html_status_response,
+)
 from backend.app.modules.printers.monitoring.locks import acquire_lock, release_lock
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     ALERT_RAW_METRIC_KEY,
     alert_metric_key_for_machine,
     calculate_overall_classification,
     collect_snmp_alerts_for_machine,
+    empty_alert_result,
+    normalize_raw_alerts,
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.snmp.oids import get_active_oid_for_model
@@ -43,6 +53,7 @@ TECHNICAL_RULE_CODES = {
 }
 DEFAULT_ALERT_LOCK_TTL_SECONDS = 120
 SNMP_ALERT_MAX_ATTEMPTS = 2
+HTML_STATUS_METRIC_KEY = "html_status"
 ALERT_BATCH_IGNORED_REASONS = {
     "sem_ip",
     "sem_modelo",
@@ -89,7 +100,13 @@ def _current_overall_classification(db: Session, machine_id: int) -> str | None:
 
 
 def _method_confirmation(method: str | None) -> str:
-    return "snmp_walk" if method == "walk" else "snmp_get"
+    if method == "walk":
+        return "snmp_walk"
+    if method == "html_autenticado":
+        return "html_autenticado"
+    if method == "cascata":
+        return "falha_cascata"
+    return "snmp_get"
 
 
 def _base_collection_metadata(result: dict[str, Any]) -> dict[str, str]:
@@ -99,6 +116,12 @@ def _base_collection_metadata(result: dict[str, Any]) -> dict[str, str]:
         "metodo_coleta": method,
         "metodo_confirmacao": _method_confirmation(method),
     }
+
+
+def _is_canon_ir_c3326i(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "canon" and model_name == "ir-c3326i"
 
 
 def _system_failure_metadata() -> dict[str, str]:
@@ -182,6 +205,7 @@ def _normalized_alert_entries(
         code = normalized.get("codigo") or "unknown"
         message = raw_alert.get("valor_original")
         returned_oid = raw_alert.get("oid_retornado")
+        origin = metadata["origem_coleta"]
         entries.append(
             {
                 "codigo": code,
@@ -190,9 +214,9 @@ def _normalized_alert_entries(
                 "mensagem_original_normalizada": normalize_text(message),
                 "oid_retornado": returned_oid,
                 "chave_alerta": (
-                    f"snmp:{metadata['metodo_coleta']}:{returned_oid}"
+                    f"{origin}:{metadata['metodo_coleta']}:{returned_oid}"
                     if returned_oid
-                    else f"snmp:{metadata['metodo_coleta']}:{code}"
+                    else f"{origin}:{metadata['metodo_coleta']}:{code}"
                 ),
                 "oid_snmp_id": oid_config_id,
                 "metadata": metadata,
@@ -468,6 +492,100 @@ def sync_machine_alerts_from_collection_result(
     }
 
 
+def collect_html_alerts_for_machine(
+    db: Session,
+    *,
+    machine_id: int,
+    settings: MonitoringSettings | None = None,
+    fetcher: Callable[..., HtmlClientResponse] = fetch_html_page,
+) -> dict[str, Any]:
+    """Coleta mensagens operacionais via HTML autenticado sem armazenar HTML bruto."""
+    machine = db.get(PrinterMachine, machine_id)
+    if machine is None:
+        return {
+            "maquina_id": machine_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "maquina_nao_encontrada",
+            "erro_detalhe": "Maquina nao encontrada.",
+        }
+    if machine.model_id is None or machine.printer_model is None:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "maquina_sem_modelo",
+            "erro_detalhe": "Maquina sem modelo vinculado.",
+        }
+
+    config = get_decrypted_html_access_for_model(db, model_id=machine.model_id)
+    if config is None:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "html_credencial_nao_configurada",
+            "erro_detalhe": "Credencial HTML ativa nao configurada para o modelo.",
+        }
+
+    response = fetcher(machine.ip_address, config, page_type="status")
+    parse_result = parse_html_status_response(machine.printer_model, response)
+    if not parse_result.sucesso:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": parse_result.erro_codigo or "html_status_nao_detectado",
+            "erro_detalhe": parse_result.erro_detalhe_sanitizado
+            or "Status HTML nao detectado.",
+            "metadados": {
+                "parser": parse_result.metadados.get("parser"),
+            },
+        }
+
+    raw_alerts = [
+        {
+            "oid_retornado": None,
+            "valor_original": message,
+            "valor_repr": repr(message),
+            "tipo_snmp": "HtmlStatus",
+        }
+        for message in parse_result.mensagens_brutas
+    ]
+    normalized_alerts = (
+        normalize_raw_alerts(db=db, raw_alerts=raw_alerts)
+        if raw_alerts
+        else [empty_alert_result()]
+    )
+    return {
+        "maquina_id": machine.id,
+        "modelo_id": machine.model_id,
+        "sucesso": True,
+        "origem_coleta": "html",
+        "chave_metrica": HTML_STATUS_METRIC_KEY,
+        "modo_consulta": "html_autenticado",
+        "oid_configurado": None,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": calculate_overall_classification(normalized_alerts),
+        "sem_alerta_real": not raw_alerts,
+        "metadados": {
+            "parser": parse_result.metadados.get("parser"),
+        },
+    }
+
+
 def _is_snmp_technical_failure(result: dict[str, Any]) -> bool:
     return bool(result.get("erro_codigo", "").startswith("snmp_"))
 
@@ -479,6 +597,7 @@ def collect_and_sync_machine_alerts(
     redis_client: Redis,
     settings: MonitoringSettings | None = None,
     collector: Callable[..., dict[str, Any]] = collect_snmp_alerts_for_machine,
+    html_collector: Callable[..., dict[str, Any]] = collect_html_alerts_for_machine,
     max_snmp_attempts: int = SNMP_ALERT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Orquestra coleta SNMP com lock e sincronizacao atomica."""
@@ -498,6 +617,8 @@ def collect_and_sync_machine_alerts(
 
     attempts = 0
     last_result: dict[str, Any] | None = None
+    fallback_html_used = False
+    fallback_html_error: str | None = None
     try:
         for _ in range(max_snmp_attempts):
             attempts += 1
@@ -516,6 +637,30 @@ def collect_and_sync_machine_alerts(
                 "erro_codigo": "snmp_sem_resposta",
                 "erro_detalhe": "Falha tecnica na coleta de alertas.",
             }
+
+        machine = db.get(PrinterMachine, machine_id)
+        should_try_html = bool(
+            machine
+            and _is_canon_ir_c3326i(machine)
+            and (
+                _is_snmp_technical_failure(last_result)
+                or (
+                    last_result.get("sucesso")
+                    and last_result.get("sem_alerta_real")
+                )
+            )
+        )
+        if should_try_html:
+            html_result = html_collector(
+                db,
+                machine_id=machine_id,
+                settings=config,
+            )
+            if html_result.get("sucesso") and not html_result.get("sem_alerta_real"):
+                last_result = html_result
+                fallback_html_used = True
+            elif not html_result.get("sucesso"):
+                fallback_html_error = html_result.get("erro_codigo")
 
         if not last_result.get("sucesso") and not _is_snmp_technical_failure(last_result):
             return {
@@ -541,8 +686,11 @@ def collect_and_sync_machine_alerts(
             {
                 "processada": True,
                 "tentativas_snmp": attempts,
+                "fallback_html_usado": fallback_html_used,
             }
         )
+        if fallback_html_error:
+            sync_result["fallback_html_erro"] = fallback_html_error
         return sync_result
     except Exception:
         db.rollback()
