@@ -1,16 +1,24 @@
 """Regras do status atual e da linha do tempo operacional de impressoras."""
 
 import re
+from datetime import timedelta
 
 from sqlalchemy.orm import Session, joinedload
 
 from backend.app.modules.printers.machines.models import PrinterMachine
-from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
+from backend.app.core.timezone import now_sao_paulo
+from backend.app.modules.printers.monitoring.alerts.models import (
+    AlertaImpressora,
+    HistoricoAlertaImpressora,
+)
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
-from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
+from backend.app.modules.printers.status.models import (
+    HistoricoStatusImpressora,
+    StatusImpressora,
+)
 from backend.app.modules.printers.status.schemas import (
     PrinterLogRead,
     PrinterStatusRead,
@@ -31,6 +39,8 @@ SEVERITY_WEIGHT = {
 }
 OFFLINE_ALERT_MESSAGE = "Sem serviço"
 NO_ALERT_MESSAGE = "Sem alerta"
+RECENT_LOG_WINDOW_HOURS = 24
+MAX_RECENT_LOGS = 10
 HEX_ALERT_PATTERN = re.compile(r"^0x[0-9a-f]+$", re.IGNORECASE)
 SEVERITY_BY_ALERT_LEVEL = {
     "cinza": "unknown",
@@ -324,7 +334,6 @@ def _status_to_read(
         tempo_resposta_ms=status.tempo_resposta_ms,
         metodo_confirmacao=status.metodo_confirmacao,
         origem=status.origem,
-        resposta_bruta=status.resposta_bruta,
     )
 
 
@@ -429,30 +438,86 @@ def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
     )
 
 
-def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[PrinterLogRead]:
+def _status_history_message(history: HistoricoStatusImpressora) -> str:
+    if history.status_novo == "online":
+        if history.status_anterior == "offline":
+            return "Impressora voltou a ficar Online"
+        return "Primeira confirmacao: impressora Online"
+    if history.status_anterior == "online":
+        return "Impressora ficou Offline"
+    return "Primeira confirmacao: impressora Offline"
+
+
+def _alert_history_message(
+    history: HistoricoAlertaImpressora,
+    rule: PrinterAlertRule,
+) -> str:
+    if history.codigo_evento == "alerta_nao_catalogado":
+        return "Alerta nao catalogado detectado"
+
+    description = rule.descricao or "Alerta operacional"
+    if history.codigo_evento == "estado_inicial_alerta":
+        return f"Alerta detectado: {description}"
+    return f"Alerta alterado: {description}"
+
+
+def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[PrinterLogRead]:
+    """Une os historicos operacionais recentes sem expor detalhes tecnicos."""
     get_printer_status(db, machine_id)
-    logs = (
-        db.query(LogImpressora)
-        .filter(LogImpressora.maquina_id == machine_id)
-        .order_by(LogImpressora.criado_em.desc(), LogImpressora.id.desc())
-        .limit(limit)
+    effective_limit = min(max(limit, 1), MAX_RECENT_LOGS)
+    cutoff = now_sao_paulo() - timedelta(hours=RECENT_LOG_WINDOW_HOURS)
+
+    status_history = (
+        db.query(HistoricoStatusImpressora)
+        .filter(
+            HistoricoStatusImpressora.maquina_id == machine_id,
+            HistoricoStatusImpressora.verificado_em >= cutoff,
+        )
+        .order_by(
+            HistoricoStatusImpressora.verificado_em.desc(),
+            HistoricoStatusImpressora.id.desc(),
+        )
+        .limit(effective_limit)
         .all()
     )
-    return [
-        PrinterLogRead(
-            id=log.id,
-            machine_id=log.maquina_id,
-            tipo_evento=log.tipo_evento,
-            status_anterior=log.status_anterior,
-            status_novo=log.status_novo,
-            alerta_anterior=log.alerta_anterior,
-            alerta_novo=log.alerta_novo,
-            mensagem=log.mensagem,
-            verificado_em=log.verificado_em,
-            tempo_resposta_ms=log.tempo_resposta_ms,
-            origem=log.origem,
-            resposta_bruta=log.resposta_bruta,
-            criado_em=log.criado_em,
+
+    alert_history = (
+        db.query(HistoricoAlertaImpressora, PrinterAlertRule)
+        .join(
+            PrinterAlertRule,
+            PrinterAlertRule.id == HistoricoAlertaImpressora.regra_alerta_id,
         )
-        for log in logs
+        .filter(
+            HistoricoAlertaImpressora.maquina_id == machine_id,
+            HistoricoAlertaImpressora.verificado_em >= cutoff,
+        )
+        .order_by(
+            HistoricoAlertaImpressora.verificado_em.desc(),
+            HistoricoAlertaImpressora.id.desc(),
+        )
+        .limit(effective_limit)
+        .all()
+    )
+
+    events = [
+        PrinterLogRead(
+            id=f"status:{history.id}",
+            data_hora=history.verificado_em,
+            tipo=history.codigo_evento,
+            mensagem=_status_history_message(history),
+            origem="status",
+        )
+        for history in status_history
     ]
+    events.extend(
+        PrinterLogRead(
+            id=f"alerta:{history.id}",
+            data_hora=history.verificado_em,
+            tipo=history.codigo_evento,
+            mensagem=_alert_history_message(history, rule),
+            origem="alerta",
+        )
+        for history, rule in alert_history
+    )
+    events.sort(key=lambda event: (event.data_hora, event.id), reverse=True)
+    return events[:effective_limit]

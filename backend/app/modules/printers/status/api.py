@@ -55,7 +55,7 @@ def status_detail(
 @router.get("/{machine_id}/logs", response_model=ApiResponse[list[PrinterLogRead]])
 def status_logs(
     machine_id: int,
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=10),
     _user: PortalUser = Depends(require_printers_status_access),
     db: Session = Depends(get_db),
 ):
@@ -63,4 +63,4 @@ def status_logs(
         data = list_printer_logs(db, machine_id, limit=limit)
     except PrinterStatusNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Status da impressora nao encontrado.") from exc
-    return api_success(data, "Logs operacionais da impressora.")
+    return api_success(data, "Eventos operacionais das ultimas 24 horas.")

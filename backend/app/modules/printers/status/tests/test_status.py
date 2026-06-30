@@ -11,10 +11,17 @@ from backend.app.main import app
 from backend.app.modules.audit.orm import AuditLog
 from backend.app.core.timezone import now_sao_paulo
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
-from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
+from backend.app.modules.printers.monitoring.alerts.models import (
+    AlertaImpressora,
+    HistoricoAlertaImpressora,
+)
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.monitoring.state.seed import seed_alert_rules
-from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
+from backend.app.modules.printers.status.models import (
+    HistoricoStatusImpressora,
+    LogImpressora,
+    StatusImpressora,
+)
 from backend.tests.auth_helpers import auth_headers
 
 
@@ -31,6 +38,8 @@ class PrinterStatusApiTest(TestCase):
         PrinterAlertRule.__table__.create(engine)
         AlertaImpressora.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
+        HistoricoStatusImpressora.__table__.create(engine)
+        HistoricoAlertaImpressora.__table__.create(engine)
         LogImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
@@ -95,6 +104,47 @@ class PrinterStatusApiTest(TestCase):
         self.db.commit()
         return alert
 
+    def _create_status_history(self, machine_id: int, *, verified_at, current="online"):
+        previous = "offline" if current == "online" else "online"
+        history = HistoricoStatusImpressora(
+            maquina_id=machine_id,
+            status_anterior=previous,
+            status_novo=current,
+            metodo_confirmacao="icmp",
+            codigo_evento=f"{current}_confirmado",
+            descricao_evento="Descricao interna nao exposta.",
+            detalhes={"Authorization": "Bearer segredo-nao-pode-vazar"},
+            latencia_ms=10,
+            verificado_em=verified_at,
+        )
+        self.db.add(history)
+        self.db.commit()
+        return history
+
+    def _create_alert_history(self, machine_id: int, *, verified_at):
+        rule = self.db.query(PrinterAlertRule).filter_by(codigo="toner_low").one()
+        history = HistoricoAlertaImpressora(
+            maquina_id=machine_id,
+            regra_alerta_id=rule.id,
+            codigo_alerta=rule.codigo,
+            severidade=rule.severidade,
+            classificacao_anterior="cinza",
+            classificacao_nova="amarelo",
+            origem_coleta="snmp",
+            metodo_confirmacao="snmp_walk",
+            metodo_coleta="walk",
+            chave_alerta="snmp:walk:toner_low",
+            mensagem_original='{"token":"segredo-nao-pode-vazar"}',
+            mensagem_original_normalizada="conteudo tecnico",
+            codigo_evento="estado_inicial_alerta",
+            descricao_evento="Descricao interna nao exposta.",
+            detalhes={"cookie": "segredo-nao-pode-vazar"},
+            verificado_em=verified_at,
+        )
+        self.db.add(history)
+        self.db.commit()
+        return history
+
     def test_nova_maquina_recebe_status_inicial(self):
         machine = self._create_machine(image_url="/static/imgs/printers/modelo-exemplo.png")
 
@@ -119,6 +169,101 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["mensagem_alerta"], "Sem serviço")
         self.assertEqual(data["mensagem_operador"], "Aguardando primeira verificacao.")
         self.assertEqual(data["origem"], "sistema")
+        self.assertNotIn("resposta_bruta", data)
+
+    def test_payload_operacional_nao_expoe_resposta_tecnica(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.resposta_bruta = '{"Authorization":"Bearer segredo-nao-pode-vazar"}'
+        self.db.commit()
+        headers = auth_headers(printers_status=True)
+
+        detail = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+        listing = self.client.get("/api/v2/printers/status", headers=headers)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(listing.status_code, 200)
+        self.assertNotIn("resposta_bruta", detail.json()["data"])
+        self.assertNotIn("resposta_bruta", listing.json()["data"][0])
+        self.assertNotIn("segredo-nao-pode-vazar", detail.text)
+        self.assertNotIn("segredo-nao-pode-vazar", listing.text)
+
+    def test_logs_unificam_historicos_recentes_e_ignoram_dados_tecnicos(self):
+        machine = self._create_machine()
+        now = now_sao_paulo()
+        self._create_status_history(
+            machine["id"],
+            verified_at=now - timedelta(minutes=20),
+        )
+        self._create_alert_history(
+            machine["id"],
+            verified_at=now - timedelta(minutes=10),
+        )
+        self._create_status_history(
+            machine["id"],
+            verified_at=now - timedelta(hours=25),
+            current="offline",
+        )
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}/logs",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        logs = response.json()["data"]
+        self.assertEqual(len(logs), 2)
+        self.assertEqual([log["origem"] for log in logs], ["alerta", "status"])
+        self.assertEqual(logs[0]["mensagem"], "Alerta detectado: Toner baixo")
+        self.assertEqual(logs[1]["mensagem"], "Impressora voltou a ficar Online")
+        self.assertGreater(logs[0]["data_hora"], logs[1]["data_hora"])
+        for log in logs:
+            self.assertEqual(
+                set(log),
+                {"id", "data_hora", "tipo", "mensagem", "origem"},
+            )
+        self.assertNotIn("segredo-nao-pode-vazar", response.text)
+        self.assertNotIn("Authorization", response.text)
+        self.assertNotIn("cookie", response.text)
+        self.assertNotIn("resposta_bruta", response.text)
+
+    def test_logs_respeitam_limite_dez_e_ordem_decrescente(self):
+        machine = self._create_machine()
+        now = now_sao_paulo()
+        for minutes in range(12):
+            self._create_status_history(
+                machine["id"],
+                verified_at=now - timedelta(minutes=minutes),
+            )
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}/logs",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        logs = response.json()["data"]
+        self.assertEqual(len(logs), 10)
+        timestamps = [log["data_hora"] for log in logs]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+
+    def test_logs_retorna_lista_vazia_sem_eventos_nas_ultimas_24h(self):
+        machine = self._create_machine()
+        self._create_status_history(
+            machine["id"],
+            verified_at=now_sao_paulo() - timedelta(hours=25),
+        )
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}/logs",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], [])
 
     def test_lista_status_com_envelope_padrao(self):
         self._create_machine()
