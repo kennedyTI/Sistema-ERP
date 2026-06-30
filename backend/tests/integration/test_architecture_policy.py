@@ -111,8 +111,13 @@ class CleanBasePolicyTest(TestCase):
         self.assertNotIn("<TableHead>Resposta</TableHead>", status_page)
         self.assertNotIn("Copiar IP", status_page + details_dialog)
         self.assertNotIn("Solicitar toner", status_page + details_dialog)
-        self.assertIn("Resposta técnica", details_dialog)
-        self.assertIn("Últimos logs", details_dialog)
+        self.assertNotIn("Resposta técnica", details_dialog)
+        self.assertNotIn("resposta_bruta", details_dialog)
+        self.assertIn("Últimos logs das últimas 24h", details_dialog)
+        self.assertIn(
+            "Nenhum evento operacional registrado nas últimas 24h.",
+            details_dialog,
+        )
         self.assertIn("url_imagem", details_dialog)
         self.assertNotIn('"/static/imgs/printers"', details_dialog)
         self.assertIn("PrinterModelImage", details_dialog)

@@ -22,10 +22,25 @@ from backend.app.modules.printers.monitoring.eligibility import (
     OFFLINE_SKIP_REASON,
     status_collection_skip_reason,
 )
+from backend.app.modules.printers.monitoring.html_client.client import fetch_html_page
+from backend.app.modules.printers.monitoring.html_client.models import HtmlClientResponse
+from backend.app.modules.printers.monitoring.html_credentials.services import (
+    get_decrypted_html_access_for_model,
+)
+from backend.app.modules.printers.monitoring.html_parsers.registry import (
+    parse_html_status_response,
+)
+from backend.app.modules.printers.monitoring.ipp.client import (
+    fetch_ipp_printer_status,
+)
 from backend.app.modules.printers.monitoring.locks import acquire_lock, release_lock
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
+    ALERT_RAW_METRIC_KEY,
+    alert_metric_key_for_machine,
     calculate_overall_classification,
     collect_snmp_alerts_for_machine,
+    empty_alert_result,
+    normalize_raw_alerts,
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.snmp.oids import get_active_oid_for_model
@@ -41,11 +56,14 @@ TECHNICAL_RULE_CODES = {
 }
 DEFAULT_ALERT_LOCK_TTL_SECONDS = 120
 SNMP_ALERT_MAX_ATTEMPTS = 2
+HTML_STATUS_METRIC_KEY = "html_status"
+IPP_STATUS_METRIC_KEY = "ipp_status"
 ALERT_BATCH_IGNORED_REASONS = {
     "sem_ip",
     "sem_modelo",
     OFFLINE_SKIP_REASON,
     "sem_oid_alert_raw",
+    "sem_oid_hr_printer_status",
     "lock_ativo",
 }
 
@@ -86,7 +104,15 @@ def _current_overall_classification(db: Session, machine_id: int) -> str | None:
 
 
 def _method_confirmation(method: str | None) -> str:
-    return "snmp_walk" if method == "walk" else "snmp_get"
+    if method == "walk":
+        return "snmp_walk"
+    if method == "html_autenticado":
+        return "html_autenticado"
+    if method == "ipp":
+        return "ipp"
+    if method == "cascata":
+        return "falha_cascata"
+    return "snmp_get"
 
 
 def _base_collection_metadata(result: dict[str, Any]) -> dict[str, str]:
@@ -96,6 +122,24 @@ def _base_collection_metadata(result: dict[str, Any]) -> dict[str, str]:
         "metodo_coleta": method,
         "metodo_confirmacao": _method_confirmation(method),
     }
+
+
+def _is_canon_ir_c3326i(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "canon" and model_name == "ir-c3326i"
+
+
+def _is_brother_dcp_l2540dw(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "brother" and model_name == "dcp-l2540dw"
+
+
+def _is_hp_mfp_4303(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "hp" and model_name == "mfp-4303"
 
 
 def _system_failure_metadata() -> dict[str, str]:
@@ -172,27 +216,14 @@ def _normalized_alert_entries(
     entries: list[dict[str, Any]] = []
 
     if not raw_alerts:
-        message = TECHNICAL_RULE_CODES["sem_retorno_alerta"]
-        entries.append(
-            {
-                "codigo": "sem_retorno_alerta",
-                "regra_codigo": "sem_retorno_alerta",
-                "mensagem_original": None,
-                "mensagem_original_normalizada": normalize_text(message),
-                "oid_retornado": None,
-                "chave_alerta": f"snmp:{metadata['metodo_coleta']}:sem_retorno_alerta",
-                "oid_snmp_id": oid_config_id,
-                "metadata": metadata,
-                "verificado_em": verified_at,
-            }
-        )
-        return entries
+        return []
 
     for index, raw_alert in enumerate(raw_alerts):
         normalized = normalized_alerts[index] if index < len(normalized_alerts) else {}
         code = normalized.get("codigo") or "unknown"
         message = raw_alert.get("valor_original")
         returned_oid = raw_alert.get("oid_retornado")
+        origin = metadata["origem_coleta"]
         entries.append(
             {
                 "codigo": code,
@@ -201,9 +232,9 @@ def _normalized_alert_entries(
                 "mensagem_original_normalizada": normalize_text(message),
                 "oid_retornado": returned_oid,
                 "chave_alerta": (
-                    f"snmp:{metadata['metodo_coleta']}:{returned_oid}"
+                    f"{origin}:{metadata['metodo_coleta']}:{returned_oid}"
                     if returned_oid
-                    else f"snmp:{metadata['metodo_coleta']}:{code}"
+                    else f"{origin}:{metadata['metodo_coleta']}:{code}"
                 ),
                 "oid_snmp_id": oid_config_id,
                 "metadata": metadata,
@@ -306,11 +337,12 @@ def sync_machine_alerts_from_collection_result(
 
     verified_at = now_sao_paulo()
     previous_classification = _current_overall_classification(db, machine.id)
+    metric_key = collection_result.get("chave_metrica") or ALERT_RAW_METRIC_KEY
     oid_config = (
         get_active_oid_for_model(
             db,
             model_id=machine.model_id,
-            metric_key="alert_raw",
+            metric_key=metric_key,
         )
         if machine.model_id is not None
         else None
@@ -333,6 +365,32 @@ def sync_machine_alerts_from_collection_result(
         oid_config_id=oid_config.id if oid_config is not None else None,
         verified_at=verified_at,
     )
+    if not entries:
+        existing_rows = (
+            db.query(AlertaImpressora)
+            .filter(AlertaImpressora.maquina_id == machine.id)
+            .all()
+        )
+        for row in existing_rows:
+            db.delete(row)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return {
+            "maquina_id": machine.id,
+            "sincronizado": True,
+            "classificacao_anterior": previous_classification,
+            "classificacao_nova": "cinza",
+            "alertas_atuais": 0,
+            "historico_criado": False,
+            "unknown_historicos_criados": 0,
+            "falha_tecnica_consolidada": False,
+            "sem_alerta_real": True,
+        }
+
     rules_by_code = {
         code: _rule_by_code(db, code)
         for code in {entry["regra_codigo"] for entry in entries}
@@ -452,6 +510,168 @@ def sync_machine_alerts_from_collection_result(
     }
 
 
+def collect_html_alerts_for_machine(
+    db: Session,
+    *,
+    machine_id: int,
+    settings: MonitoringSettings | None = None,
+    fetcher: Callable[..., HtmlClientResponse] = fetch_html_page,
+) -> dict[str, Any]:
+    """Coleta mensagens operacionais via HTML autenticado sem armazenar HTML bruto."""
+    machine = db.get(PrinterMachine, machine_id)
+    if machine is None:
+        return {
+            "maquina_id": machine_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "maquina_nao_encontrada",
+            "erro_detalhe": "Maquina nao encontrada.",
+        }
+    if machine.model_id is None or machine.printer_model is None:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "maquina_sem_modelo",
+            "erro_detalhe": "Maquina sem modelo vinculado.",
+        }
+
+    config = get_decrypted_html_access_for_model(db, model_id=machine.model_id)
+    if config is None:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": "html_credencial_nao_configurada",
+            "erro_detalhe": "Credencial HTML ativa nao configurada para o modelo.",
+        }
+
+    response = fetcher(machine.ip_address, config, page_type="status")
+    parse_result = parse_html_status_response(machine.printer_model, response)
+    if not parse_result.sucesso:
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "html",
+            "chave_metrica": HTML_STATUS_METRIC_KEY,
+            "modo_consulta": "html_autenticado",
+            "erro_codigo": parse_result.erro_codigo or "html_status_nao_detectado",
+            "erro_detalhe": parse_result.erro_detalhe_sanitizado
+            or "Status HTML nao detectado.",
+            "metadados": {
+                "parser": parse_result.metadados.get("parser"),
+            },
+        }
+
+    raw_alerts = [
+        {
+            "oid_retornado": None,
+            "valor_original": message,
+            "valor_repr": repr(message),
+            "tipo_snmp": "HtmlStatus",
+        }
+        for message in parse_result.mensagens_brutas
+    ]
+    normalized_alerts = (
+        normalize_raw_alerts(db=db, raw_alerts=raw_alerts)
+        if raw_alerts
+        else [empty_alert_result()]
+    )
+    return {
+        "maquina_id": machine.id,
+        "modelo_id": machine.model_id,
+        "sucesso": True,
+        "origem_coleta": "html",
+        "chave_metrica": HTML_STATUS_METRIC_KEY,
+        "modo_consulta": "html_autenticado",
+        "oid_configurado": None,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": calculate_overall_classification(normalized_alerts),
+        "sem_alerta_real": not raw_alerts,
+        "metadados": {
+            "parser": parse_result.metadados.get("parser"),
+        },
+    }
+
+
+def collect_ipp_alerts_for_machine(
+    db: Session,
+    *,
+    machine_id: int,
+    settings: MonitoringSettings | None = None,
+    fetcher: Callable[..., dict[str, Any]] = fetch_ipp_printer_status,
+) -> dict[str, Any]:
+    """Coleta o estado operacional via IPP sem persistir resposta bruta."""
+    del settings
+    machine = db.get(PrinterMachine, machine_id)
+    if machine is None:
+        return {
+            "maquina_id": machine_id,
+            "sucesso": False,
+            "origem_coleta": "ipp",
+            "chave_metrica": IPP_STATUS_METRIC_KEY,
+            "modo_consulta": "ipp",
+            "erro_codigo": "maquina_nao_encontrada",
+            "erro_detalhe": "Maquina nao encontrada.",
+        }
+
+    ipp_result = fetcher(machine.ip_address)
+    if not ipp_result.get("sucesso"):
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "ipp",
+            "chave_metrica": IPP_STATUS_METRIC_KEY,
+            "modo_consulta": "ipp",
+            "erro_codigo": ipp_result.get("erro_codigo") or "ipp_falha_coleta",
+            "erro_detalhe": ipp_result.get("erro_detalhe") or "Falha na consulta IPP.",
+        }
+
+    messages = [str(message) for message in ipp_result.get("mensagens") or [] if message]
+    raw_alerts = [
+        {
+            "oid_retornado": None,
+            "valor_original": message,
+            "valor_repr": repr(message),
+            "tipo_snmp": "IppStatus",
+        }
+        for message in messages
+    ]
+    normalized_alerts = (
+        normalize_raw_alerts(db=db, raw_alerts=raw_alerts)
+        if raw_alerts
+        else [empty_alert_result()]
+    )
+    return {
+        "maquina_id": machine.id,
+        "modelo_id": machine.model_id,
+        "sucesso": True,
+        "origem_coleta": "ipp",
+        "chave_metrica": IPP_STATUS_METRIC_KEY,
+        "modo_consulta": "ipp",
+        "oid_configurado": None,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": calculate_overall_classification(normalized_alerts),
+        "sem_alerta_real": not raw_alerts,
+        "metadados": {
+            "estado": ipp_result.get("estado"),
+            "motivos": ipp_result.get("motivos") or [],
+        },
+    }
+
+
 def _is_snmp_technical_failure(result: dict[str, Any]) -> bool:
     return bool(result.get("erro_codigo", "").startswith("snmp_"))
 
@@ -463,6 +683,8 @@ def collect_and_sync_machine_alerts(
     redis_client: Redis,
     settings: MonitoringSettings | None = None,
     collector: Callable[..., dict[str, Any]] = collect_snmp_alerts_for_machine,
+    html_collector: Callable[..., dict[str, Any]] = collect_html_alerts_for_machine,
+    ipp_collector: Callable[..., dict[str, Any]] = collect_ipp_alerts_for_machine,
     max_snmp_attempts: int = SNMP_ALERT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Orquestra coleta SNMP com lock e sincronizacao atomica."""
@@ -482,6 +704,10 @@ def collect_and_sync_machine_alerts(
 
     attempts = 0
     last_result: dict[str, Any] | None = None
+    fallback_html_used = False
+    fallback_html_error: str | None = None
+    fallback_ipp_used = False
+    fallback_ipp_error: str | None = None
     try:
         for _ in range(max_snmp_attempts):
             attempts += 1
@@ -500,6 +726,64 @@ def collect_and_sync_machine_alerts(
                 "erro_codigo": "snmp_sem_resposta",
                 "erro_detalhe": "Falha tecnica na coleta de alertas.",
             }
+
+        machine = db.get(PrinterMachine, machine_id)
+        should_try_html = bool(
+            machine
+            and (
+                (
+                    _is_canon_ir_c3326i(machine)
+                    and (
+                        _is_snmp_technical_failure(last_result)
+                        or (
+                            last_result.get("sucesso")
+                            and last_result.get("sem_alerta_real")
+                        )
+                    )
+                )
+                or (
+                    _is_brother_dcp_l2540dw(machine)
+                    and (
+                        last_result.get("sucesso")
+                        or _is_snmp_technical_failure(last_result)
+                    )
+                )
+            )
+        )
+        if should_try_html:
+            html_result = html_collector(
+                db,
+                machine_id=machine_id,
+                settings=config,
+            )
+            if html_result.get("sucesso") and not html_result.get("sem_alerta_real"):
+                last_result = html_result
+                fallback_html_used = True
+            elif not html_result.get("sucesso"):
+                fallback_html_error = html_result.get("erro_codigo")
+
+        should_try_ipp = bool(
+            machine
+            and _is_hp_mfp_4303(machine)
+            and (
+                _is_snmp_technical_failure(last_result)
+                or (
+                    last_result.get("sucesso")
+                    and last_result.get("sem_alerta_real")
+                )
+            )
+        )
+        if should_try_ipp:
+            ipp_result = ipp_collector(
+                db,
+                machine_id=machine_id,
+                settings=config,
+            )
+            if ipp_result.get("sucesso") and not ipp_result.get("sem_alerta_real"):
+                last_result = ipp_result
+                fallback_ipp_used = True
+            elif not ipp_result.get("sucesso"):
+                fallback_ipp_error = ipp_result.get("erro_codigo")
 
         if not last_result.get("sucesso") and not _is_snmp_technical_failure(last_result):
             return {
@@ -525,8 +809,14 @@ def collect_and_sync_machine_alerts(
             {
                 "processada": True,
                 "tentativas_snmp": attempts,
+                "fallback_html_usado": fallback_html_used,
+                "fallback_ipp_usado": fallback_ipp_used,
             }
         )
+        if fallback_html_error:
+            sync_result["fallback_html_erro"] = fallback_html_error
+        if fallback_ipp_error:
+            sync_result["fallback_ipp_erro"] = fallback_ipp_error
         return sync_result
     except Exception:
         db.rollback()
@@ -545,13 +835,14 @@ def _skip_reason_for_alerts(db: Session, machine: PrinterMachine) -> str | None:
     if operational_skip_reason is not None:
         return operational_skip_reason
 
+    metric_key = alert_metric_key_for_machine(machine)
     oid_config = get_active_oid_for_model(
         db,
         model_id=machine.model_id,
-        metric_key="alert_raw",
+        metric_key=metric_key,
     )
     if oid_config is None:
-        return "sem_oid_alert_raw"
+        return f"sem_oid_{metric_key}"
 
     return None
 
@@ -570,6 +861,7 @@ def _safe_alert_task_result(result: dict[str, Any]) -> dict[str, Any]:
         "falha_tecnica_consolidada",
         "tentativas_snmp",
         "erro_codigo",
+        "sem_alerta_real",
     }
     return {key: result[key] for key in safe_keys if key in result}
 
@@ -649,5 +941,12 @@ def run_alerts_batch(
             for result in results
         ),
         "falha": falha,
+        "sem_alerta_real": sum(result.get("sem_alerta_real") is True for result in results),
+        "com_alerta_real": sum(
+            result.get("processada") is True
+            and int(result.get("alertas_atuais") or 0) > 0
+            and result.get("falha_tecnica_consolidada") is not True
+            for result in results
+        ),
         "resultados": results,
     }

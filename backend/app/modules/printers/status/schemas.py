@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 StatusOperacional = Literal["online", "offline"]
 NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
-SeveridadeStatus = Literal["unknown", "green", "medium", "high"]
+SeveridadeStatus = Literal["unknown", "green", "low", "medium", "high"]
 OrigemStatus = Literal["sistema", "manual", "seed", "futuro_snmp"]
 MetodoConfirmacao = Literal["icmp", "tcp", "snmp", "html", "fallback"]
 
@@ -18,6 +18,7 @@ class PrinterStatusAlertRead(BaseModel):
     mensagem: str
     nivel_alerta: NivelAlerta
     severidade: SeveridadeStatus
+    prioridade: int
 
 
 class PrinterStatusRead(BaseModel):
@@ -54,7 +55,6 @@ class PrinterStatusRead(BaseModel):
     tempo_resposta_ms: int | None = None
     metodo_confirmacao: MetodoConfirmacao | None = None
     origem: OrigemStatus
-    resposta_bruta: str | None = None
 
 
 class PrinterStatusSummary(BaseModel):
@@ -66,18 +66,8 @@ class PrinterStatusSummary(BaseModel):
 
 
 class PrinterLogRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    machine_id: int
-    tipo_evento: str
-    status_anterior: str | None = None
-    status_novo: str | None = None
-    alerta_anterior: str | None = None
-    alerta_novo: str | None = None
-    mensagem: str | None = None
-    verificado_em: datetime
-    tempo_resposta_ms: int | None = None
-    origem: str
-    resposta_bruta: str | None = None
-    criado_em: datetime
+    id: str
+    data_hora: datetime
+    tipo: str
+    mensagem: str
+    origem: Literal["status", "alerta"]

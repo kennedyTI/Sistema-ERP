@@ -73,12 +73,13 @@ services:
       - .env.docker
     environment:
       TZ: ${TZ:-America/Sao_Paulo}
+      WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-true}
     depends_on:
       postgres:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
-    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend
     ports:
       - "8000:8000"
     volumes:

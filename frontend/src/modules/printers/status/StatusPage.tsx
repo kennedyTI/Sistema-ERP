@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { RequireAuth } from "@/modules/auth/RequireAuth";
 import { useAuth } from "@/modules/auth/authStore";
 import { ColumnDragPreview } from "@/modules/printers/shared/ColumnDragPreview";
+import { selectHighestSeverityAlerts } from "@/modules/printers/status/alertSelection";
 import { StatusDetailsDialog } from "@/modules/printers/status/components/StatusDetailsDialog";
 import { StatusSummaryCards } from "@/modules/printers/status/components/StatusSummaryCards";
 import {
@@ -176,6 +177,22 @@ function StatusContent() {
     }, STATUS_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    function refreshVisibleTab() {
+      if (document.visibilityState === "visible") {
+        void loadStatuses({ showLoading: false });
+      }
+    }
+
+    window.addEventListener("focus", refreshVisibleTab);
+    document.addEventListener("visibilitychange", refreshVisibleTab);
+
+    return () => {
+      window.removeEventListener("focus", refreshVisibleTab);
+      document.removeEventListener("visibilitychange", refreshVisibleTab);
+    };
   }, []);
 
   useEffect(() => {
@@ -494,13 +511,14 @@ function renderStatusCell(
         </TableCell>
       );
     case "alert":
-      const visibleAlert = visibleAlertForStatus(status, alertRotationIndex);
-      const alertCount = status.alertas?.length ?? 0;
+      const visibleAlerts = selectHighestSeverityAlerts(status);
+      const visibleAlert = visibleAlerts[alertRotationIndex % visibleAlerts.length];
+      const alertCount = visibleAlerts.length;
       return (
         <TableCell key={column} className="max-w-[320px] whitespace-normal">
           <span
             className="inline-flex items-center gap-2"
-            title={status.alertas?.map((alert) => alert.mensagem).join(" | ") || visibleAlert.mensagem}
+            title={visibleAlerts.map((alert) => alert.mensagem).join(" | ")}
           >
             <span
               className={cn(
@@ -535,24 +553,6 @@ function renderStatusCell(
         <TableCell key={column}>{formatRelativeUpdate(status.verificado_em)}</TableCell>
       );
   }
-}
-
-function visibleAlertForStatus(
-  status: PrinterOperationalStatus,
-  alertRotationIndex: number,
-) {
-  const alerts = status.alertas?.length
-    ? status.alertas
-    : [
-        {
-          codigo: "status_atual",
-          mensagem: status.alerta ?? status.mensagem_alerta ?? "Sem alerta informado",
-          nivel_alerta: status.nivel_alerta,
-          severidade: status.severidade,
-        },
-      ];
-
-  return alerts[alertRotationIndex % alerts.length];
 }
 
 function normalizeSearchText(value: string | number | null | undefined) {

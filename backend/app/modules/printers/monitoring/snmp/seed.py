@@ -28,6 +28,7 @@ from backend.app.modules.printers.monitoring.snmp.models import (
 # alert_raw usa WALK nesta base porque GET em instancia exata nao descobre
 # multiplos alertas abaixo da mesma coluna Printer-MIB.
 PRT_ALERT_DESCRIPTION_BASE_OID = "1.3.6.1.2.1.43.18.1.1.8"
+HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 
 INITIAL_SNMP_OIDS = (
     {
@@ -81,6 +82,7 @@ INITIAL_SNMP_OIDS = (
         "versao_snmp": "2c",
         "metricas": {
             "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
+            "hr_printer_status": (HR_PRINTER_STATUS_OID, "integer", "get"),
             "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
             "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
             "page_count_total": (
@@ -96,6 +98,7 @@ INITIAL_SNMP_OIDS = (
         "versao_snmp": "2c",
         "metricas": {
             "alert_raw": (PRT_ALERT_DESCRIPTION_BASE_OID, "string", "walk"),
+            "hr_printer_status": (HR_PRINTER_STATUS_OID, "integer", "get"),
             "name": ("1.3.6.1.2.1.1.5.0", "string", "get"),
             "location": ("1.3.6.1.2.1.1.6.0", "string", "get"),
             "page_count_total": (

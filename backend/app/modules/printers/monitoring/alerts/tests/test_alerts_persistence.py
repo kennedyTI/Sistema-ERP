@@ -135,6 +135,61 @@ def alert_result(machine_id, raw_alerts, normalized_alerts, *, mode="walk"):
     }
 
 
+def snmp_empty_result(machine_id):
+    return {
+        "maquina_id": machine_id,
+        "sucesso": True,
+        "alertas_brutos": [],
+        "alertas_normalizados": [
+            {
+                "codigo": "sem_alerta",
+                "severidade": "unknown",
+                "classificacao": "cinza",
+                "descricao": "Sem alerta",
+                "mensagem_original": None,
+                "reconhecido": False,
+                "persistir": False,
+            }
+        ],
+        "classificacao_geral": "cinza",
+        "origem_coleta": "snmp",
+        "modo_consulta": "walk",
+        "chave_metrica": "alert_raw",
+        "oid_configurado": ALERT_BASE_OID,
+        "sem_alerta_real": True,
+    }
+
+
+def html_alert_result(machine_id, raw_alerts, normalized_alerts):
+    return {
+        "maquina_id": machine_id,
+        "sucesso": True,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": "amarelo",
+        "origem_coleta": "html",
+        "modo_consulta": "html_autenticado",
+        "chave_metrica": "html_status",
+        "oid_configurado": None,
+        "sem_alerta_real": False,
+    }
+
+
+def ipp_alert_result(machine_id, raw_alerts, normalized_alerts):
+    return {
+        "maquina_id": machine_id,
+        "sucesso": True,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": "verde",
+        "origem_coleta": "ipp",
+        "modo_consulta": "ipp",
+        "chave_metrica": "ipp_status",
+        "oid_configurado": None,
+        "sem_alerta_real": False,
+    }
+
+
 def snmp_failure(machine_id, *, code="snmp_timeout", detail="Tempo limite SNMP."):
     return {
         "maquina_id": machine_id,
@@ -183,11 +238,11 @@ class AlertsPersistenceSchemaTest(TestCase):
             )
             if isinstance(constraint, CheckConstraint)
         )
-        for value in ("snmp", "html", "sistema"):
+        for value in ("snmp", "html", "ipp", "sistema"):
             self.assertIn(value, check_text)
-        for value in ("get", "walk", "html_autenticado", "cascata"):
+        for value in ("get", "walk", "html_autenticado", "ipp", "cascata"):
             self.assertIn(value, check_text)
-        for value in ("snmp_get", "snmp_walk", "html_autenticado", "falha_cascata"):
+        for value in ("snmp_get", "snmp_walk", "html_autenticado", "ipp", "falha_cascata"):
             self.assertIn(value, check_text)
 
     def test_migration_cria_tabelas_e_nao_cria_tentativas(self):
@@ -287,8 +342,8 @@ class AlertsPersistenceServiceTest(TestCase):
     def tearDown(self):
         self.db.close()
 
-    def add_model(self, *, name):
-        model = PrinterModel(manufacturer="Fabricante", name=name)
+    def add_model(self, *, name, manufacturer="Fabricante"):
+        model = PrinterModel(manufacturer=manufacturer, name=name)
         self.db.add(model)
         self.db.commit()
         return model
@@ -423,16 +478,23 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertEqual(len(current), 1)
         self.assertEqual(self.rule_code_for_current(current[0]), "toner_low")
 
-    def test_coleta_vazia_vira_sem_retorno_alerta_cinza(self):
+    def test_coleta_vazia_limpa_alertas_atuais_sem_persistir_sem_alerta(self):
+        self.sync(
+            [raw_alert("Substituir toner")],
+            [normalized_alert("replace_toner", severity="high", classification="vermelho")],
+        )
+
         result = self.sync([], [])
         current = self.current_alerts()
         histories = self.histories()
 
         self.assertEqual(result["classificacao_nova"], "cinza")
-        self.assertEqual(len(current), 1)
-        self.assertEqual(self.rule_code_for_current(current[0]), "sem_retorno_alerta")
+        self.assertEqual(result["alertas_atuais"], 0)
+        self.assertTrue(result["sem_alerta_real"])
+        self.assertEqual(len(current), 0)
+        self.assertEqual(len(histories), 1)
         self.assertEqual(histories[0].codigo_evento, "estado_inicial_alerta")
-        self.assertEqual(histories[0].classificacao_nova, "cinza")
+        self.assertEqual(histories[0].classificacao_nova, "vermelho")
 
     def test_falha_snmp_apos_duas_tentativas_vira_falha_consolidada_vermelha(self):
         collector = SequenceCollector(
@@ -455,6 +517,285 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertEqual(self.rule_code_for_current(current[0]), "falha_coleta_alertas")
         self.assertEqual(current[0].origem_coleta, "sistema")
         self.assertEqual(current[0].metodo_confirmacao, "falha_cascata")
+
+    def test_canon_com_snmp_vazio_usa_html_autenticado_como_fallback(self):
+        canon_model = self.add_model(manufacturer="Canon", name="IR-C3326I")
+        canon_machine = self.add_machine(model=canon_model, ip="192.0.2.30")
+        self.add_oid(canon_model, mode="walk")
+        html_collector = SequenceCollector(
+            html_alert_result(
+                canon_machine.id,
+                [raw_alert("O toner Magenta está baixo.", oid=None)],
+                [
+                    normalized_alert(
+                        "toner_low",
+                        severity="medium",
+                        classification="amarelo",
+                    )
+                ],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=canon_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(snmp_empty_result(canon_machine.id)),
+            html_collector=html_collector,
+        )
+
+        current = self.current_alerts(canon_machine)
+        self.assertTrue(result["processada"])
+        self.assertTrue(result["fallback_html_usado"])
+        self.assertEqual(len(html_collector.calls), 1)
+        self.assertEqual(len(current), 1)
+        self.assertEqual(current[0].origem_coleta, "html")
+        self.assertEqual(current[0].metodo_coleta, "html_autenticado")
+        self.assertEqual(current[0].metodo_confirmacao, "html_autenticado")
+        self.assertIsNone(current[0].oid_snmp_id)
+        self.assertTrue(current[0].chave_alerta.startswith("html:html_autenticado:"))
+
+    def test_canon_com_alert_raw_snmp_nao_aciona_html(self):
+        canon_model = self.add_model(manufacturer="Canon", name="IR-C3326I")
+        canon_machine = self.add_machine(model=canon_model, ip="192.0.2.31")
+        self.add_oid(canon_model, mode="walk")
+        html_collector = SequenceCollector(
+            html_alert_result(
+                canon_machine.id,
+                [raw_alert("O toner Magenta está baixo.", oid=None)],
+                [
+                    normalized_alert(
+                        "toner_low",
+                        severity="medium",
+                        classification="amarelo",
+                    )
+                ],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=canon_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(
+                alert_result(
+                    canon_machine.id,
+                    [raw_alert("Substituir toner")],
+                    [
+                        normalized_alert(
+                            "replace_toner",
+                            severity="high",
+                            classification="vermelho",
+                        )
+                    ],
+                )
+            ),
+            html_collector=html_collector,
+        )
+
+        current = self.current_alerts(canon_machine)
+        self.assertFalse(result["fallback_html_usado"])
+        self.assertEqual(len(html_collector.calls), 0)
+        self.assertEqual(current[0].origem_coleta, "snmp")
+        self.assertEqual(current[0].metodo_confirmacao, "snmp_walk")
+
+    def test_canon_com_falha_snmp_usa_html_autenticado_como_fallback(self):
+        canon_model = self.add_model(manufacturer="Canon", name="IR-C3326I")
+        canon_machine = self.add_machine(model=canon_model, ip="192.0.2.32")
+        self.add_oid(canon_model, mode="walk")
+        html_collector = SequenceCollector(
+            html_alert_result(
+                canon_machine.id,
+                [raw_alert("O toner Amarelo está baixo.", oid=None)],
+                [
+                    normalized_alert(
+                        "toner_low",
+                        severity="medium",
+                        classification="amarelo",
+                    )
+                ],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=canon_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(
+                snmp_failure(canon_machine.id),
+                snmp_failure(canon_machine.id),
+            ),
+            html_collector=html_collector,
+        )
+
+        current = self.current_alerts(canon_machine)
+        self.assertTrue(result["processada"])
+        self.assertEqual(result["tentativas_snmp"], 2)
+        self.assertTrue(result["fallback_html_usado"])
+        self.assertEqual(len(html_collector.calls), 1)
+        self.assertEqual(len(current), 1)
+        self.assertEqual(current[0].origem_coleta, "html")
+        self.assertEqual(current[0].metodo_confirmacao, "html_autenticado")
+        self.assertEqual(self.rule_code_for_current(current[0]), "toner_low")
+
+    def test_brother_l2540dw_completa_alerta_snmp_com_status_html(self):
+        brother_model = self.add_model(manufacturer="Brother", name="DCP-L2540DW")
+        brother_machine = self.add_machine(model=brother_model, ip="192.0.2.33")
+        self.add_oid(brother_model, mode="walk")
+        html_collector = SequenceCollector(
+            html_alert_result(
+                brother_machine.id,
+                [
+                    raw_alert("Trocar Cilindro", oid=None),
+                    raw_alert("Subs. toner", oid=None),
+                    raw_alert("Sleep", oid=None),
+                ],
+                [
+                    normalized_alert(
+                        "replace_drum",
+                        severity="high",
+                        classification="vermelho",
+                    ),
+                    normalized_alert(
+                        "replace_toner",
+                        severity="high",
+                        classification="vermelho",
+                    ),
+                    normalized_alert(
+                        "sleep",
+                        severity="green",
+                        classification="verde",
+                    ),
+                ],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=brother_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(
+                alert_result(
+                    brother_machine.id,
+                    [raw_alert("Trocar Cilindro")],
+                    [
+                        normalized_alert(
+                            "replace_drum",
+                            severity="high",
+                            classification="vermelho",
+                        )
+                    ],
+                )
+            ),
+            html_collector=html_collector,
+        )
+
+        current = self.current_alerts(brother_machine)
+        self.assertTrue(result["fallback_html_usado"])
+        self.assertEqual(len(html_collector.calls), 1)
+        self.assertEqual(len(current), 3)
+        self.assertEqual(
+            {self.rule_code_for_current(row) for row in current},
+            {"replace_drum", "replace_toner", "sleep"},
+        )
+        self.assertTrue(all(row.origem_coleta == "html" for row in current))
+        self.assertTrue(
+            all(row.metodo_confirmacao == "html_autenticado" for row in current)
+        )
+
+    def test_modelo_nao_canon_com_snmp_vazio_nao_aciona_html(self):
+        html_collector = SequenceCollector(
+            html_alert_result(
+                self.machine.id,
+                [raw_alert("O toner Magenta está baixo.", oid=None)],
+                [
+                    normalized_alert(
+                        "toner_low",
+                        severity="medium",
+                        classification="amarelo",
+                    )
+                ],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=self.machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(snmp_empty_result(self.machine.id)),
+            html_collector=html_collector,
+        )
+
+        self.assertFalse(result["fallback_html_usado"])
+        self.assertEqual(len(html_collector.calls), 0)
+        self.assertEqual(len(self.current_alerts()), 0)
+
+    def test_hp_mfp_4303_com_snmp_vazio_usa_ipp_como_fallback(self):
+        hp_model = self.add_model(manufacturer="HP", name="MFP-4303")
+        hp_machine = self.add_machine(model=hp_model, ip="192.0.2.40")
+        self.add_oid(hp_model, mode="walk")
+        ipp_collector = SequenceCollector(
+            ipp_alert_result(
+                hp_machine.id,
+                [raw_alert("Em espera", oid=None)],
+                [normalized_alert("idle", severity="green", classification="verde")],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=hp_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(snmp_empty_result(hp_machine.id)),
+            ipp_collector=ipp_collector,
+        )
+
+        current = self.current_alerts(hp_machine)
+        self.assertTrue(result["fallback_ipp_usado"])
+        self.assertFalse(result["fallback_html_usado"])
+        self.assertEqual(len(ipp_collector.calls), 1)
+        self.assertEqual(len(current), 1)
+        self.assertEqual(current[0].origem_coleta, "ipp")
+        self.assertEqual(current[0].metodo_coleta, "ipp")
+        self.assertEqual(current[0].metodo_confirmacao, "ipp")
+        self.assertEqual(self.rule_code_for_current(current[0]), "idle")
+
+    def test_hp_mfp_4303_com_alerta_snmp_nao_aciona_ipp(self):
+        hp_model = self.add_model(manufacturer="HP", name="MFP-4303")
+        hp_machine = self.add_machine(model=hp_model, ip="192.0.2.41")
+        self.add_oid(hp_model, mode="walk")
+        ipp_collector = SequenceCollector(
+            ipp_alert_result(
+                hp_machine.id,
+                [raw_alert("Em espera", oid=None)],
+                [normalized_alert("idle", severity="green", classification="verde")],
+            )
+        )
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=hp_machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(
+                alert_result(
+                    hp_machine.id,
+                    [raw_alert("Toner baixo")],
+                    [normalized_alert("toner_low", severity="medium", classification="amarelo")],
+                )
+            ),
+            ipp_collector=ipp_collector,
+        )
+
+        self.assertFalse(result["fallback_ipp_usado"])
+        self.assertEqual(len(ipp_collector.calls), 0)
+        self.assertEqual(self.current_alerts(hp_machine)[0].origem_coleta, "snmp")
 
     def test_nao_registra_historico_quando_classificacao_nao_muda(self):
         alert = [raw_alert("Toner baixo")]

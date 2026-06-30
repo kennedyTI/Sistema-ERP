@@ -159,6 +159,10 @@ class AlertRulesEngineTest(TestCase):
             classify_alert("Toner baixo", rules)["codigo"],
             "toner_low",
         )
+        self.assertEqual(
+            classify_alert("paper is out (a4).", rules)["codigo"],
+            "no_paper",
+        )
 
     def test_regra_contains_reconhece_alerta(self):
         result = classify_alert(
@@ -262,7 +266,7 @@ class AlertRulesEngineTest(TestCase):
     def test_ok_reconhece_aliases_de_impressao(self):
         rule = next(item for item in INITIAL_ALERT_RULES if item["codigo"] == "ok")
 
-        for message in ("Printing", "A imprimir", "Em impressao", "Em impressão"):
+        for message in ("Printing", "A imprimir", "Em impressao", "Em impressão", "Aquecendo"):
             with self.subTest(message=message):
                 result = classify_alert(message, [make_rule(**rule)])
 
@@ -273,10 +277,12 @@ class AlertRulesEngineTest(TestCase):
         rule = next(
             item for item in INITIAL_ALERT_RULES if item["codigo"] == "toner_low"
         )
-        result = classify_alert("Toner is low (black)", [make_rule(**rule)])
+        for message in ("Toner is low (black)", "Ha pouco toner"):
+            with self.subTest(message=message):
+                result = classify_alert(message, [make_rule(**rule)])
 
-        self.assertEqual(result["codigo"], "toner_low")
-        self.assertEqual(result["severidade"], "medium")
+                self.assertEqual(result["codigo"], "toner_low")
+                self.assertEqual(result["severidade"], "medium")
 
     def test_replace_toner_retorna_high(self):
         rule = next(

@@ -11,6 +11,7 @@ export interface PrinterOperationalAlert {
   mensagem: string;
   nivel_alerta: AlertLevel;
   severidade: StatusSeverity;
+  prioridade: number;
 }
 
 export interface PrinterOperationalStatus {
@@ -45,7 +46,6 @@ export interface PrinterOperationalStatus {
   tempo_resposta_ms: number | null;
   metodo_confirmacao: ConfirmationMethod | null;
   origem: "sistema" | "manual" | "seed" | "futuro_snmp";
-  resposta_bruta: string | null;
 }
 
 export interface PrinterStatusSummary {
@@ -57,19 +57,11 @@ export interface PrinterStatusSummary {
 }
 
 export interface PrinterOperationalLog {
-  id: number;
-  machine_id: number;
-  tipo_evento: string;
-  status_anterior: string | null;
-  status_novo: string | null;
-  alerta_anterior: string | null;
-  alerta_novo: string | null;
-  mensagem: string | null;
-  verificado_em: string;
-  tempo_resposta_ms: number | null;
-  origem: string;
-  resposta_bruta: string | null;
-  criado_em: string;
+  id: string;
+  data_hora: string;
+  tipo: string;
+  mensagem: string;
+  origem: "status" | "alerta";
 }
 
 interface ApiEnvelope<T> {
@@ -82,7 +74,11 @@ interface ApiEnvelope<T> {
 async function requestStatusApi<T>(path: string): Promise<T> {
   const token = getStoredToken();
   const response = await fetch(buildApiUrl(path), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
   const payload = (await response.json()) as ApiEnvelope<T>;
 

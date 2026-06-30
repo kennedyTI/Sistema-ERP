@@ -446,6 +446,46 @@ def parse_definition_blocks(html: str) -> list[HtmlDefinitionBlock]:
     return parser.blocks
 
 
+class BrotherTonerIndicatorParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.has_low_toner = False
+        self._element_stack: list[tuple[str, dict[str, str]]] = []
+
+    def handle_starttag(self, tag, attrs):
+        normalized_tag = tag.lower()
+        attrs_dict = {key.lower(): value or "" for key, value in attrs}
+        self._element_stack.append((normalized_tag, attrs_dict))
+        if normalized_tag != "img" or not self._inside_ink_level():
+            return
+
+        image_source = attrs_dict.get("src", "").casefold()
+        image_alt = normalize_text(attrs_dict.get("alt"))
+        self.has_low_toner = self.has_low_toner or (
+            image_source.endswith("low.gif") or image_alt == "low"
+        )
+
+    def handle_endtag(self, tag):
+        normalized_tag = tag.lower()
+        for index in range(len(self._element_stack) - 1, -1, -1):
+            if self._element_stack[index][0] == normalized_tag:
+                del self._element_stack[index:]
+                break
+
+    def _inside_ink_level(self) -> bool:
+        return any(
+            attrs.get("id") == "ink_level"
+            for _tag, attrs in self._element_stack
+        )
+
+
+def brother_has_low_toner_indicator(html: str) -> bool:
+    parser = BrotherTonerIndicatorParser()
+    parser.feed(html or "")
+    parser.close()
+    return parser.has_low_toner
+
+
 def definition_pairs(html: str) -> list[tuple[str, HtmlDefinitionBlock]]:
     blocks = parse_definition_blocks(html)
     pairs: list[tuple[str, HtmlDefinitionBlock]] = []
@@ -696,6 +736,10 @@ class BrotherDcpL2540dwStatusParser(HtmlStatusParser):
             labels=("Device Status", "Estado do dispositivo", "Status"),
             known_messages=BROTHER_DCP_L2540DW_STATUS_MESSAGES,
         )
-        if focused:
-            return focused
-        return _find_known_messages(chunks, BROTHER_DCP_L2540DW_STATUS_MESSAGES)
+        messages = focused or _find_known_messages(
+            chunks,
+            BROTHER_DCP_L2540DW_STATUS_MESSAGES,
+        )
+        if brother_has_low_toner_indicator(html):
+            messages.append("Subs. toner")
+        return unique_messages(messages)

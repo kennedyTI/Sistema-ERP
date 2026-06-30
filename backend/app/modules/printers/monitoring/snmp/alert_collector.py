@@ -1,7 +1,9 @@
-"""Coleta SNMP oficial de alert_raw para impressoras."""
+"""Coleta SNMP oficial de alertas e status operacional por modelo."""
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from time import perf_counter
 from typing import Any, Callable, Iterable
 
@@ -31,6 +33,8 @@ from backend.app.modules.printers.monitoring.state.rules import (
 
 
 ALERT_RAW_METRIC_KEY = "alert_raw"
+PRINTER_STATUS_METRIC_KEY = "hr_printer_status"
+HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 MAX_WALK_VALUES = 100
 VISUAL_CLASSIFICATION_ORDER = {
     "verde": 1,
@@ -38,6 +42,31 @@ VISUAL_CLASSIFICATION_ORDER = {
     "amarelo": 3,
     "vermelho": 4,
 }
+PRINTER_STATUS_MANUFACTURERS = {"hp", "samsung"}
+HR_PRINTER_STATUS_MESSAGES = {
+    "3": "Em espera",
+    "4": "Imprimindo",
+    "5": "Aquecendo",
+}
+HEX_TEXT_PATTERN = re.compile(r"^0x(?:[0-9a-fA-F]{2})+$")
+
+
+def _lookup_key(value: str | None) -> str:
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    without_accents = "".join(
+        character
+        for character in decomposed
+        if not unicodedata.combining(character)
+    )
+    return " ".join(without_accents.casefold().strip().split())
+
+
+def alert_metric_key_for_machine(machine: PrinterMachine) -> str:
+    """Seleciona a metrica de coleta de acordo com o fabricante do modelo."""
+    manufacturer = _lookup_key(machine.manufacturer)
+    if manufacturer in PRINTER_STATUS_MANUFACTURERS:
+        return PRINTER_STATUS_METRIC_KEY
+    return ALERT_RAW_METRIC_KEY
 
 
 def _latency_ms(started_at: float) -> int:
@@ -83,15 +112,74 @@ def _classify_error(error_detail: Any) -> str:
     return "snmp_sem_resposta"
 
 
+def _decode_bytes_as_text(raw_bytes: bytes | None) -> str | None:
+    if not raw_bytes:
+        return None
+    clean_bytes = raw_bytes.replace(b"\x00", b"").strip()
+    if not clean_bytes:
+        return None
+
+    for encoding in ("utf-8", "cp1252", "latin-1"):
+        try:
+            decoded = clean_bytes.decode(encoding).strip()
+        except UnicodeDecodeError:
+            continue
+        if decoded:
+            return _normalize_decoded_snmp_text(decoded)
+    return None
+
+
+def _normalize_decoded_snmp_text(value: str) -> str:
+    replacements = {
+        "HÄ": "Ha",
+        "hÄ": "ha",
+        "HÃ¡": "Ha",
+        "hÃ¡": "ha",
+    }
+    text = value.replace("\x00", "").strip()
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return " ".join(text.split())
+
+
+def _decode_hex_text(value: str) -> str | None:
+    text = str(value or "").strip()
+    if not HEX_TEXT_PATTERN.match(text):
+        return None
+    try:
+        return _decode_bytes_as_text(bytes.fromhex(text[2:]))
+    except ValueError:
+        return None
+
+
+def _snmp_value_text(value: Any, raw_bytes: bytes | None) -> str:
+    pretty_value = value.prettyPrint() if hasattr(value, "prettyPrint") else str(value)
+    original = _normalize_decoded_snmp_text(str(pretty_value))
+    decoded_from_hex = _decode_hex_text(original)
+    decoded_from_bytes = _decode_bytes_as_text(raw_bytes)
+
+    if decoded_from_hex:
+        return decoded_from_hex
+    if decoded_from_bytes and (original.startswith("0x") or decoded_from_bytes != original):
+        return decoded_from_bytes
+    return original
+
+
 def _snmp_value_to_raw_item(
     *,
     returned_oid: str,
     value: Any,
 ) -> dict[str, Any] | None:
-    value_original = value.prettyPrint() if hasattr(value, "prettyPrint") else str(value)
-    if value_original is None:
-        return None
-    value_original = str(value_original).replace("\x00", "").strip()
+    raw_bytes: bytes | None = None
+    if hasattr(value, "asOctets"):
+        try:
+            raw_bytes = bytes(value.asOctets())
+        except Exception:
+            raw_bytes = None
+    elif isinstance(value, bytes):
+        raw_bytes = value
+
+    value_original = _snmp_value_text(value, raw_bytes)
     if not value_original:
         return None
 
@@ -101,15 +189,6 @@ def _snmp_value_to_raw_item(
         "valor_repr": repr(value),
         "tipo_snmp": type(value).__name__,
     }
-
-    raw_bytes: bytes | None = None
-    if hasattr(value, "asOctets"):
-        try:
-            raw_bytes = bytes(value.asOctets())
-        except Exception:
-            raw_bytes = None
-    elif isinstance(value, bytes):
-        raw_bytes = value
 
     if raw_bytes is not None:
         item["valor_bytes_hex"] = raw_bytes.hex()
@@ -301,19 +380,42 @@ def normalize_raw_alerts(
 
 def empty_alert_result() -> dict[str, Any]:
     return {
-        "codigo": "sem_retorno_alerta",
+        "codigo": "sem_alerta",
         "severidade": "unknown",
         "classificacao": "cinza",
-        "descricao": "Nenhuma mensagem de alerta foi retornada pela impressora",
+        "descricao": "Sem alerta",
         "mensagem_original": None,
         "reconhecido": False,
+        "persistir": False,
     }
+
+
+def normalize_raw_items_for_metric(
+    *,
+    raw_items: list[dict[str, Any]],
+    metric_key: str,
+) -> list[dict[str, Any]]:
+    if metric_key != PRINTER_STATUS_METRIC_KEY:
+        return raw_items
+
+    normalized_items: list[dict[str, Any]] = []
+    for item in raw_items:
+        status_code_match = re.search(r"\d+", str(item.get("valor_original") or ""))
+        status_code = status_code_match.group(0) if status_code_match else None
+        message = HR_PRINTER_STATUS_MESSAGES.get(status_code or "")
+        normalized_item = dict(item)
+        if message:
+            normalized_item["valor_original"] = message
+            normalized_item["valor_status_codigo"] = status_code
+            normalized_items.append(normalized_item)
+    return normalized_items
 
 
 def _base_result(
     *,
     machine_id: int,
     model_id: int | None = None,
+    metric_key: str = ALERT_RAW_METRIC_KEY,
     query_mode: str | None = None,
     configured_oid: str | None = None,
 ) -> dict[str, Any]:
@@ -322,7 +424,7 @@ def _base_result(
         "modelo_id": model_id,
         "sucesso": False,
         "origem_coleta": "snmp",
-        "chave_metrica": ALERT_RAW_METRIC_KEY,
+        "chave_metrica": metric_key,
         "modo_consulta": query_mode,
         "oid_configurado": configured_oid,
     }
@@ -334,6 +436,7 @@ def _error_result(
     error_code: str,
     error_detail: str,
     model_id: int | None = None,
+    metric_key: str = ALERT_RAW_METRIC_KEY,
     query_mode: str | None = None,
     configured_oid: str | None = None,
     latency_ms: int | None = None,
@@ -341,6 +444,7 @@ def _error_result(
     result = _base_result(
         machine_id=machine_id,
         model_id=model_id,
+        metric_key=metric_key,
         query_mode=query_mode,
         configured_oid=configured_oid,
     )
@@ -362,7 +466,7 @@ def collect_snmp_alerts_for_machine(
     snmp_get: Callable[..., dict[str, Any]] = snmp_get_alert_raw,
     snmp_walk: Callable[..., dict[str, Any]] = snmp_walk_alert_raw,
 ) -> dict[str, Any]:
-    """Coleta alert_raw via SNMP sem persistir alertas no banco."""
+    """Coleta alertas/status via SNMP sem persistir alertas no banco."""
     machine = db.get(PrinterMachine, machine_id)
     if machine is None:
         return _error_result(
@@ -398,17 +502,19 @@ def collect_snmp_alerts_for_machine(
             error_detail="Maquina marcada como offline no status atual.",
         )
 
+    metric_key = alert_metric_key_for_machine(machine)
     oid_config = get_active_oid_for_model(
         db,
         model_id=machine.model_id,
-        metric_key=ALERT_RAW_METRIC_KEY,
+        metric_key=metric_key,
     )
     if oid_config is None:
         return _error_result(
             machine_id=machine.id,
             model_id=machine.model_id,
-            error_code="oid_alert_raw_nao_configurado",
-            error_detail="OID ativo de alert_raw nao configurado para o modelo.",
+            metric_key=metric_key,
+            error_code=f"oid_{metric_key}_nao_configurado",
+            error_detail=f"OID ativo de {metric_key} nao configurado para o modelo.",
         )
 
     monitoring_settings = settings or get_monitoring_settings()
@@ -426,6 +532,7 @@ def collect_snmp_alerts_for_machine(
         return _error_result(
             machine_id=machine.id,
             model_id=machine.model_id,
+            metric_key=metric_key,
             query_mode=query_mode,
             configured_oid=oid_config.oid,
             error_code=snmp_result.get("erro_codigo") or "snmp_falha_tecnica",
@@ -436,7 +543,10 @@ def collect_snmp_alerts_for_machine(
             latency_ms=snmp_result.get("latencia_ms"),
         )
 
-    raw_alerts = list(snmp_result.get("alertas_brutos") or [])
+    raw_alerts = normalize_raw_items_for_metric(
+        raw_items=list(snmp_result.get("alertas_brutos") or []),
+        metric_key=metric_key,
+    )
     normalized_alerts = (
         normalize_raw_alerts(db=db, raw_alerts=raw_alerts)
         if raw_alerts
@@ -445,6 +555,7 @@ def collect_snmp_alerts_for_machine(
     result = _base_result(
         machine_id=machine.id,
         model_id=machine.model_id,
+        metric_key=metric_key,
         query_mode=query_mode,
         configured_oid=oid_config.oid,
     )
@@ -455,6 +566,7 @@ def collect_snmp_alerts_for_machine(
             "alertas_normalizados": normalized_alerts,
             "classificacao_geral": calculate_overall_classification(normalized_alerts),
             "latencia_ms": snmp_result.get("latencia_ms"),
+            "sem_alerta_real": not raw_alerts,
         }
     )
     return result

@@ -16,7 +16,13 @@ from backend.app.core.database import Base
 from backend.app.core.timezone import now_sao_paulo
 
 
-ALLOWED_METRIC_KEYS = ("alert_raw", "name", "location", "page_count_total")
+ALLOWED_METRIC_KEYS = (
+    "alert_raw",
+    "hr_printer_status",
+    "name",
+    "location",
+    "page_count_total",
+)
 ALLOWED_VALUE_TYPES = ("string", "integer", "counter", "gauge", "boolean")
 ALLOWED_SNMP_VERSIONS = ("1", "2c")
 ALLOWED_QUERY_MODES = ("get", "walk")

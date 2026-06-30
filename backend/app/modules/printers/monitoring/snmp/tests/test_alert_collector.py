@@ -7,7 +7,10 @@ from sqlalchemy.pool import StaticPool
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
 from backend.app.modules.printers.monitoring.config import MonitoringSettings
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
+    HR_PRINTER_STATUS_OID,
+    PRINTER_STATUS_METRIC_KEY,
     collect_snmp_alerts_for_machine,
+    _snmp_value_to_raw_item,
 )
 from backend.app.modules.printers.monitoring.snmp.models import PrinterSnmpOid
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
@@ -129,13 +132,14 @@ class SnmpAlertCollectorTest(TestCase):
         self,
         model: PrinterModel,
         *,
+        metric_key: str = "alert_raw",
         mode: str,
         active: bool = True,
         oid: str = ALERT_BASE_OID,
     ) -> PrinterSnmpOid:
         row = PrinterSnmpOid(
             modelo_id=model.id,
-            chave_metrica="alert_raw",
+            chave_metrica=metric_key,
             oid=oid,
             tipo_valor="string",
             versao_snmp="2c",
@@ -178,7 +182,7 @@ class SnmpAlertCollectorTest(TestCase):
         )
         self.add_rule(
             "toner_low",
-            "toner baixo",
+            "toner baixo,ha pouco toner",
             severity="medium",
             priority=20,
             description="Toner baixo",
@@ -189,6 +193,13 @@ class SnmpAlertCollectorTest(TestCase):
             severity="green",
             priority=100,
             description="Estado normal / em espera",
+        )
+        self.add_rule(
+            "ok",
+            "imprimindo,aquecendo",
+            severity="green",
+            priority=110,
+            description="Operacional",
         )
         self.add_rule(
             "unknown",
@@ -313,22 +324,24 @@ class SnmpAlertCollectorTest(TestCase):
             [f"{ALERT_BASE_OID}.1.1", f"{ALERT_BASE_OID}.1.2"],
         )
 
-    def test_walk_vazio_gera_sem_retorno_alerta_cinza(self):
+    def test_walk_vazio_gera_sem_alerta_cinza_sem_persistencia(self):
         result, _, _ = self.collect(walk_result=snmp_success([]))
 
         self.assertTrue(result["sucesso"])
-        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "sem_retorno_alerta")
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "sem_alerta")
         self.assertEqual(result["classificacao_geral"], "cinza")
+        self.assertTrue(result["sem_alerta_real"])
 
-    def test_get_vazio_gera_sem_retorno_alerta_cinza(self):
+    def test_get_vazio_gera_sem_alerta_cinza_sem_persistencia(self):
         self.db.query(PrinterSnmpOid).filter_by(modelo_id=self.model.id).one().modo_consulta = "get"
         self.db.commit()
 
         result, _, _ = self.collect(get_result=snmp_success([]))
 
         self.assertTrue(result["sucesso"])
-        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "sem_retorno_alerta")
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "sem_alerta")
         self.assertEqual(result["classificacao_geral"], "cinza")
+        self.assertTrue(result["sem_alerta_real"])
 
     def test_mensagem_conhecida_aplica_rules_engine_corretamente(self):
         result, _, _ = self.collect(
@@ -381,6 +394,104 @@ class SnmpAlertCollectorTest(TestCase):
         result, _, _ = self.collect(walk_result=snmp_success([raw_alert("Em espera")]))
 
         self.assertEqual(result["classificacao_geral"], "verde")
+
+    def test_hp_usa_hr_printer_status_em_get(self):
+        hp_model = self.add_model(manufacturer="HP", name="MFP-4303")
+        hp_machine = self.add_machine(model=hp_model, ip_address="192.0.2.30")
+        self.add_status(hp_machine, "online")
+        self.add_oid(
+            hp_model,
+            metric_key=PRINTER_STATUS_METRIC_KEY,
+            mode="get",
+            oid=HR_PRINTER_STATUS_OID,
+        )
+
+        result, snmp_get, snmp_walk = self.collect(
+            machine_id=hp_machine.id,
+            get_result=snmp_success([raw_alert("3", oid=HR_PRINTER_STATUS_OID)]),
+        )
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["chave_metrica"], PRINTER_STATUS_METRIC_KEY)
+        self.assertEqual(result["modo_consulta"], "get")
+        self.assertEqual(len(snmp_get.calls), 1)
+        self.assertEqual(len(snmp_walk.calls), 0)
+        self.assertEqual(snmp_get.calls[0]["oid"], HR_PRINTER_STATUS_OID)
+        self.assertEqual(result["alertas_brutos"][0]["valor_original"], "Em espera")
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "idle")
+
+    def test_hp_hr_printer_status_indefinido_vira_sem_alerta(self):
+        hp_model = self.add_model(manufacturer="HP", name="MFP-4303")
+        hp_machine = self.add_machine(model=hp_model, ip_address="192.0.2.30")
+        self.add_status(hp_machine, "online")
+        self.add_oid(
+            hp_model,
+            metric_key=PRINTER_STATUS_METRIC_KEY,
+            mode="get",
+            oid=HR_PRINTER_STATUS_OID,
+        )
+
+        result, _, _ = self.collect(
+            machine_id=hp_machine.id,
+            get_result=snmp_success([raw_alert("1", oid=HR_PRINTER_STATUS_OID)]),
+        )
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["alertas_brutos"], [])
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "sem_alerta")
+        self.assertTrue(result["sem_alerta_real"])
+
+    def test_samsung_usa_hr_printer_status_em_get(self):
+        samsung_model = self.add_model(manufacturer="Samsung", name="K-4350")
+        samsung_machine = self.add_machine(model=samsung_model, ip_address="192.0.2.31")
+        self.add_status(samsung_machine, "online")
+        self.add_oid(
+            samsung_model,
+            metric_key=PRINTER_STATUS_METRIC_KEY,
+            mode="get",
+            oid=HR_PRINTER_STATUS_OID,
+        )
+
+        result, snmp_get, snmp_walk = self.collect(
+            machine_id=samsung_machine.id,
+            get_result=snmp_success([raw_alert("4", oid=HR_PRINTER_STATUS_OID)]),
+        )
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["chave_metrica"], PRINTER_STATUS_METRIC_KEY)
+        self.assertEqual(len(snmp_get.calls), 1)
+        self.assertEqual(len(snmp_walk.calls), 0)
+        self.assertEqual(result["alertas_brutos"][0]["valor_original"], "Imprimindo")
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "ok")
+
+    def test_brother_mantem_alert_raw_em_walk(self):
+        brother_model = self.add_model(manufacturer="Brother", name="DCP-L2540DW")
+        brother_machine = self.add_machine(model=brother_model, ip_address="192.0.2.32")
+        self.add_status(brother_machine, "online")
+        self.add_oid(brother_model, mode="walk", oid=ALERT_BASE_OID)
+
+        result, snmp_get, snmp_walk = self.collect(
+            machine_id=brother_machine.id,
+            walk_result=snmp_success([raw_alert("Substituir toner")]),
+        )
+
+        self.assertTrue(result["sucesso"])
+        self.assertEqual(result["chave_metrica"], "alert_raw")
+        self.assertEqual(len(snmp_get.calls), 0)
+        self.assertEqual(len(snmp_walk.calls), 1)
+
+    def test_valor_hexadecimal_e_decodificado_antes_da_rules_engine(self):
+        item = _snmp_value_to_raw_item(
+            returned_oid=f"{ALERT_BASE_OID}.1.1",
+            value=b"Ha pouco toner",
+        )
+
+        self.assertIsNotNone(item)
+        self.assertEqual(item["valor_original"], "Ha pouco toner")
+        self.assertNotIn("0x", item["valor_original"])
+        result, _, _ = self.collect(walk_result=snmp_success([item]))
+
+        self.assertEqual(result["alertas_normalizados"][0]["codigo"], "toner_low")
 
     def test_classificacao_geral_amarela_quando_houver_low_ou_medium(self):
         result, _, _ = self.collect(walk_result=snmp_success([raw_alert("Toner baixo")]))
