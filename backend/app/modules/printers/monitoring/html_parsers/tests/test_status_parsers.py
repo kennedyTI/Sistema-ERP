@@ -416,6 +416,42 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(result.mensagens_brutas, ["Trocar Cilindro"])
         self.assertEqual(result.estado_principal, "Trocar Cilindro")
 
+    def test_parser_brother_l2540dw_combina_cilindro_e_toner_baixo(self):
+        html = """
+        <html>
+          <body>
+            <div id="moni_data">
+              <span class="moni moniWarning">Trocar Cilindro</span>
+            </div>
+            <div id="ink_level">
+              <img src="../common/images/low.gif" alt="Low">
+              <img src="../common/images/black.gif" alt="Black" class="tonerremain">
+            </div>
+          </body>
+        </html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Brother", "DCP-L2540DW"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Trocar Cilindro", "Subs. toner"])
+        self.assertEqual(result.estado_principal, "Trocar Cilindro")
+
+    def test_parser_brother_l2540dw_ignora_low_gif_fora_do_nivel_toner(self):
+        html = """
+        <html>
+          <body>
+            <p>Device Status</p><p>Trocar Cilindro</p>
+            <div id="outro_bloco"><img src="/images/low.gif" alt="Low"></div>
+          </body>
+        </html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Brother", "DCP-L2540DW"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Trocar Cilindro"])
+
     def test_parser_retorna_multiplas_mensagens_quando_existirem(self):
         html = "<html><body><p>Toner baixo</p><p>Tampa aberta</p></body></html>"
 
@@ -497,6 +533,68 @@ class HtmlStatusParserByModelTest(TestCase):
 
         self.assertTrue(result.sucesso)
         self.assertEqual(result.mensagens_brutas, ["Modo de espera."])
+
+    def test_parser_canon_interpreta_sleep_do_shell_javascript_sem_headless(self):
+        html = """
+        <html><body><script>
+          var prt_status = "8";
+          var prt_str_array = new Array(
+            new stamsgarray(0x80, "A service call error occurred. ", "/svc.gif"),
+            new stamsgarray(0x40, "A maintenance error occurred. ", "/err.gif"),
+            new stamsgarray(0x20, "An error occurred. ", "/wrn.gif"),
+            new stamsgarray(0x08, "Sleep mode. ", "/ok.gif"),
+            new stamsgarray(0x01, "Printing... ", "/ok.gif"),
+            new stamsgarray(0x00, "Ready to print. ", "/ok.gif")
+          );
+          var errCodeTbl = new Array(null);
+        </script></body></html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Modo de espera."])
+
+    def test_parser_canon_interpreta_status_decimal_com_regra_bitwise_da_interface(self):
+        html = """
+        <html><body><script>
+          var prt_status = "40";
+          var prt_str_array = new Array(
+            new stamsgarray(0x80, "A service call error occurred. ", "/svc.gif"),
+            new stamsgarray(0x40, "A maintenance error occurred. ", "/err.gif"),
+            new stamsgarray(0x20, "An error occurred. ", "/wrn.gif"),
+            new stamsgarray(0x08, "Sleep mode. ", "/ok.gif")
+          );
+          var errCodeTbl = new Array(null);
+        </script></body></html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["Ocorreu um erro."])
+
+    def test_parser_canon_prioriza_erro_dinamico_sobre_sleep(self):
+        html = """
+        <html><body><script>
+          new art_array_pri(
+            0x03020101,
+            "The xxx toner is low. ",
+            "Replacement is not yet needed. ",
+            null
+          );
+          var prt_status = "8";
+          var prt_str_array = new Array(
+            new stamsgarray(0x08, "Sleep mode. ", "/ok.gif")
+          );
+          var errCodeTbl = new Array(0x03020101, null);
+        </script></body></html>
+        """
+
+        result = parse_status_html_for_model(DummyModel("Canon", "IR-C3326I"), html)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.mensagens_brutas, ["The toner is low."])
 
     def test_parser_samsung_detecta_estado_e_alerta_separados(self):
         result = parse_status_html_for_model(

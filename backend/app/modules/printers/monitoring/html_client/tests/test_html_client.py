@@ -185,6 +185,19 @@ class HtmlClientRequestTest(TestCase):
         self.assertTrue(call["verify"])
         self.assertIsInstance(call["auth"], HTTPBasicAuth)
 
+    def test_cliente_solicita_html_sem_cache(self):
+        session = FakeSession(FakeResponse())
+
+        result = fetch_html_page(
+            "10.0.0.10",
+            config(protocolo_preferencial="http"),
+            session=session,
+        )
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(session.calls[0]["headers"]["Cache-Control"], "no-cache")
+        self.assertEqual(session.calls[0]["headers"]["Pragma"], "no-cache")
+
     def test_cliente_usa_porta_configurada(self):
         session = FakeSession(FakeResponse())
 

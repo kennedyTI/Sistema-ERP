@@ -30,6 +30,9 @@ from backend.app.modules.printers.monitoring.html_credentials.services import (
 from backend.app.modules.printers.monitoring.html_parsers.registry import (
     parse_html_status_response,
 )
+from backend.app.modules.printers.monitoring.ipp.client import (
+    fetch_ipp_printer_status,
+)
 from backend.app.modules.printers.monitoring.locks import acquire_lock, release_lock
 from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     ALERT_RAW_METRIC_KEY,
@@ -54,6 +57,7 @@ TECHNICAL_RULE_CODES = {
 DEFAULT_ALERT_LOCK_TTL_SECONDS = 120
 SNMP_ALERT_MAX_ATTEMPTS = 2
 HTML_STATUS_METRIC_KEY = "html_status"
+IPP_STATUS_METRIC_KEY = "ipp_status"
 ALERT_BATCH_IGNORED_REASONS = {
     "sem_ip",
     "sem_modelo",
@@ -104,6 +108,8 @@ def _method_confirmation(method: str | None) -> str:
         return "snmp_walk"
     if method == "html_autenticado":
         return "html_autenticado"
+    if method == "ipp":
+        return "ipp"
     if method == "cascata":
         return "falha_cascata"
     return "snmp_get"
@@ -122,6 +128,18 @@ def _is_canon_ir_c3326i(machine: PrinterMachine) -> bool:
     manufacturer = normalize_text(machine.manufacturer)
     model_name = normalize_text(machine.model)
     return manufacturer == "canon" and model_name == "ir-c3326i"
+
+
+def _is_brother_dcp_l2540dw(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "brother" and model_name == "dcp-l2540dw"
+
+
+def _is_hp_mfp_4303(machine: PrinterMachine) -> bool:
+    manufacturer = normalize_text(machine.manufacturer)
+    model_name = normalize_text(machine.model)
+    return manufacturer == "hp" and model_name == "mfp-4303"
 
 
 def _system_failure_metadata() -> dict[str, str]:
@@ -586,6 +604,74 @@ def collect_html_alerts_for_machine(
     }
 
 
+def collect_ipp_alerts_for_machine(
+    db: Session,
+    *,
+    machine_id: int,
+    settings: MonitoringSettings | None = None,
+    fetcher: Callable[..., dict[str, Any]] = fetch_ipp_printer_status,
+) -> dict[str, Any]:
+    """Coleta o estado operacional via IPP sem persistir resposta bruta."""
+    del settings
+    machine = db.get(PrinterMachine, machine_id)
+    if machine is None:
+        return {
+            "maquina_id": machine_id,
+            "sucesso": False,
+            "origem_coleta": "ipp",
+            "chave_metrica": IPP_STATUS_METRIC_KEY,
+            "modo_consulta": "ipp",
+            "erro_codigo": "maquina_nao_encontrada",
+            "erro_detalhe": "Maquina nao encontrada.",
+        }
+
+    ipp_result = fetcher(machine.ip_address)
+    if not ipp_result.get("sucesso"):
+        return {
+            "maquina_id": machine.id,
+            "modelo_id": machine.model_id,
+            "sucesso": False,
+            "origem_coleta": "ipp",
+            "chave_metrica": IPP_STATUS_METRIC_KEY,
+            "modo_consulta": "ipp",
+            "erro_codigo": ipp_result.get("erro_codigo") or "ipp_falha_coleta",
+            "erro_detalhe": ipp_result.get("erro_detalhe") or "Falha na consulta IPP.",
+        }
+
+    messages = [str(message) for message in ipp_result.get("mensagens") or [] if message]
+    raw_alerts = [
+        {
+            "oid_retornado": None,
+            "valor_original": message,
+            "valor_repr": repr(message),
+            "tipo_snmp": "IppStatus",
+        }
+        for message in messages
+    ]
+    normalized_alerts = (
+        normalize_raw_alerts(db=db, raw_alerts=raw_alerts)
+        if raw_alerts
+        else [empty_alert_result()]
+    )
+    return {
+        "maquina_id": machine.id,
+        "modelo_id": machine.model_id,
+        "sucesso": True,
+        "origem_coleta": "ipp",
+        "chave_metrica": IPP_STATUS_METRIC_KEY,
+        "modo_consulta": "ipp",
+        "oid_configurado": None,
+        "alertas_brutos": raw_alerts,
+        "alertas_normalizados": normalized_alerts,
+        "classificacao_geral": calculate_overall_classification(normalized_alerts),
+        "sem_alerta_real": not raw_alerts,
+        "metadados": {
+            "estado": ipp_result.get("estado"),
+            "motivos": ipp_result.get("motivos") or [],
+        },
+    }
+
+
 def _is_snmp_technical_failure(result: dict[str, Any]) -> bool:
     return bool(result.get("erro_codigo", "").startswith("snmp_"))
 
@@ -598,6 +684,7 @@ def collect_and_sync_machine_alerts(
     settings: MonitoringSettings | None = None,
     collector: Callable[..., dict[str, Any]] = collect_snmp_alerts_for_machine,
     html_collector: Callable[..., dict[str, Any]] = collect_html_alerts_for_machine,
+    ipp_collector: Callable[..., dict[str, Any]] = collect_ipp_alerts_for_machine,
     max_snmp_attempts: int = SNMP_ALERT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Orquestra coleta SNMP com lock e sincronizacao atomica."""
@@ -619,6 +706,8 @@ def collect_and_sync_machine_alerts(
     last_result: dict[str, Any] | None = None
     fallback_html_used = False
     fallback_html_error: str | None = None
+    fallback_ipp_used = False
+    fallback_ipp_error: str | None = None
     try:
         for _ in range(max_snmp_attempts):
             attempts += 1
@@ -641,12 +730,23 @@ def collect_and_sync_machine_alerts(
         machine = db.get(PrinterMachine, machine_id)
         should_try_html = bool(
             machine
-            and _is_canon_ir_c3326i(machine)
             and (
-                _is_snmp_technical_failure(last_result)
+                (
+                    _is_canon_ir_c3326i(machine)
+                    and (
+                        _is_snmp_technical_failure(last_result)
+                        or (
+                            last_result.get("sucesso")
+                            and last_result.get("sem_alerta_real")
+                        )
+                    )
+                )
                 or (
-                    last_result.get("sucesso")
-                    and last_result.get("sem_alerta_real")
+                    _is_brother_dcp_l2540dw(machine)
+                    and (
+                        last_result.get("sucesso")
+                        or _is_snmp_technical_failure(last_result)
+                    )
                 )
             )
         )
@@ -661,6 +761,29 @@ def collect_and_sync_machine_alerts(
                 fallback_html_used = True
             elif not html_result.get("sucesso"):
                 fallback_html_error = html_result.get("erro_codigo")
+
+        should_try_ipp = bool(
+            machine
+            and _is_hp_mfp_4303(machine)
+            and (
+                _is_snmp_technical_failure(last_result)
+                or (
+                    last_result.get("sucesso")
+                    and last_result.get("sem_alerta_real")
+                )
+            )
+        )
+        if should_try_ipp:
+            ipp_result = ipp_collector(
+                db,
+                machine_id=machine_id,
+                settings=config,
+            )
+            if ipp_result.get("sucesso") and not ipp_result.get("sem_alerta_real"):
+                last_result = ipp_result
+                fallback_ipp_used = True
+            elif not ipp_result.get("sucesso"):
+                fallback_ipp_error = ipp_result.get("erro_codigo")
 
         if not last_result.get("sucesso") and not _is_snmp_technical_failure(last_result):
             return {
@@ -687,10 +810,13 @@ def collect_and_sync_machine_alerts(
                 "processada": True,
                 "tentativas_snmp": attempts,
                 "fallback_html_usado": fallback_html_used,
+                "fallback_ipp_usado": fallback_ipp_used,
             }
         )
         if fallback_html_error:
             sync_result["fallback_html_erro"] = fallback_html_error
+        if fallback_ipp_error:
+            sync_result["fallback_ipp_erro"] = fallback_ipp_error
         return sync_result
     except Exception:
         db.rollback()

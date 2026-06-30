@@ -17,12 +17,13 @@ from backend.app.core.database import Base
 from backend.app.core.timezone import now_sao_paulo
 
 
-ALLOWED_ALERT_ORIGINS = ("snmp", "html", "sistema")
-ALLOWED_COLLECTION_METHODS = ("get", "walk", "html_autenticado", "cascata")
+ALLOWED_ALERT_ORIGINS = ("snmp", "html", "ipp", "sistema")
+ALLOWED_COLLECTION_METHODS = ("get", "walk", "html_autenticado", "ipp", "cascata")
 ALLOWED_CONFIRMATION_METHODS = (
     "snmp_get",
     "snmp_walk",
     "html_autenticado",
+    "ipp",
     "falha_cascata",
 )
 ALLOWED_ALERT_HISTORY_EVENTS = (

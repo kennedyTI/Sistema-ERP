@@ -1,5 +1,8 @@
 """Parser HTML de status para modelos Canon."""
 
+import html as html_module
+import re
+
 from backend.app.modules.printers.monitoring.html_parsers.base import (
     HtmlStatusParseResult,
     HtmlStatusParser,
@@ -43,6 +46,38 @@ CANON_EMPTY_ERROR_TERMS = (
     "detalhes",
 )
 
+CANON_DYNAMIC_ERROR_TABLE_PATTERN = re.compile(
+    r"var\s+errCodeTbl\s*=\s*new\s+Array\s*\((?P<values>.*?)\)\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
+CANON_DYNAMIC_ERROR_ENTRY_PATTERN = re.compile(
+    r"new\s+art_array_pri\s*\(\s*(?P<code>0x[0-9a-f]+)\s*,\s*"
+    r'"(?P<message>(?:\\.|[^"])*)"',
+    re.IGNORECASE | re.DOTALL,
+)
+CANON_DYNAMIC_PRINTER_STATUS_PATTERN = re.compile(
+    r"var\s+prt_status\s*=\s*[\"'](?P<value>(?:0x)?[0-9a-f]+)[\"']",
+    re.IGNORECASE,
+)
+CANON_DYNAMIC_PRINTER_TABLE_PATTERN = re.compile(
+    r"var\s+prt_str_array\s*=\s*new\s+Array\s*\((?P<entries>.*?)\)\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
+CANON_DYNAMIC_PRINTER_ENTRY_PATTERN = re.compile(
+    r"new\s+stamsgarray\s*\(\s*(?P<code>0x[0-9a-f]+|\d+)\s*,\s*"
+    r'"(?P<message>(?:\\.|[^"])*)"',
+    re.IGNORECASE | re.DOTALL,
+)
+CANON_DYNAMIC_STATUS_TRANSLATIONS = {
+    "a service call error occurred.": "Ocorreu um erro de serviço.",
+    "a maintenance error occurred.": "Ocorreu um erro de manutenção.",
+    "an error occurred.": "Ocorreu um erro.",
+    "warming up...": "Aquecendo.",
+    "sleep mode.": "Modo de espera.",
+    "printing...": "Imprimindo.",
+    "ready to print.": "Pronta para imprimir.",
+}
+
 
 class CanonIrC3326iStatusParser(HtmlStatusParser):
     parser_name = "canon_ir_c3326i_status"
@@ -64,11 +99,97 @@ class CanonIrC3326iStatusParser(HtmlStatusParser):
         if error_messages:
             return error_messages
 
+        has_dynamic_errors, dynamic_error_messages = self._extract_dynamic_error_messages(html)
+        if has_dynamic_errors:
+            return dynamic_error_messages or ["Ocorreu um erro."]
+
         printer_state = self._extract_printer_state_messages(chunks)
         if printer_state:
             return printer_state
 
+        dynamic_printer_state = self._extract_dynamic_printer_state(html)
+        if dynamic_printer_state:
+            return dynamic_printer_state
+
         return self._extract_known_status_messages(chunks)
+
+    def _extract_dynamic_error_messages(self, html: str) -> tuple[bool, list[str]]:
+        table_match = CANON_DYNAMIC_ERROR_TABLE_PATTERN.search(html)
+        if table_match is None:
+            return False, []
+
+        error_codes = [
+            int(value, 16)
+            for value in re.findall(
+                r"0x[0-9a-f]+",
+                table_match.group("values"),
+                re.IGNORECASE,
+            )
+        ]
+        if not error_codes:
+            return False, []
+
+        messages_by_code = {
+            int(match.group("code"), 16): self._clean_dynamic_message(
+                match.group("message")
+            )
+            for match in CANON_DYNAMIC_ERROR_ENTRY_PATTERN.finditer(html)
+        }
+        messages = [
+            messages_by_code[code]
+            for code in error_codes
+            if messages_by_code.get(code)
+        ]
+        return True, unique_messages(messages)
+
+    def _extract_dynamic_printer_state(self, html: str) -> list[str]:
+        status_match = CANON_DYNAMIC_PRINTER_STATUS_PATTERN.search(html)
+        table_match = CANON_DYNAMIC_PRINTER_TABLE_PATTERN.search(html)
+        if status_match is None or table_match is None:
+            return []
+
+        status_value = self._parse_dynamic_number(status_match.group("value"))
+        entries = [
+            (
+                self._parse_dynamic_number(match.group("code")),
+                self._clean_dynamic_message(match.group("message")),
+            )
+            for match in CANON_DYNAMIC_PRINTER_ENTRY_PATTERN.finditer(
+                table_match.group("entries")
+            )
+        ]
+        if not entries:
+            return []
+
+        # A interface Canon testa igualdade e depois o primeiro bit aplicavel.
+        selected_message = next(
+            (message for code, message in entries if status_value == code),
+            None,
+        )
+        if selected_message is None:
+            selected_message = next(
+                (message for code, message in entries if status_value & code),
+                None,
+            )
+        if not selected_message:
+            selected_message = entries[0][1]
+        return unique_messages([self._translate_dynamic_status(selected_message)])
+
+    def _clean_dynamic_message(self, value: str) -> str:
+        cleaned = value.replace(r'\"', '"').replace(r"\/", "/")
+        cleaned = cleaned.replace(r"\n", " ").replace(r"\r", " ").replace(r"\t", " ")
+        cleaned = html_module.unescape(cleaned)
+        cleaned = re.sub(r"\bxxx\s*", "", cleaned, flags=re.IGNORECASE)
+        return " ".join(cleaned.split()).strip()
+
+    def _translate_dynamic_status(self, message: str) -> str:
+        return CANON_DYNAMIC_STATUS_TRANSLATIONS.get(
+            normalize_text(message),
+            message,
+        )
+
+    def _parse_dynamic_number(self, value: str) -> int:
+        return int(value, 16) if value.casefold().startswith("0x") else int(value, 10)
 
     def _extract_error_info_messages(self, chunks: list[str]) -> list[str]:
         found: list[str] = []

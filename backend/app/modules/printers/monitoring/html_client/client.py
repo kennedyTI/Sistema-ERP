@@ -32,6 +32,10 @@ CANON_PUBLIC_KEY_FIELD = "PK"
 CANON_USERNAME_FIELD = "USERNAME"
 CANON_PASSWORD_FIELD = "PASSWORD"
 CANON_PASSWORD_VISIBLE_FIELD = "PASSWORD_T"
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+}
 VOID_HTML_TAGS = {
     "area",
     "base",
@@ -521,6 +525,7 @@ def _fetch_brother_form_page(
         try:
             login_response = http_session.get(
                 login_url,
+                headers=NO_CACHE_HEADERS,
                 timeout=config.timeout_segundos,
                 verify=config.validar_ssl,
             )
@@ -716,6 +721,7 @@ def _fetch_brother_form_page(
         try:
             target_response = http_session.get(
                 target_url,
+                headers=NO_CACHE_HEADERS,
                 timeout=config.timeout_segundos,
                 verify=config.validar_ssl,
             )
@@ -792,6 +798,7 @@ def fetch_html_page(
             response = http_session.get(
                 url,
                 auth=auth,
+                headers=NO_CACHE_HEADERS,
                 timeout=config.timeout_segundos,
                 verify=config.validar_ssl,
             )
