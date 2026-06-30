@@ -3208,9 +3208,119 @@ Foram mantidas as validacoes de compilacao e testes completos do backend,
 Beat, API real e navegacao HTTPS local. Nenhum segredo, HTML bruto ou JS bruto
 e exposto por esta mudanca.
 
+## Etapa 3.5.2.22.1 - Fallback IPP para HP MFP-4303
+
+O diagnostico real confirmou que o `hrPrinterStatus` via SNMP das HP MFP-4303
+retorna um estado generico sem mensagem operacional util. Os endpoints EWS
+testados entregam apenas o shell da interface web. O IPP, por outro lado,
+responde em `/ipp/print` com `printer-state`, `printer-state-reasons` e
+`printer-state-message`.
+
+### Cascata por modelo
+
+Para HP MFP-4303, a coleta de alertas agora segue:
+
+```text
+SNMP com alerta real -> persiste SNMP
+SNMP sem alerta real ou com falha tecnica -> consulta IPP
+IPP com estado util -> persiste origem/metodo/confirmacao ipp
+SNMP e IPP sem resultado -> preserva o tratamento anterior da cascata
+```
+
+O fallback continua em `collect_and_sync_machine_alerts`. O coletor SNMP de
+baixo nivel permanece exclusivamente SNMP. Canon IR-C3326I continua usando o
+fallback HTML autenticado ja existente.
+
+### Estado e seguranca
+
+O cliente usa `Get-Printer-Attributes` por meio de `pyipp` e nao envia
+trabalhos de impressao. Estados conhecidos sao apresentados em portugues:
+
+| Estado IPP | Mensagem |
+| --- | --- |
+| `idle` | `Em espera` |
+| `processing` | `Imprimindo` |
+| `stopped` | `Erro: impressora parada` |
+
+Motivos IPP conhecidos com severidade `error` ou `warning` tambem sao
+traduzidos. Motivos com sufixo `report` sao mantidos apenas nos metadados da
+coleta e nao viram falso alerta critico. Host, resposta binaria e dados brutos
+nao sao persistidos nem retornados no resultado sanitizado.
+
+As tabelas de alertas passam a aceitar `ipp` em `origem_coleta`,
+`metodo_coleta` e `metodo_confirmacao` por meio da migration
+`20260629_hp_ipp_fallback`.
+
+### Validacao real
+
+As duas HP MFP-4303 ativas responderam ao IPP com estado `idle`. Depois da
+cascata completa, ambas foram persistidas com mensagem `Em espera`, nivel
+verde e origem `ipp`; o mesmo estado foi projetado pelo payload consumido pela
+tela Status.
+
+## Etapa 3.5.2.23 - Modal de Status e logs operacionais das ultimas 24h
+
+Esta microetapa remove a `Resposta tecnica` do modal operacional. O conteudo
+era um JSON de diagnostico interno sem utilidade para o usuario da central e
+poderia expor detalhes de tentativas de conectividade. A coluna permanece no
+banco para compatibilidade interna, mas nao faz mais parte dos schemas nem do
+payload da API de Status.
+
+### Linha do tempo operacional
+
+O endpoint `/api/v2/printers/status/{machine_id}/logs` passa a unir eventos de:
+
+- `historico_status_impressoras`;
+- `historico_alertas_impressoras`.
+
+Somente eventos com `verificado_em` dentro das ultimas 24 horas entram na
+resposta. A linha do tempo e ordenada do mais recente para o mais antigo e
+limitada a 10 eventos. O modal apresenta data/hora, mensagem operacional e a
+origem `status` ou `alerta`.
+
+Quando nao existem eventos recentes, o modal informa:
+
+```text
+Nenhum evento operacional registrado nas ultimas 24h.
+```
+
+### Seguranca do payload
+
+A projecao usa mensagens controladas pelo backend. Nao sao retornados
+`resposta_bruta`, `detalhes`, mensagem SNMP/HTML bruta, JSON tecnico, token,
+cookie, senha, cabecalho de autorizacao ou stack trace. Nenhuma migration
+destrutiva foi criada e os historicos existentes foram preservados.
+
+### Validacoes
+
+Os testes cobrem as duas fontes historicas, exclusao de eventos com mais de
+24 horas, ordenacao decrescente, limite de 10, resposta vazia e ausencia de
+conteudo tecnico. Tambem sao preservados os cenarios de online sem alerta,
+offline, priorizacao por severidade e alternancia de alertas equivalentes.
+
+A validacao final inclui compilacao e testes backend, `manage.py check`,
+auditoria e build frontend, stack Docker, Redis, Celery Worker/Beat, tasks
+registradas e acesso HTTPS local. A branch principal nao faz parte desta
+microetapa.
+
+### Alertas simultaneos na Brother DCP-L2540DW
+
+O HTML real desse modelo separa o estado principal do aviso de suprimento. O
+texto `Trocar Cilindro` aparece em `Device Status`, enquanto o toner baixo e
+representado pelo arquivo `low.gif` dentro do bloco `#ink_level`. O parser le
+os dois pontos de forma controlada e produz `Trocar Cilindro` e `Subs. toner`.
+As requisicoes HTML usam `Cache-Control: no-cache` e `Pragma: no-cache` para
+evitar que a interface embarcada devolva um estado operacional antigo.
+
+Para esse modelo, a coleta HTML complementa o resultado SNMP sem alterar o
+coletor SNMP de baixo nivel. Os dois alertas possuem severidade `high`, sao
+persistidos simultaneamente e o seletor compartilhado do frontend alterna
+entre eles a cada quatro segundos. O indicador visual fora de `#ink_level` e
+ignorado para evitar falso positivo, e nenhum HTML bruto e persistido.
+
 ## Próximas etapas
 
-- integrar o fallback HTML autenticado na cascata de alertas;
+- ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - 3.5.3: coleta rica em 60 minutos;
 - 3.5.4: papel, toner e históricos;
