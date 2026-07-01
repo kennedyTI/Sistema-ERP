@@ -22,9 +22,10 @@ GROUPS = {
             "audit": BACKOFFICE_READONLY_PERMISSIONS,
             "impressoras": PERMISSOES_EQUIPE_TECNICA,
             "printer_machines": "all",
+            "printer_alert_rules": "all",
             "printer_status": {
                 "view_printerstatusadminmodel",
-                "view_printerlogadminmodel",
+                "view_printerstatushistoryadminmodel",
             },
         },
     },

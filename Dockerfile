@@ -27,6 +27,8 @@ RUN pip install --upgrade pip \
 
 COPY . /app
 
-RUN chmod +x /app/docker/entrypoint.sh /app/docker/wait-for-service.sh
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --create-home app \
+    && chmod +x /app/docker/entrypoint.sh /app/docker/wait-for-service.sh
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]

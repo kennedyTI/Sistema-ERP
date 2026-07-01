@@ -86,9 +86,9 @@ class CleanBasePolicyTest(TestCase):
         expected_columns = (
             '"status"',
             '"alert"',
-            '"message"',
             '"location"',
             '"machine"',
+            '"model"',
             '"ip"',
             '"updatedAt"',
         )
@@ -101,12 +101,24 @@ class CleanBasePolicyTest(TestCase):
         self.assertIn("onPointerMove", status_page)
         self.assertIn("localStorage.setItem", status_page)
         self.assertIn("renderStatusCell", status_page)
+        self.assertIn("STATUS_REFRESH_INTERVAL_MS", status_page)
+        self.assertIn("setInterval", status_page)
+        self.assertIn("clearInterval", status_page)
+        self.assertIn("modelo_exibicao", status_page)
+        self.assertIn("sticky top-0", status_page)
         self.assertNotIn("Status operacional", status_page)
+        self.assertNotIn("alertLabels", status_page)
         self.assertNotIn("<TableHead>Resposta</TableHead>", status_page)
         self.assertNotIn("Copiar IP", status_page + details_dialog)
         self.assertNotIn("Solicitar toner", status_page + details_dialog)
-        self.assertIn("Resposta técnica", details_dialog)
-        self.assertIn("Últimos logs", details_dialog)
+        self.assertNotIn("Resposta técnica", details_dialog)
+        self.assertNotIn("resposta_bruta", details_dialog)
+        self.assertIn("Últimos logs das últimas 24h", details_dialog)
+        self.assertIn("Última verificação", details_dialog)
+        self.assertIn(
+            "Nenhum evento operacional registrado nas últimas 24h.",
+            details_dialog,
+        )
         self.assertIn("url_imagem", details_dialog)
         self.assertNotIn('"/static/imgs/printers"', details_dialog)
         self.assertIn("PrinterModelImage", details_dialog)

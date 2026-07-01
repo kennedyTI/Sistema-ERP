@@ -31,3 +31,14 @@ python-dotenv==1.0.1
 # =========================
 requests==2.31.0
 httpx==0.27.0
+cryptography==49.0.0
+
+# =========================
+# MONITORAMENTO ASSINCRONO
+# =========================
+celery==5.4.0
+redis==5.0.4
+pysnmp==4.4.12
+pyasn1==0.4.8
+pyasn1-modules==0.2.8
+pyipp==0.17.2

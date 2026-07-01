@@ -29,10 +29,10 @@ class LoggingPolicyTest(TestCase):
 
         self.assertEqual(offenders, [])
 
-    def test_dependencias_snmp_celery_foram_removidas(self):
+    def test_dependencias_de_monitoramento_foram_declaradas(self):
         requirements = (PROJECT_ROOT / "backend/requirements.txt").read_text(encoding="utf-8")
 
         for dependency in ("pysnmp", "pyasn1", "celery", "redis"):
             with self.subTest(dependency=dependency):
-                self.assertNotIn(dependency, requirements)
+                self.assertIn(dependency, requirements)
 

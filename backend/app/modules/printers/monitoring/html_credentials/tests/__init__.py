@@ -1,0 +1,2 @@
+"""Testes das credenciais HTML."""
+

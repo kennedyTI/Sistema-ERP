@@ -1,9 +1,24 @@
 """Regras do status atual e da linha do tempo operacional de impressoras."""
 
+import re
+from datetime import timedelta
+
 from sqlalchemy.orm import Session, joinedload
 
 from backend.app.modules.printers.machines.models import PrinterMachine
-from backend.app.modules.printers.status.models import LogImpressora, StatusImpressora
+from backend.app.core.timezone import now_sao_paulo
+from backend.app.modules.printers.monitoring.alerts.models import (
+    AlertaImpressora,
+    HistoricoAlertaImpressora,
+)
+from backend.app.modules.printers.monitoring.snmp.alert_collector import (
+    severity_to_visual_classification,
+)
+from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
+from backend.app.modules.printers.status.models import (
+    HistoricoStatusImpressora,
+    StatusImpressora,
+)
 from backend.app.modules.printers.status.schemas import (
     PrinterLogRead,
     PrinterStatusRead,
@@ -13,6 +28,242 @@ from backend.app.modules.printers.status.schemas import (
 
 class PrinterStatusNotFoundError(Exception):
     pass
+
+
+SEVERITY_WEIGHT = {
+    "high": 50,
+    "medium": 40,
+    "low": 30,
+    "unknown": 20,
+    "green": 10,
+}
+OFFLINE_ALERT_MESSAGE = "Sem serviço"
+NO_ALERT_MESSAGE = "Sem alerta"
+RECENT_LOG_WINDOW_HOURS = 24
+MAX_RECENT_LOGS = 10
+HEX_ALERT_PATTERN = re.compile(r"^0x[0-9a-f]+$", re.IGNORECASE)
+SEVERITY_BY_ALERT_LEVEL = {
+    "cinza": "unknown",
+    "verde": "green",
+    "amarelo": "medium",
+    "vermelho": "high",
+}
+COLOR_TRANSLATIONS = {
+    "black": "preto",
+    "cyan": "ciano",
+    "magenta": "magenta",
+    "yellow": "amarelo",
+}
+ALERT_MESSAGE_TRANSLATIONS = (
+    (
+        re.compile(r"^toner is low(?:\s*\((?P<color>[^)]+)\))?\.?$", re.IGNORECASE),
+        "Toner baixo",
+    ),
+    (
+        re.compile(
+            r"^drum needs to be replaced soon(?:\s*\((?P<color>[^)]+)\))?\.?$",
+            re.IGNORECASE,
+        ),
+        "Substituir cilindro em breve",
+    ),
+    (
+        re.compile(r"^paper is out(?:\s*\((?P<detail>[^)]+)\))?\.?$", re.IGNORECASE),
+        "Sem papel",
+    ),
+)
+
+
+def _classification_from_rule(rule: PrinterAlertRule) -> str:
+    return severity_to_visual_classification(
+        _safe_severity(rule.severidade),
+        recognized=rule.codigo not in {"unknown", "sem_retorno_alerta"},
+    )
+
+
+def _safe_severity(value: str | None) -> str:
+    return value if value in SEVERITY_WEIGHT else "unknown"
+
+
+def severity_weight(value: str | None) -> int:
+    return SEVERITY_WEIGHT[_safe_severity(value)]
+
+
+def _alert_sort_key(item: dict[str, object]) -> tuple[int, int, str, str]:
+    rule = item["rule"]
+    assert isinstance(rule, PrinterAlertRule)
+    # Na Rules Engine, o menor numero representa a regra mais importante.
+    return (
+        -severity_weight(str(item["severidade"])),
+        rule.prioridade,
+        str(item["mensagem"]).casefold(),
+        rule.codigo.casefold(),
+    )
+
+
+def _message_from_current_alert(alert: AlertaImpressora, rule: PrinterAlertRule) -> str:
+    if alert.mensagem_original:
+        return _translate_alert_message(str(alert.mensagem_original))
+    return rule.descricao or "Sem alerta informado"
+
+
+def _translate_alert_message(message: str) -> str:
+    clean_message = " ".join(message.replace("\x00", "").strip().split())
+    for pattern, translated_message in ALERT_MESSAGE_TRANSLATIONS:
+        match = pattern.match(clean_message)
+        if not match:
+            continue
+        detail = match.groupdict().get("color") or match.groupdict().get("detail")
+        if not detail:
+            return translated_message
+        translated_detail = _translate_alert_detail(detail)
+        return f"{translated_message} ({translated_detail})."
+    return clean_message
+
+
+def _translate_alert_detail(detail: str) -> str:
+    clean_detail = detail.strip()
+    translated_color = COLOR_TRANSLATIONS.get(clean_detail.casefold())
+    if translated_color:
+        return translated_color
+    if re.fullmatch(r"[a-z]+\d+", clean_detail, re.IGNORECASE):
+        return clean_detail.upper()
+    return clean_detail
+
+
+def _is_neutral_technical_alert(item: dict[str, object]) -> bool:
+    rule = item["rule"]
+    message = str(item["mensagem"] or "").strip()
+    if isinstance(rule, PrinterAlertRule) and rule.codigo == "sem_retorno_alerta":
+        return True
+    return (
+        isinstance(rule, PrinterAlertRule)
+        and rule.codigo == "unknown"
+        and str(item["classificacao"]) == "cinza"
+        and (not message or HEX_ALERT_PATTERN.match(message) is not None)
+    )
+
+
+def _alert_projection_for_rows(
+    db: Session,
+    machine_ids: list[int],
+) -> dict[int, dict[str, object]]:
+    if not machine_ids:
+        return {}
+
+    rows = (
+        db.query(AlertaImpressora, PrinterAlertRule)
+        .join(PrinterAlertRule, PrinterAlertRule.id == AlertaImpressora.regra_alerta_id)
+        .filter(AlertaImpressora.maquina_id.in_(machine_ids))
+        .all()
+    )
+    grouped: dict[int, list[tuple[AlertaImpressora, PrinterAlertRule]]] = {}
+    for alert, rule in rows:
+        grouped.setdefault(alert.maquina_id, []).append((alert, rule))
+
+    projections: dict[int, dict[str, object]] = {}
+    for machine_id, alerts in grouped.items():
+        classified = [
+            {
+                "alert": alert,
+                "rule": rule,
+                "classificacao": _classification_from_rule(rule),
+                "mensagem": _message_from_current_alert(alert, rule),
+                "severidade": _safe_severity(rule.severidade),
+            }
+            for alert, rule in alerts
+        ]
+        classified = [
+            item for item in classified if not _is_neutral_technical_alert(item)
+        ]
+        if not classified:
+            continue
+        classified.sort(key=_alert_sort_key)
+        primary = classified[0]
+        projections[machine_id] = {
+            "nivel_alerta": primary["classificacao"],
+            "severidade": primary["severidade"],
+            "mensagem_alerta": primary["mensagem"],
+            "codigos_alerta": [item["rule"].codigo for item in classified],
+            "verificado_em": primary["alert"].verificado_em,
+            "alertas": [
+                {
+                    "codigo": item["rule"].codigo,
+                    "mensagem": item["mensagem"],
+                    "nivel_alerta": item["classificacao"],
+                    "severidade": item["severidade"],
+                    "prioridade": item["rule"].prioridade,
+                }
+                for item in classified
+            ],
+        }
+    return projections
+
+
+def _model_display(manufacturer: str | None, model: str | None) -> str | None:
+    if manufacturer and model:
+        return f"{manufacturer} - {model}"
+    return model or manufacturer
+
+
+def _severity_from_alert_level(alert_level: str) -> str:
+    return SEVERITY_BY_ALERT_LEVEL.get(alert_level, "unknown")
+
+
+def _display_alert_projection(
+    status: StatusImpressora,
+    alert_projection: dict[str, object] | None,
+) -> dict[str, object]:
+    # Offline sempre prevalece sobre alertas antigos ainda persistidos.
+    if status.status_operacional != "online":
+        return {
+            "nivel_alerta": "vermelho",
+            "severidade": "high",
+            "mensagem_alerta": OFFLINE_ALERT_MESSAGE,
+            "codigos_alerta": [],
+            "alertas": [
+                {
+                    "codigo": "sem_servico",
+                    "mensagem": OFFLINE_ALERT_MESSAGE,
+                    "nivel_alerta": "vermelho",
+                    "severidade": "high",
+                    "prioridade": 6,
+                }
+            ],
+        }
+
+    if not alert_projection:
+        return {
+            "nivel_alerta": "cinza",
+            "severidade": "unknown",
+            "mensagem_alerta": NO_ALERT_MESSAGE,
+            "codigos_alerta": [],
+            "alertas": [],
+        }
+
+    current_alert = alert_projection
+    alert_level = str(current_alert.get("nivel_alerta") or status.nivel_alerta)
+    alert_message = str(
+        current_alert.get("mensagem_alerta")
+        or status.mensagem_alerta
+        or "Sem alerta informado"
+    )
+    return {
+        "nivel_alerta": alert_level,
+        "severidade": current_alert.get("severidade")
+        or _severity_from_alert_level(alert_level),
+        "mensagem_alerta": alert_message,
+        "codigos_alerta": current_alert.get("codigos_alerta") or [],
+        "alertas": current_alert.get("alertas")
+        or [
+            {
+                "codigo": "status_atual",
+                "mensagem": alert_message,
+                "nivel_alerta": alert_level,
+                "severidade": _severity_from_alert_level(alert_level),
+                "prioridade": 1000,
+            }
+        ],
+    }
 
 
 # ---------------------------------------------------------------------
@@ -38,27 +289,51 @@ def create_initial_status(db: Session, machine_id: int, *, origem: str = "sistem
     return status
 
 
-def _status_to_read(status: StatusImpressora) -> PrinterStatusRead:
+def _status_to_read(
+    status: StatusImpressora,
+    *,
+    alert_projection: dict[str, object] | None = None,
+) -> PrinterStatusRead:
     machine = status.maquina
+    manufacturer = machine.manufacturer
+    model = machine.model
+    model_display = _model_display(manufacturer, model)
+    operational_status = "online" if status.status_operacional == "online" else "offline"
+    display_alert = _display_alert_projection(status, alert_projection)
+    alert_level = str(display_alert["nivel_alerta"])
+    alert_message = str(display_alert["mensagem_alerta"])
     return PrinterStatusRead(
         machine_id=machine.id,
+        id=machine.id,
         machine_name=machine.name,
+        maquina=machine.name,
         ip_address=machine.ip_address,
-        manufacturer=machine.manufacturer,
-        model=machine.model,
+        ip=machine.ip_address,
+        manufacturer=manufacturer,
+        fabricante=manufacturer,
+        model=model,
+        modelo=model,
+        modelo_exibicao=model_display,
         url_imagem=machine.printer_model.url_imagem if machine.printer_model else None,
         sector=machine.sector,
+        local=machine.sector,
         cost_center=machine.cost_center,
-        status_operacional=status.status_operacional,
-        nivel_alerta=status.nivel_alerta,
-        mensagem_alerta=status.mensagem_alerta,
+        status_operacional=operational_status,
+        status=operational_status,
+        nivel_alerta=alert_level,
+        severidade=str(display_alert["severidade"]),
+        alerta=alert_message,
+        alertas=display_alert["alertas"],
+        mensagem=alert_message,
+        mensagem_alerta=alert_message,
         mensagem_operador=status.mensagem_operador,
         ultima_verificacao_em=status.ultima_verificacao_em,
+        verificado_em=status.ultima_verificacao_em,
         ultimo_sucesso_em=status.ultimo_sucesso_em,
         ultima_falha_em=status.ultima_falha_em,
         tempo_resposta_ms=status.tempo_resposta_ms,
+        metodo_confirmacao=status.metodo_confirmacao,
         origem=status.origem,
-        resposta_bruta=status.resposta_bruta,
     )
 
 
@@ -78,7 +353,17 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         .order_by(PrinterMachine.name.asc(), PrinterMachine.id.asc())
         .all()
     )
-    return [_status_to_read(status) for status in statuses]
+    alert_projections = _alert_projection_for_rows(
+        db,
+        [status.maquina_id for status in statuses],
+    )
+    return [
+        _status_to_read(
+            status,
+            alert_projection=alert_projections.get(status.maquina_id),
+        )
+        for status in statuses
+    ]
 
 
 def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
@@ -88,14 +373,44 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
         .filter(PrinterMachine.is_active.is_(True))
         .all()
     )
+    alert_projections = _alert_projection_for_rows(
+        db,
+        [status.maquina_id for status in statuses],
+    )
     return PrinterStatusSummary(
         total_impressoras=len(statuses),
         online=sum(status.status_operacional == "online" for status in statuses),
-        offline=sum(status.status_operacional == "offline" for status in statuses),
-        com_alerta=sum(status.nivel_alerta in {"amarelo", "vermelho"} for status in statuses),
+        offline=sum(status.status_operacional != "online" for status in statuses),
+        com_alerta=sum(
+            str(
+                _display_alert_projection(
+                    status,
+                    alert_projections.get(status.maquina_id),
+                )["nivel_alerta"]
+            )
+            in {"amarelo", "vermelho"}
+            for status in statuses
+        ),
         # Regra transitória até existir um domínio próprio para suprimentos.
         substituir_toner=sum(
-            "substituir toner" in (status.mensagem_alerta or "").casefold()
+            status.status_operacional == "online"
+            and (
+                "replace_toner"
+                in (
+                    _display_alert_projection(
+                        status,
+                        alert_projections.get(status.maquina_id),
+                    ).get("codigos_alerta")
+                    or []
+                )
+                or "substituir toner"
+                in str(
+                    _display_alert_projection(
+                        status,
+                        alert_projections.get(status.maquina_id),
+                    )["mensagem_alerta"]
+                ).casefold()
+            )
             for status in statuses
         ),
     )
@@ -116,33 +431,93 @@ def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
 
 
 def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
-    return _status_to_read(get_printer_status(db, machine_id))
+    status = get_printer_status(db, machine_id)
+    return _status_to_read(
+        status,
+        alert_projection=_alert_projection_for_rows(db, [machine_id]).get(machine_id),
+    )
 
 
-def list_printer_logs(db: Session, machine_id: int, *, limit: int = 50) -> list[PrinterLogRead]:
+def _status_history_message(history: HistoricoStatusImpressora) -> str:
+    if history.status_novo == "online":
+        if history.status_anterior == "offline":
+            return "Impressora voltou a ficar Online"
+        return "Primeira confirmacao: impressora Online"
+    if history.status_anterior == "online":
+        return "Impressora ficou Offline"
+    return "Primeira confirmacao: impressora Offline"
+
+
+def _alert_history_message(
+    history: HistoricoAlertaImpressora,
+    rule: PrinterAlertRule,
+) -> str:
+    if history.codigo_evento == "alerta_nao_catalogado":
+        return "Alerta nao catalogado detectado"
+
+    description = rule.descricao or "Alerta operacional"
+    if history.codigo_evento == "estado_inicial_alerta":
+        return f"Alerta detectado: {description}"
+    return f"Alerta alterado: {description}"
+
+
+def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[PrinterLogRead]:
+    """Une os historicos operacionais recentes sem expor detalhes tecnicos."""
     get_printer_status(db, machine_id)
-    logs = (
-        db.query(LogImpressora)
-        .filter(LogImpressora.maquina_id == machine_id)
-        .order_by(LogImpressora.criado_em.desc(), LogImpressora.id.desc())
-        .limit(limit)
+    effective_limit = min(max(limit, 1), MAX_RECENT_LOGS)
+    cutoff = now_sao_paulo() - timedelta(hours=RECENT_LOG_WINDOW_HOURS)
+
+    status_history = (
+        db.query(HistoricoStatusImpressora)
+        .filter(
+            HistoricoStatusImpressora.maquina_id == machine_id,
+            HistoricoStatusImpressora.verificado_em >= cutoff,
+        )
+        .order_by(
+            HistoricoStatusImpressora.verificado_em.desc(),
+            HistoricoStatusImpressora.id.desc(),
+        )
+        .limit(effective_limit)
         .all()
     )
-    return [
-        PrinterLogRead(
-            id=log.id,
-            machine_id=log.maquina_id,
-            tipo_evento=log.tipo_evento,
-            status_anterior=log.status_anterior,
-            status_novo=log.status_novo,
-            alerta_anterior=log.alerta_anterior,
-            alerta_novo=log.alerta_novo,
-            mensagem=log.mensagem,
-            verificado_em=log.verificado_em,
-            tempo_resposta_ms=log.tempo_resposta_ms,
-            origem=log.origem,
-            resposta_bruta=log.resposta_bruta,
-            criado_em=log.criado_em,
+
+    alert_history = (
+        db.query(HistoricoAlertaImpressora, PrinterAlertRule)
+        .join(
+            PrinterAlertRule,
+            PrinterAlertRule.id == HistoricoAlertaImpressora.regra_alerta_id,
         )
-        for log in logs
+        .filter(
+            HistoricoAlertaImpressora.maquina_id == machine_id,
+            HistoricoAlertaImpressora.verificado_em >= cutoff,
+        )
+        .order_by(
+            HistoricoAlertaImpressora.verificado_em.desc(),
+            HistoricoAlertaImpressora.id.desc(),
+        )
+        .limit(effective_limit)
+        .all()
+    )
+
+    events = [
+        PrinterLogRead(
+            id=f"status:{history.id}",
+            data_hora=history.verificado_em,
+            tipo=history.codigo_evento,
+            mensagem=_status_history_message(history),
+            origem="status",
+        )
+        for history in status_history
     ]
+    events.extend(
+        PrinterLogRead(
+            id=f"alerta:{history.id}",
+            data_hora=history.verificado_em,
+            tipo=history.codigo_evento,
+            mensagem=_alert_history_message(history, rule),
+            origem="alerta",
+        )
+        for history, rule in alert_history
+    )
+    events.sort(key=lambda event: (event.data_hora, event.id), reverse=True)
+    return events[:effective_limit]

@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Activity, Loader2 } from "lucide-react";
 
 import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
+import { selectHighestSeverityAlerts } from "@/modules/printers/status/alertSelection";
 import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
+  type AlertLevel,
   type PrinterOperationalLog,
   type PrinterOperationalStatus,
 } from "@/modules/printers/status/statusApi";
@@ -22,10 +24,16 @@ import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
 
 const statusLabels = {
-  desconhecido: "Desconhecido",
   online: "Online",
   offline: "Offline",
-  erro: "Erro",
+} as const;
+
+const methodLabels = {
+  icmp: "ICMP",
+  tcp: "TCP",
+  snmp: "SNMP",
+  html: "HTML/HTTP",
+  fallback: "Fallback",
 } as const;
 
 const alertDotStyles = {
@@ -34,6 +42,20 @@ const alertDotStyles = {
   amarelo: "bg-amber-400",
   vermelho: "bg-red-500",
 } as const;
+
+const statusBadgeStyles = {
+  online: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  offline: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+} as const;
+
+const alertPillStyles: Record<AlertLevel, string> = {
+  cinza: "border-muted-foreground/30 bg-muted/70 text-muted-foreground",
+  verde: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  amarelo: "border-amber-400/40 bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  vermelho: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+};
+
+const ALERT_ROTATION_INTERVAL_MS = 4_000;
 
 export function StatusDetailsDialog({
   status,
@@ -48,6 +70,7 @@ export function StatusDetailsDialog({
   const [logs, setLogs] = useState<PrinterOperationalLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alertRotationIndex, setAlertRotationIndex] = useState(0);
 
   // ---------------------------------------------------------------------------
   // 📌 MODAL ESTRITAMENTE CONSULTIVO
@@ -62,6 +85,7 @@ export function StatusDetailsDialog({
     setLogs([]);
     setError(null);
     setLoading(true);
+    setAlertRotationIndex(0);
 
     void Promise.all([
       fetchPrinterStatusDetail(status.machine_id),
@@ -86,6 +110,19 @@ export function StatusDetailsDialog({
   }, [open, status]);
 
   const current = details ?? status;
+  const displayAlerts = current ? selectHighestSeverityAlerts(current) : [];
+  const visibleAlert = displayAlerts.length
+    ? displayAlerts[alertRotationIndex % displayAlerts.length]
+    : null;
+
+  useEffect(() => {
+    if (!open || displayAlerts.length <= 1) return;
+    const intervalId = window.setInterval(() => {
+      setAlertRotationIndex((currentIndex) => currentIndex + 1);
+    }, ALERT_ROTATION_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [displayAlerts.length, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,28 +189,44 @@ export function StatusDetailsDialog({
                     <p className="text-xs font-medium uppercase text-muted-foreground">
                       Status operacional
                     </p>
-                    <Badge variant="outline" className="mt-2">
+                    <Badge
+                      variant="outline"
+                      className={cn("mt-2", statusBadgeStyles[current.status_operacional])}
+                    >
                       {statusLabels[current.status_operacional]}
                     </Badge>
                   </div>
                   <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                      Alerta operacional
-                    </p>
-                    <span className="mt-2 inline-flex items-center gap-2 text-sm capitalize">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Alerta</p>
+                    {visibleAlert ? (
                       <span
                         className={cn(
-                          "h-2.5 w-2.5 rounded-full",
-                          alertDotStyles[current.nivel_alerta],
+                          "mt-2 inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-sm font-medium",
+                          alertPillStyles[visibleAlert.nivel_alerta],
                         )}
-                      />
-                      {current.nivel_alerta}
-                    </span>
+                        title={displayAlerts.map((alert) => alert.mensagem).join(" | ")}
+                      >
+                        <span
+                          className={cn(
+                            "h-2.5 w-2.5 shrink-0 rounded-full",
+                            alertDotStyles[visibleAlert.nivel_alerta],
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 truncate">{visibleAlert.mensagem}</span>
+                        {displayAlerts.length > 1 && (
+                          <span className="rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] leading-none opacity-80">
+                            {(alertRotationIndex % displayAlerts.length) + 1}/{displayAlerts.length}
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <p className="mt-1 text-sm">-</p>
+                    )}
                   </div>
-                  <Detail label="Mensagem de alerta" value={current.mensagem_alerta} />
                   <Detail label="Mensagem operacional" value={current.mensagem_operador} />
                   <Detail
-                    label="Última atualização"
+                    label="Última verificação"
                     value={formatFullDateTime(current.ultima_verificacao_em)}
                   />
                   <Detail
@@ -190,6 +243,14 @@ export function StatusDetailsDialog({
                       current.tempo_resposta_ms === null ? null : `${current.tempo_resposta_ms} ms`
                     }
                   />
+                  <Detail
+                    label="Método de confirmação"
+                    value={
+                      current.metodo_confirmacao
+                        ? methodLabels[current.metodo_confirmacao]
+                        : null
+                    }
+                  />
                   <Detail label="Origem" value={current.origem} />
                 </div>
               </section>
@@ -197,43 +258,32 @@ export function StatusDetailsDialog({
               <Separator />
 
               <section>
-                <h3 className="text-sm font-semibold">Resposta técnica</h3>
-                <pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-4 text-xs text-muted-foreground">
-                  {current.resposta_bruta ?? "Nenhuma resposta técnica registrada."}
-                </pre>
-              </section>
-
-              <Separator />
-
-              <section>
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">Últimos logs</h3>
+                  <h3 className="text-sm font-semibold">
+                    Últimos logs das últimas 24h
+                  </h3>
                 </div>
                 {logs.length === 0 ? (
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Nenhum evento operacional registrado.
+                    Nenhum evento operacional registrado nas últimas 24h.
                   </p>
                 ) : (
                   <div className="mt-3 divide-y divide-border rounded-lg border border-border">
-                    {logs.map((log) => (
+                    {logs.slice(0, 10).map((log) => (
                       <div
                         key={log.id}
-                        className="grid gap-2 px-4 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center"
+                        className="grid gap-1.5 px-4 py-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center sm:gap-4"
                       >
-                        <div>
-                          <p className="text-sm font-medium">{formatEventType(log.tipo_evento)}</p>
-                          <p className="text-xs text-muted-foreground">{log.origem}</p>
-                        </div>
-                        <div className="text-sm">
-                          <p>{log.mensagem ?? "Evento sem mensagem."}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {formatTransition(log.status_anterior, log.status_novo)}
-                          </p>
-                        </div>
                         <time className="text-xs text-muted-foreground">
-                          {formatFullDateTime(log.verificado_em)}
+                          {formatEventDateTime(log.data_hora)}
                         </time>
+                        <p className="min-w-0 text-sm">
+                          {log.mensagem}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({log.origem})
+                          </span>
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -264,11 +314,11 @@ function formatFullDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
-function formatEventType(value: string) {
-  return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
-}
-
-function formatTransition(previous: string | null, next: string | null) {
-  if (!previous && !next) return "Sem alteração de estado.";
-  return `${previous ?? "-"} → ${next ?? "-"}`;
+function formatEventDateTime(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
