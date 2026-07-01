@@ -416,11 +416,11 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 | Etapa 1 | Fundação do módulo Impressoras | Concluída |
 | Etapa 2 | Cadastro de Máquinas | Concluída |
 | Etapa 3 | Status e Dashboard | Parcial: Status concluído; Dashboard real pendente |
-| Etapa 4 | Papel, Toner e Histórico | Não iniciada |
+| Etapa 4 | Papel, Toner e Histórico | Parcial: percentual de toner em desenvolvimento |
 | Etapa 3.5.1 | Conectividade 60s com Redis/Celery e histórico confirmado | Concluída |
 | Etapa 3.5.2 | Alertas e estado da máquina em 5min | Concluída |
-| Etapa 3.5.3 | Coleta rica em 60min | Não iniciada |
-| Etapa 3.5.4 | Papel, toner e históricos | Não iniciada |
+| Etapa 3.5.3 | Percentual de toner via Printer-MIB em 60min | Em desenvolvimento |
+| Etapa 3.5.4 | Papel e históricos ampliados | Não iniciada |
 | Etapa 3.5.5 | Dashboard operacional | Não iniciada |
 
 ### Próximas frentes planejadas
@@ -428,7 +428,7 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 - Dashboard real do módulo Impressoras;
 - catálogo próprio de modelos de impressora;
 - Papel;
-- Toner;
+- ampliação da coleta de Toner;
 - histórico operacional ampliado;
 - integração Protheus;
 - integração GLPI;
@@ -507,7 +507,7 @@ Estado atual:
 ```text
 Versão atual: v2.4.0-status-alertas-impressoras
 Etapa atual: Etapa 3.5.2 — Status e Alertas
-Status da etapa: Status e alertas promovidos para main; Dashboard real pendente
+Status da etapa: percentual de toner via Printer-MIB em validação na feature
 ```
 
 Validações da release v2.4.0:
@@ -531,7 +531,7 @@ Limitações não bloqueantes conhecidas:
 - aviso antigo de chunks acima de 500 kB no build frontend;
 - uso de certificado self-signed em ambiente local;
 - Dashboard real ainda pendente;
-- Papel, Toner, Histórico ampliado e coleta rica de 60 minutos ainda não iniciados.
+- Papel e histórico ampliado ainda não iniciados; percentual de toner básico em validação.
 
 ---
 

@@ -15,6 +15,8 @@ from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
+from backend.app.modules.printers.monitoring.toner.models import StatusTonerImpressora
+from backend.app.modules.printers.monitoring.toner.services import list_toners_for_machines
 from backend.app.modules.printers.status.models import (
     HistoricoStatusImpressora,
     StatusImpressora,
@@ -53,6 +55,13 @@ COLOR_TRANSLATIONS = {
     "cyan": "ciano",
     "magenta": "magenta",
     "yellow": "amarelo",
+}
+TONER_NAMES = {
+    "black": "Preto",
+    "cyan": "Ciano",
+    "magenta": "Magenta",
+    "yellow": "Amarelo",
+    "unknown": "Desconhecido",
 }
 ALERT_MESSAGE_TRANSLATIONS = (
     (
@@ -266,6 +275,21 @@ def _display_alert_projection(
     }
 
 
+def _toners_to_read(rows: list[StatusTonerImpressora] | None) -> list[dict[str, object]]:
+    return [
+        {
+            "cor": row.cor,
+            "nome": TONER_NAMES.get(row.cor, "Desconhecido"),
+            "percentual": row.percentual,
+            "descricao": row.descricao_coletada,
+            "origem_coleta": row.origem_coleta,
+            "metodo_coleta": row.metodo_coleta,
+            "coletado_em": row.coletado_em,
+        }
+        for row in (rows or [])
+    ]
+
+
 # ---------------------------------------------------------------------
 # 📌 STATUS INICIAL DA MÁQUINA
 # ---------------------------------------------------------------------
@@ -293,6 +317,7 @@ def _status_to_read(
     status: StatusImpressora,
     *,
     alert_projection: dict[str, object] | None = None,
+    toner_rows: list[StatusTonerImpressora] | None = None,
 ) -> PrinterStatusRead:
     machine = status.maquina
     manufacturer = machine.manufacturer
@@ -324,6 +349,7 @@ def _status_to_read(
         severidade=str(display_alert["severidade"]),
         alerta=alert_message,
         alertas=display_alert["alertas"],
+        toners=_toners_to_read(toner_rows),
         mensagem=alert_message,
         mensagem_alerta=alert_message,
         mensagem_operador=status.mensagem_operador,
@@ -357,10 +383,15 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         db,
         [status.maquina_id for status in statuses],
     )
+    toner_projections = list_toners_for_machines(
+        db,
+        [status.maquina_id for status in statuses],
+    )
     return [
         _status_to_read(
             status,
             alert_projection=alert_projections.get(status.maquina_id),
+            toner_rows=toner_projections.get(status.maquina_id),
         )
         for status in statuses
     ]
@@ -435,6 +466,7 @@ def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
     return _status_to_read(
         status,
         alert_projection=_alert_projection_for_rows(db, [machine_id]).get(machine_id),
+        toner_rows=list_toners_for_machines(db, [machine_id]).get(machine_id),
     )
 
 

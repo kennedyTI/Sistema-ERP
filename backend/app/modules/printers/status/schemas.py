@@ -21,6 +21,16 @@ class PrinterStatusAlertRead(BaseModel):
     prioridade: int
 
 
+class PrinterTonerRead(BaseModel):
+    cor: Literal["black", "cyan", "magenta", "yellow", "unknown"]
+    nome: str
+    percentual: int | None = None
+    descricao: str | None = None
+    origem_coleta: Literal["snmp"]
+    metodo_coleta: Literal["printer_mib_walk"]
+    coletado_em: datetime | None = None
+
+
 class PrinterStatusRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +55,7 @@ class PrinterStatusRead(BaseModel):
     severidade: SeveridadeStatus
     alerta: str | None = None
     alertas: list[PrinterStatusAlertRead] = Field(default_factory=list)
+    toners: list[PrinterTonerRead] = Field(default_factory=list)
     mensagem: str | None = None
     mensagem_alerta: str | None = None
     mensagem_operador: str

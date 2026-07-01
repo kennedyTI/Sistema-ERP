@@ -110,6 +110,7 @@ export function StatusDetailsDialog({
   }, [open, status]);
 
   const current = details ?? status;
+  const toners = current?.toners ?? [];
   const displayAlerts = current ? selectHighestSeverityAlerts(current) : [];
   const visibleAlert = displayAlerts.length
     ? displayAlerts[alertRotationIndex % displayAlerts.length]
@@ -253,6 +254,39 @@ export function StatusDetailsDialog({
                   />
                   <Detail label="Origem" value={current.origem} />
                 </div>
+              </section>
+
+              <Separator />
+
+              <section>
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold">Toner</h3>
+                </div>
+                {toners.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Nenhuma informação de toner coletada.
+                  </p>
+                ) : (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {toners.map((toner) => (
+                      <div
+                        key={`${toner.cor}-${toner.descricao ?? "sem-descricao"}`}
+                        className="rounded-lg border border-border px-3 py-2"
+                      >
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {toner.nome}
+                        </p>
+                        <p className="mt-1 text-lg font-semibold">
+                          {toner.percentual === null ? "Desconhecido" : `${toner.percentual}%`}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {toner.descricao || "Sem descrição"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <Separator />

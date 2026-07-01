@@ -33,5 +33,9 @@ celery_app.conf.update(
             "task": "printers_alerts_all",
             "schedule": float(os.getenv("PRINTER_ALERTS_INTERVAL_SECONDS", "300")),
         },
+        "printers-toner-every-60-minutes": {
+            "task": "printers_toner_all",
+            "schedule": float(os.getenv("PRINTER_TONER_INTERVAL_SECONDS", "3600")),
+        },
     },
 )

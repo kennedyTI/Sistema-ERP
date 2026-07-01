@@ -3323,10 +3323,66 @@ persistidos simultaneamente e o seletor compartilhado do frontend alterna
 entre eles a cada quatro segundos. O indicador visual fora de `#ink_level` e
 ignorado para evitar falso positivo, e nenhum HTML bruto e persistido.
 
+### Ajuste de aliases operacionais
+
+As mensagens abreviadas `Atol. dentro` e `S/ Papel B1`, observadas em campo,
+possuem regras específicas com severidade `medium` e classificação visual
+amarela. As regras críticas genéricas de atolamento e ausência de papel foram
+preservadas. `Dormindo` continua associado a `sleep/green`, e `Estado normal`
+passa a ser reconhecido por `ok/green`.
+
+## Etapa 3.5.3 - Porcentagem de toner com base na solução testada da v1
+
+Esta etapa porta para a arquitetura modular da v2 somente a estratégia de
+percentual de toner já validada na v1. A coleta usa SNMP WALK na Printer-MIB,
+cruza os resultados pelo índice do suprimento e não usa HTML, browser headless
+ou regras de alertas para inferir nível.
+
+### OIDs e cálculo
+
+| Informação | OID base |
+| --- | --- |
+| Tipo | `1.3.6.1.2.1.43.11.1.1.5` |
+| Descrição | `1.3.6.1.2.1.43.11.1.1.6` |
+| Unidade | `1.3.6.1.2.1.43.11.1.1.7` |
+| Capacidade máxima | `1.3.6.1.2.1.43.11.1.1.8` |
+| Nível atual | `1.3.6.1.2.1.43.11.1.1.9` |
+
+O percentual é calculado por `nivel_atual / capacidade_maxima * 100`, limitado
+ao intervalo de 0 a 100. Os sentinelas negativos da Printer-MIB (`-1`, `-2` e
+`-3`), capacidade zero e valores inválidos resultam em percentual
+`Desconhecido`; eles nunca são convertidos em zero.
+
+Somente suprimentos classificados como toner são considerados. Tambor,
+cilindro, reservatório residual, fusor, correia, revelador, papel e bandeja são
+ignorados. As cores projetadas são preto, ciano, magenta, amarelo e
+desconhecido.
+
+### Persistência, API e execução
+
+- `status_toner_impressoras` mantém a leitura atual por máquina, cor e índice;
+- `historico_toner_impressoras` registra apenas primeira coleta, mudança de
+  percentual, transição conhecido/desconhecido ou mudança de erro;
+- a API de Status expõe `toners[]`, sem community SNMP ou resposta bruta;
+- o modal de Status apresenta os percentuais disponíveis;
+- máquinas inativas, sem IP ou offline não entram na coleta;
+- a task `printers_toner_all` usa locks Redis e roda a cada 3600 segundos,
+  configurável por `PRINTER_TONER_INTERVAL_SECONDS`.
+
+A migration `20260701_printer_toner_status` deve ser aplicada antes de iniciar
+API e workers com esta versão. No Docker Compose, o serviço `migrations`
+continua sendo a barreira de inicialização dos demais serviços.
+
+### Limites desta etapa
+
+Não foram adicionados fallback HTML para toner, alertas baseados em percentual,
+papel, dashboard, coleta rica de outros suprimentos ou alteração da cascata de
+alertas. Esses itens permanecem para etapas futuras.
+
 ## Próximas etapas
 
 - ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
-- 3.5.3: coleta rica em 60 minutos;
-- 3.5.4: papel, toner e históricos;
+- validar a coleta percentual de toner em modelos adicionais;
+- 3.5.4: papel e históricos ampliados;
 - 3.5.5: dashboard.

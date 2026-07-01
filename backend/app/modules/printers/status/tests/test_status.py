@@ -17,6 +17,10 @@ from backend.app.modules.printers.monitoring.alerts.models import (
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.monitoring.state.seed import seed_alert_rules
+from backend.app.modules.printers.monitoring.toner.models import (
+    HistoricoTonerImpressora,
+    StatusTonerImpressora,
+)
 from backend.app.modules.printers.status.models import (
     HistoricoStatusImpressora,
     LogImpressora,
@@ -37,9 +41,11 @@ class PrinterStatusApiTest(TestCase):
         PrinterMachine.__table__.create(engine)
         PrinterAlertRule.__table__.create(engine)
         AlertaImpressora.__table__.create(engine)
+        StatusTonerImpressora.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
         HistoricoStatusImpressora.__table__.create(engine)
         HistoricoAlertaImpressora.__table__.create(engine)
+        HistoricoTonerImpressora.__table__.create(engine)
         LogImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
@@ -120,6 +126,41 @@ class PrinterStatusApiTest(TestCase):
         self.db.add(history)
         self.db.commit()
         return history
+
+    def test_status_detail_retorna_toners_sem_dados_tecnicos(self):
+        machine = self._create_machine()
+        self.db.add(
+            StatusTonerImpressora(
+                maquina_id=machine["id"],
+                cor="black",
+                indice_suprimento="1.1",
+                descricao_coletada="Black Toner",
+                tipo_suprimento="3",
+                unidade_suprimento="19",
+                nivel_atual=78,
+                capacidade_maxima=100,
+                percentual=78,
+                origem_coleta="snmp",
+                metodo_coleta="printer_mib_walk",
+                sucesso=True,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["toners"][0]["cor"], "black")
+        self.assertEqual(data["toners"][0]["nome"], "Preto")
+        self.assertEqual(data["toners"][0]["percentual"], 78)
+        serialized = str(data["toners"])
+        self.assertNotIn("oid", serialized.casefold())
+        self.assertNotIn("community", serialized.casefold())
+        self.assertNotIn("Authorization", serialized)
 
     def _create_alert_history(self, machine_id: int, *, verified_at):
         rule = self.db.query(PrinterAlertRule).filter_by(codigo="toner_low").one()
