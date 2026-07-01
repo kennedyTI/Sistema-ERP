@@ -114,6 +114,7 @@ class CleanBasePolicyTest(TestCase):
         self.assertNotIn("Resposta técnica", details_dialog)
         self.assertNotIn("resposta_bruta", details_dialog)
         self.assertIn("Últimos logs das últimas 24h", details_dialog)
+        self.assertIn("Última verificação", details_dialog)
         self.assertIn(
             "Nenhum evento operacional registrado nas últimas 24h.",
             details_dialog,
