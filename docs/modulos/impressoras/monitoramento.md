@@ -3304,6 +3304,10 @@ auditoria e build frontend, stack Docker, Redis, Celery Worker/Beat, tasks
 registradas e acesso HTTPS local. A branch principal nao faz parte desta
 microetapa.
 
+O healthcheck do Celery Worker permite ate 20 segundos para carregar a
+aplicacao e concluir o `inspect ping`. Esse limite evita falso `unhealthy`
+durante as coletas periodicas sem alterar tasks, concorrencia ou schedules.
+
 ### Alertas simultaneos na Brother DCP-L2540DW
 
 O HTML real desse modelo separa o estado principal do aviso de suprimento. O
