@@ -3047,7 +3047,8 @@ operacional e para merge em `develop`.
 - impressoras offline exibem `Alerta: Sem servico` com severidade
   `high/vermelho`, sobrescrevendo alertas antigos no detalhe;
 - `Mensagem operacional` permanece separada de `Alerta`;
-- `Resposta tecnica` e `Ultimos logs` permanecem somente consultivos.
+- `Resposta tecnica` foi removida da experiencia operacional;
+- `Ultimos logs` permanece consultivo e usa os historicos operacionais reais.
 
 ### Multiplos alertas
 

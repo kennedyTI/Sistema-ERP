@@ -226,7 +226,7 @@ export function StatusDetailsDialog({
                   </div>
                   <Detail label="Mensagem operacional" value={current.mensagem_operador} />
                   <Detail
-                    label="Última atualização"
+                    label="Última verificação"
                     value={formatFullDateTime(current.ultima_verificacao_em)}
                   />
                   <Detail
