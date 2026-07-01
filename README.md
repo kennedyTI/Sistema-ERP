@@ -2,9 +2,9 @@
 
 Sistema ERP modular desenvolvido para demonstrar uma arquitetura corporativa moderna, com backend em FastAPI, administração via Django Admin, autenticação centralizada, permissões por grupos, frontend React/Vite e execução em containers Docker com proxy HTTPS.
 
-A versão atual publicada é a **v2.3.0 — Máquinas e Status Operacional**.
+A versão atual publicada é a **v2.4.0 — Status e alertas de impressoras**.
 
-Registro detalhado da release: [docs/releases/v2.3.0-maquinas-e-status-operacional.md](docs/releases/v2.3.0-maquinas-e-status-operacional.md).
+Registro detalhado da release: [docs/releases/v2.4.0-status-alertas-impressoras.md](docs/releases/v2.4.0-status-alertas-impressoras.md).
 
 ---
 
@@ -24,7 +24,7 @@ A plataforma já contém:
 - Redis e Celery para conectividade assíncrona de impressoras;
 - módulo Impressoras em evolução incremental.
 
-O módulo Impressoras é o primeiro domínio operacional do sistema. Ele já possui cadastro de máquinas, status operacional, permissões granulares, imagens de modelos, auditoria cadastral e interface responsiva.
+O módulo Impressoras é o primeiro domínio operacional do sistema. Ele já possui cadastro de máquinas, status operacional, alertas operacionais, permissões granulares, imagens de modelos, auditoria cadastral e interface responsiva.
 
 ---
 
@@ -37,6 +37,8 @@ No módulo Impressoras, a versão atual resolve problemas como:
 - cadastro centralizado de máquinas;
 - separação entre status cadastral e status operacional;
 - consulta operacional somente de máquinas ativas;
+- coleta e exibição de alertas operacionais atuais;
+- histórico de alertas e logs consultivos;
 - proteção contra edição manual de status e logs operacionais;
 - controle de permissões pelo Django Admin;
 - edição cadastral com validação por campo;
@@ -71,6 +73,11 @@ No módulo Impressoras, a versão atual resolve problemas como:
 - conectividade automática a cada 60 segundos;
 - confirmação em cascata por ICMP, TCP, SNMP e HTML/HTTP;
 - histórico de mudanças confirmadas online/offline;
+- alertas operacionais coletados e sincronizados em ciclo agendado;
+- regras de alertas, OIDs SNMP e credenciais de coleta administradas pelo Django Admin;
+- priorização por severidade e alternância de alertas equivalentes no Status;
+- fallback HTML/HTTP por modelo e fallback IPP para modelos HP compatíveis;
+- logs operacionais das últimas 24 horas no detalhe de Status;
 - modal único de consulta e edição;
 - toggle Ativo/Inativo sem reload;
 - validação por campo;
@@ -100,17 +107,17 @@ postgres
 
 ### Serviços Docker
 
-| Serviço                  | Função                                   |
-| ------------------------ | ---------------------------------------- |
-| `sistema_erp_proxy`      | Proxy reverso Nginx com HTTPS            |
-| `sistema_erp_frontend`   | Interface web React/Vite                 |
-| `sistema_erp_api`        | API FastAPI                              |
-| `sistema_erp_admin`      | Django Admin                             |
-| `sistema_erp_postgres`   | Banco PostgreSQL                         |
-| `sistema_erp_migrations` | Execução das migrations e seeds iniciais |
-| `portal_industria_redis` | Broker, cache transitório e locks de conectividade |
-| `portal_industria_celery_worker` | Execução das coletas de conectividade |
-| `portal_industria_celery_beat` | Agendamento do ciclo global de 60 segundos |
+| Serviço Compose | Container | Função |
+| ---------------- | --------- | ------ |
+| `sistema_erp_proxy` | `sistema_erp_proxy` | Proxy reverso Nginx com HTTPS |
+| `frontend` | `portal_industria_frontend` | Interface web React/Vite |
+| `api` | `portal_industria_api` | API FastAPI |
+| `admin` | `portal_industria_admin` | Django Admin |
+| `postgres` | `portal_industria_postgres` | Banco PostgreSQL |
+| `migrations` | `portal_industria_migrations` | Execução das migrations e seeds iniciais |
+| `redis` | `portal_industria_redis` | Broker, cache transitório e locks de conectividade |
+| `celery-worker` | `portal_industria_celery_worker` | Execução das coletas de conectividade e alertas |
+| `celery-beat` | `portal_industria_celery_beat` | Agendamento dos ciclos de conectividade e alertas |
 
 ### Regras arquiteturais importantes
 
@@ -410,8 +417,8 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 | Etapa 2 | Cadastro de Máquinas | Concluída |
 | Etapa 3 | Status e Dashboard | Parcial: Status concluído; Dashboard real pendente |
 | Etapa 4 | Papel, Toner e Histórico | Não iniciada |
-| Etapa 3.5.1 | Conectividade 60s com Redis/Celery e histórico confirmado | Em desenvolvimento |
-| Etapa 3.5.2 | Alertas e estado da máquina em 5min | Não iniciada |
+| Etapa 3.5.1 | Conectividade 60s com Redis/Celery e histórico confirmado | Concluída |
+| Etapa 3.5.2 | Alertas e estado da máquina em 5min | Concluída |
 | Etapa 3.5.3 | Coleta rica em 60min | Não iniciada |
 | Etapa 3.5.4 | Papel, toner e históricos | Não iniciada |
 | Etapa 3.5.5 | Dashboard operacional | Não iniciada |
@@ -423,10 +430,8 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 - Papel;
 - Toner;
 - histórico operacional ampliado;
-- alertas;
 - integração Protheus;
 - integração GLPI;
-- alertas operacionais em ciclos de cinco minutos;
 - coleta rica de informações em ciclos de 60 minutos;
 - assistente Telegram em etapa futura.
 
@@ -458,14 +463,14 @@ Observação: as branches já entregues até a versão atual tiveram nomes incre
 | `v2.1.0-modulo-impressoras-base` | Fundação do módulo Impressoras |
 | `v2.2.0-printers-machines-crud` | Cadastro inicial de máquinas |
 | `v2.3.0-maquinas-e-status-operacional` | Máquinas, status operacional e polimento visual |
+| `v2.4.0-status-alertas-impressoras` | Status e alertas de impressoras |
 
 ### Planejadas
 
 | Release planejada | Escopo previsto |
 | ----------------- | --------------- |
-| `v2.4.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
-| `v2.5.0-suprimentos` | Papel, toner e histórico inicial |
-| `v2.6.0-alertas` | Alertas operacionais |
+| `v2.5.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
+| `v2.6.0-suprimentos` | Papel, toner e histórico inicial |
 | `v2.7.0-integracoes` | Protheus/GLPI e integrações corporativas |
 
 As tags publicadas não devem ser reescritas. Ajustes documentais posteriores à publicação podem entrar em commits normais de documentação.
@@ -500,22 +505,24 @@ No momento, os screenshots ainda não estão versionados oficialmente.
 Estado atual:
 
 ```text
-Versão atual: v2.3.0-maquinas-e-status-operacional
-Etapa atual: Etapa 3 — Status e Dashboard
-Status da etapa: Status concluído; Dashboard real pendente
+Versão atual: v2.4.0-status-alertas-impressoras
+Etapa atual: Etapa 3.5.2 — Status e Alertas
+Status da etapa: Status e alertas promovidos para main; Dashboard real pendente
 ```
 
-Validações da release v2.3.0:
+Validações da release v2.4.0:
 
-- 70 testes aprovados;
+- 392 testes aprovados;
 - Django check sem problemas;
 - frontend build aprovado;
 - npm audit com 0 vulnerabilidades;
 - Docker e migrations funcionando;
+- Redis, Celery Worker, Celery Beat e proxy ativos;
 - login/me/logout retornando HTTP 200;
 - Máquinas e Status retornando HTTP 200;
 - HTTPS validado;
 - Status exibindo somente máquinas ativas;
+- alertas atuais, histórico e logs operacionais validados;
 - interface validada em desktop, notebook, tablet e celular;
 - nenhum arquivo sensível rastreado.
 
@@ -524,7 +531,7 @@ Limitações não bloqueantes conhecidas:
 - aviso antigo de chunks acima de 500 kB no build frontend;
 - uso de certificado self-signed em ambiente local;
 - Dashboard real ainda pendente;
-- Papel, Toner, Histórico, Alertas e Monitoramento Automático ainda não iniciados.
+- Papel, Toner, Histórico ampliado e coleta rica de 60 minutos ainda não iniciados.
 
 ---
 
