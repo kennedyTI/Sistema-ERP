@@ -3373,11 +3373,12 @@ A migration `20260701_printer_toner_status` deve ser aplicada antes de iniciar
 API e workers com esta versão. No Docker Compose, o serviço `migrations`
 continua sendo a barreira de inicialização dos demais serviços.
 
-### Limites desta etapa
+### Limites da entrega inicial
 
-Não foram adicionados alertas baseados em percentual, papel, dashboard, coleta
-rica de outros suprimentos ou alteração da cascata de alertas. Esses itens
-permanecem para etapas futuras.
+Na entrega inicial não foram adicionados alertas baseados em percentual, papel,
+dashboard, coleta rica de outros suprimentos ou alteração da cascata de
+alertas. A regra operacional por percentual foi adicionada posteriormente na
+microetapa 3.5.3.2; os demais itens permanecem para etapas futuras.
 
 ### Etapa 3.5.3.1 - Fallbacks de toner portados da v1
 
@@ -3413,6 +3414,45 @@ HTML permitidos, parser `tonerremain`, unknown nulo, bloqueio dos OIDs
 invalidados, máquina offline, payload sanitizado, histórico anti-spam e
 preservação de Status/Alertas. Melhorias de UI, novas rotas embarcadas e novos
 OIDs privados permanecem pendências futuras condicionadas a diagnóstico real.
+
+### Etapa 3.5.3.2 - Contexto operacional e alertas configuráveis de toner
+
+O modal mantém as barras existentes e passa a exibir, logo abaixo de `Nível de
+toner`, o método amigável da coleta: `Printer-MIB`, `OIDs cadastrados` ou
+`web_status`. Quando há mais de um método entre as cores, eles são apresentados
+na mesma linha. O rodapé da seção usa o `coletado_em` mais recente para mostrar
+somente tempo relativo, como `Atualizado há 6 min`, sem data ou hora absoluta.
+
+Os limites operacionais ficam no cadastro `printers_models`, nas colunas
+`limite_toner_critico` e `limite_toner_baixo`. O Django Admin permite configurar
+os valores por modelo entre 0 e 100 e exige que o crítico seja menor ou igual
+ao baixo. Configuração ausente, parcial ou inválida usa o fallback global:
+
+```text
+percentual <= 10 -> Toner crítico / high / vermelho
+percentual <= 20 -> Toner baixo / medium / amarelo
+percentual >= 21 -> sem alerta de toner
+```
+
+A decisão é feita somente no backend. O frontend não calcula thresholds e usa
+a severidade recebida pela API. Quando existe percentual válido, alertas
+textuais de toner, como `Subs. toner` e `Há pouco toner`, são substituídos pelo
+resultado calculado. Com percentual desconhecido, o alerta textual continua
+como fallback. Em impressoras coloridas, cada cor é avaliada e a projeção
+principal mantém a maior severidade; alertas equivalentes continuam disponíveis
+para a alternância já existente no frontend.
+
+A reconciliação é restrita a toner. Offline/Sem serviço, cilindro, papel,
+atolamento, tampa aberta, erro geral e falha de coleta não são removidos nem
+rebaixados. A coleta estabilizada Printer-MIB -> OIDs ativos -> `web_status`
+permanece inalterada. A migration `20260702_toner_alert_thresholds` acrescenta
+somente os dois limites e suas constraints à tabela de modelos.
+
+Os testes cobrem os limites 10, 11, 20 e 21, percentual desconhecido, conflito
+com alertas textuais, múltiplas cores, configuração por modelo, fallback global,
+configuração inválida e preservação de alertas não relacionados. Histórico de
+toner no modal, detecção de troca, dashboard, papel, GLPI, Protheus, previsão de
+dias restantes e `/general/information.html?kind=item` continuam fora do escopo.
 
 ## Próximas etapas
 

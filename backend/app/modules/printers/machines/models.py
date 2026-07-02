@@ -1,6 +1,16 @@
 """Models do cadastro de modelos e maquinas do modulo Impressoras."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from backend.app.core.database import Base
@@ -11,6 +21,21 @@ class PrinterModel(Base):
     __tablename__ = "printers_models"
     __table_args__ = (
         UniqueConstraint("manufacturer", "name", name="uq_printers_models_manufacturer_name"),
+        CheckConstraint(
+            "limite_toner_critico IS NULL OR "
+            "(limite_toner_critico >= 0 AND limite_toner_critico <= 100)",
+            name="ck_printers_models_limite_toner_critico",
+        ),
+        CheckConstraint(
+            "limite_toner_baixo IS NULL OR "
+            "(limite_toner_baixo >= 0 AND limite_toner_baixo <= 100)",
+            name="ck_printers_models_limite_toner_baixo",
+        ),
+        CheckConstraint(
+            "limite_toner_critico IS NULL OR limite_toner_baixo IS NULL OR "
+            "limite_toner_critico <= limite_toner_baixo",
+            name="ck_printers_models_limites_toner_ordem",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
@@ -19,6 +44,8 @@ class PrinterModel(Base):
     type = Column(String(80), nullable=True)
     color_mode = Column(String(40), nullable=True)
     url_imagem = Column(String(500), nullable=True)
+    critical_toner_threshold = Column("limite_toner_critico", Integer, nullable=True)
+    low_toner_threshold = Column("limite_toner_baixo", Integer, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=now_sao_paulo)
     updated_at = Column(DateTime, nullable=False, default=now_sao_paulo, onupdate=now_sao_paulo)
