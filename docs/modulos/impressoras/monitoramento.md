@@ -3375,9 +3375,44 @@ continua sendo a barreira de inicialização dos demais serviços.
 
 ### Limites desta etapa
 
-Não foram adicionados fallback HTML para toner, alertas baseados em percentual,
-papel, dashboard, coleta rica de outros suprimentos ou alteração da cascata de
-alertas. Esses itens permanecem para etapas futuras.
+Não foram adicionados alertas baseados em percentual, papel, dashboard, coleta
+rica de outros suprimentos ou alteração da cascata de alertas. Esses itens
+permanecem para etapas futuras.
+
+### Etapa 3.5.3.1 - Fallbacks de toner portados da v1
+
+A correção preserva a Printer-MIB como primeira tentativa e adiciona duas
+camadas controladas somente quando nenhum percentual numérico válido foi
+obtido:
+
+1. OIDs de toner ativos no catálogo `oids_snmp_impressoras`, tratados como
+   configurações previamente validadas e registrados com método
+   `snmp_oid_fallback`;
+2. páginas HTML de status para modelos Brother suportados, registradas com
+   origem `html` e método `web_status`.
+
+O fallback web tenta, nesta ordem, apenas `/home/status.html`,
+`/general/status.html` e `/`. A rota
+`/general/information.html?kind=item` ficou explicitamente fora desta etapa.
+Não há browser headless, automação de navegador nem persistência de HTML bruto.
+
+O parser Brother identifica imagens com a classe `tonerremain`. A altura da
+barra é convertida com `BROTHER_TONER_BAR_MAX_HEIGHT = 56` e a fórmula
+`round(altura / 56 * 100)`, limitada a 100. Em modelos monocromáticos, uma barra
+sem cor explícita representa toner preto. Altura ausente, zero ou inválida
+permanece desconhecida (`null`), nunca `0%` inventado.
+
+Os OIDs privados Brother já invalidados continuam fora do seed e são
+bloqueados mesmo se cadastrados por engano. Nenhum OID experimental foi
+promovido. A migration `20260702_toner_v1_fallbacks` amplia somente as
+constraints de métricas, origens e métodos das tabelas existentes; nenhuma
+tabela adicional de toner foi criada.
+
+As validações cobrem a ordem da cascata, interrupção após sucesso, caminhos
+HTML permitidos, parser `tonerremain`, unknown nulo, bloqueio dos OIDs
+invalidados, máquina offline, payload sanitizado, histórico anti-spam e
+preservação de Status/Alertas. Melhorias de UI, novas rotas embarcadas e novos
+OIDs privados permanecem pendências futuras condicionadas a diagnóstico real.
 
 ## Próximas etapas
 

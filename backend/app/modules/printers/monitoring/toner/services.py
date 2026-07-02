@@ -21,6 +21,11 @@ from backend.app.modules.printers.monitoring.toner.collector import (
     SupplyWalker,
     collect_toner_items_from_printer_mib,
 )
+from backend.app.modules.printers.monitoring.toner.fallbacks import (
+    collect_toner_from_snmp_oids,
+    collect_toner_from_web_status,
+    has_valid_toner_percentage,
+)
 from backend.app.modules.printers.monitoring.toner.models import (
     HistoricoTonerImpressora,
     StatusTonerImpressora,
@@ -80,9 +85,11 @@ def sync_toner_items(
     collected_at = collected_at or now_sao_paulo()
     updated = 0
     history_created = 0
+    current_keys: set[tuple[str, str]] = set()
     for item in items:
         color = str(item.get("cor") or "unknown")
         supply_index = str(item.get("indice_suprimento") or "default")
+        current_keys.add((color, supply_index))
         current = (
             db.query(StatusTonerImpressora)
             .filter(
@@ -142,12 +149,121 @@ def sync_toner_items(
             )
             history_created += 1
 
+    stale_rows = (
+        db.query(StatusTonerImpressora)
+        .filter(StatusTonerImpressora.maquina_id == machine.id)
+        .all()
+    )
+    for stale in stale_rows:
+        if (stale.cor, stale.indice_suprimento) not in current_keys:
+            db.delete(stale)
+
     db.commit()
     return {
         "maquina_id": machine.id,
         "sincronizado": True,
         "toners_atualizados": updated,
         "historicos_criados": history_created,
+    }
+
+
+def _merge_fallback_items(
+    printer_mib_items: list[dict[str, Any]],
+    fallback_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Substitui a leitura unknown da mesma cor sem duplicar o suprimento."""
+    merged = [dict(item) for item in printer_mib_items]
+    for fallback in fallback_items:
+        replacement_index = next(
+            (
+                index
+                for index, item in enumerate(merged)
+                if item.get("cor") == fallback.get("cor")
+                and item.get("percentual") is None
+            ),
+            None,
+        )
+        if replacement_index is None:
+            merged.append(dict(fallback))
+            continue
+        base = merged[replacement_index]
+        supply_index = base.get("indice_suprimento")
+        base.update(fallback)
+        base["indice_suprimento"] = supply_index or fallback.get("indice_suprimento")
+    return merged
+
+
+def collect_toner_with_fallbacks(
+    db: Session,
+    *,
+    machine: PrinterMachine,
+    settings: MonitoringSettings,
+    walker: SupplyWalker | None = None,
+    printer_mib_collector: Callable[..., dict[str, Any]] = collect_toner_items_from_printer_mib,
+    snmp_oid_collector: Callable[..., dict[str, Any]] = collect_toner_from_snmp_oids,
+    web_status_collector: Callable[..., dict[str, Any]] = collect_toner_from_web_status,
+) -> dict[str, Any]:
+    """Executa a cascata aprovada sem expor dados tecnicos brutos."""
+    mib_kwargs: dict[str, Any] = {
+        "host": machine.ip_address,
+        "settings": settings,
+    }
+    if walker is not None:
+        mib_kwargs["walker"] = walker
+    printer_mib = printer_mib_collector(**mib_kwargs)
+    printer_mib_items = printer_mib.get("toners") or []
+    if has_valid_toner_percentage(printer_mib_items):
+        return {**printer_mib, "camada_toner": "printer_mib"}
+
+    logger.info(
+        "toner_printer_mib_sem_percentual",
+        extra={"event": "toner_printer_mib_sem_percentual", "machine_id": machine.id},
+    )
+    snmp_oid = snmp_oid_collector(db, machine=machine, settings=settings)
+    snmp_oid_items = snmp_oid.get("toners") or []
+    if has_valid_toner_percentage(snmp_oid_items):
+        logger.info(
+            "toner_snmp_oid_fallback_sucesso",
+            extra={"event": "toner_snmp_oid_fallback_sucesso", "machine_id": machine.id},
+        )
+        return {
+            **snmp_oid,
+            "toners": _merge_fallback_items(printer_mib_items, snmp_oid_items),
+            "camada_toner": "snmp_oid_fallback",
+        }
+
+    logger.info(
+        "toner_snmp_oid_fallback_sem_percentual",
+        extra={"event": "toner_snmp_oid_fallback_sem_percentual", "machine_id": machine.id},
+    )
+    web_status = web_status_collector(db, machine=machine)
+    web_status_items = web_status.get("toners") or []
+    if has_valid_toner_percentage(web_status_items):
+        logger.info(
+            "toner_web_status_sucesso",
+            extra={"event": "toner_web_status_sucesso", "machine_id": machine.id},
+        )
+        return {
+            **web_status,
+            "toners": _merge_fallback_items(printer_mib_items, web_status_items),
+            "camada_toner": "web_status",
+        }
+
+    event = (
+        "toner_web_status_parser_erro"
+        if web_status.get("erro_codigo") == "toner_web_status_parser_erro"
+        else "toner_web_status_sem_percentual"
+    )
+    logger.info(event, extra={"event": event, "machine_id": machine.id})
+
+    # Preserva a melhor representacao desconhecida encontrada. Nenhum fallback
+    # converte ausencia de leitura em zero.
+    fallback_items = web_status_items or snmp_oid_items or printer_mib_items
+    return {
+        "sucesso": True,
+        "toners": fallback_items,
+        "sem_toner_detectado": not bool(fallback_items),
+        "camada_toner": "sem_percentual",
     }
 
 
@@ -158,6 +274,9 @@ def collect_and_sync_machine_toner(
     redis_client: Redis,
     settings: MonitoringSettings | None = None,
     walker: SupplyWalker | None = None,
+    printer_mib_collector: Callable[..., dict[str, Any]] = collect_toner_items_from_printer_mib,
+    snmp_oid_collector: Callable[..., dict[str, Any]] = collect_toner_from_snmp_oids,
+    web_status_collector: Callable[..., dict[str, Any]] = collect_toner_from_web_status,
 ) -> dict[str, Any]:
     config = settings or get_monitoring_settings()
     machine = db.get(PrinterMachine, machine_id)
@@ -180,13 +299,15 @@ def collect_and_sync_machine_toner(
         return {"maquina_id": machine.id, "processada": False, "motivo": "lock_ativo"}
 
     try:
-        kwargs: dict[str, Any] = {
-            "host": machine.ip_address,
-            "settings": config,
-        }
-        if walker is not None:
-            kwargs["walker"] = walker
-        collection = collect_toner_items_from_printer_mib(**kwargs)
+        collection = collect_toner_with_fallbacks(
+            db,
+            machine=machine,
+            settings=config,
+            walker=walker,
+            printer_mib_collector=printer_mib_collector,
+            snmp_oid_collector=snmp_oid_collector,
+            web_status_collector=web_status_collector,
+        )
         if not collection.get("sucesso"):
             return {
                 "maquina_id": machine.id,
@@ -203,6 +324,7 @@ def collect_and_sync_machine_toner(
         return {
             "processada": True,
             "snmp_version": collection.get("versao_snmp"),
+            "camada_toner": collection.get("camada_toner"),
             "sem_toner_detectado": collection.get("sem_toner_detectado") is True,
             **sync_result,
         }
@@ -223,6 +345,7 @@ def _safe_toner_task_result(result: dict[str, Any]) -> dict[str, Any]:
         "historicos_criados",
         "sem_toner_detectado",
         "snmp_version",
+        "camada_toner",
         "erro_codigo",
     }
     return {key: result[key] for key in safe_keys if key in result}

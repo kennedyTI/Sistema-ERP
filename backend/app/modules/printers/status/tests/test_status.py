@@ -140,8 +140,8 @@ class PrinterStatusApiTest(TestCase):
                 nivel_atual=78,
                 capacidade_maxima=100,
                 percentual=78,
-                origem_coleta="snmp",
-                metodo_coleta="printer_mib_walk",
+                origem_coleta="html",
+                metodo_coleta="web_status",
                 sucesso=True,
             )
         )
@@ -157,6 +157,8 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["toners"][0]["cor"], "black")
         self.assertEqual(data["toners"][0]["nome"], "Preto")
         self.assertEqual(data["toners"][0]["percentual"], 78)
+        self.assertEqual(data["toners"][0]["origem_coleta"], "html")
+        self.assertEqual(data["toners"][0]["metodo_coleta"], "web_status")
         serialized = str(data["toners"])
         self.assertNotIn("oid", serialized.casefold())
         self.assertNotIn("community", serialized.casefold())

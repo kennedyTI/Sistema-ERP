@@ -8,6 +8,11 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.celery_app import celery_app
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
 from backend.app.modules.printers.monitoring.config import MonitoringSettings
+from backend.app.modules.printers.monitoring.html_client.models import (
+    HtmlAccessConfig,
+    HtmlClientResponse,
+)
+from backend.app.modules.printers.monitoring.snmp.models import PrinterSnmpOid
 from backend.app.modules.printers.monitoring.tasks import printers_toner_all
 from backend.app.modules.printers.monitoring.toner.collector import (
     PRT_MARKER_SUPPLIES_DESCRIPTION_OID,
@@ -24,8 +29,18 @@ from backend.app.modules.printers.monitoring.toner.models import (
     HistoricoTonerImpressora,
     StatusTonerImpressora,
 )
+from backend.app.modules.printers.monitoring.toner.fallbacks import (
+    BROTHER_TONER_BAR_MAX_HEIGHT,
+    WEB_STATUS_PATHS,
+    brother_toner_percentage,
+    collect_toner_from_snmp_oids,
+    collect_toner_from_web_status,
+    has_valid_toner_percentage,
+    parse_brother_tonerremain,
+)
 from backend.app.modules.printers.monitoring.toner.services import (
     collect_and_sync_machine_toner,
+    collect_toner_with_fallbacks,
     run_toner_batch,
     sync_toner_items,
 )
@@ -141,6 +156,44 @@ class TonerCollectorTest(TestCase):
         self.assertEqual(calculate_toner_percentage("150", "100"), 100)
 
 
+class TonerFallbackParserTest(TestCase):
+    def test_parser_brother_identifica_tonerremain_e_calcula_percentual(self):
+        html = '<img class="tonerremain" src="black.gif" height="28">'
+
+        items = parse_brother_tonerremain(html)
+
+        self.assertEqual(BROTHER_TONER_BAR_MAX_HEIGHT, 56)
+        self.assertEqual(items[0]["cor"], "black")
+        self.assertEqual(items[0]["percentual"], 50)
+
+    def test_parser_brother_monocromatica_assume_preto_sem_cor(self):
+        items = parse_brother_tonerremain(
+            '<img class="status tonerremain" style="height: 14px">'
+        )
+
+        self.assertEqual(items[0]["cor"], "black")
+        self.assertEqual(items[0]["percentual"], 25)
+
+    def test_altura_invalida_nao_vira_zero_nem_quebra(self):
+        self.assertIsNone(brother_toner_percentage(None))
+        self.assertIsNone(brother_toner_percentage("invalida"))
+        self.assertIsNone(brother_toner_percentage(0))
+        items = parse_brother_tonerremain(
+            '<img class="tonerremain" height="invalida">'
+        )
+        self.assertIsNone(items[0]["percentual"])
+
+    def test_altura_acima_do_maximo_e_limitada_a_cem(self):
+        self.assertEqual(brother_toner_percentage(80), 100)
+
+    def test_html_invalido_nao_quebra_parser(self):
+        self.assertEqual(parse_brother_tonerremain("<img class='tonerremain'"), [])
+
+    def test_zero_real_e_valido_mas_unknown_nao_e_zero(self):
+        self.assertTrue(has_valid_toner_percentage([{"percentual": 0}]))
+        self.assertFalse(has_valid_toner_percentage([{"percentual": None}]))
+
+
 class TonerServiceTest(TestCase):
     def setUp(self):
         engine = create_engine(
@@ -151,6 +204,7 @@ class TonerServiceTest(TestCase):
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
+        PrinterSnmpOid.__table__.create(engine)
         StatusTonerImpressora.__table__.create(engine)
         HistoricoTonerImpressora.__table__.create(engine)
         self.db = sessionmaker(bind=engine)()
@@ -209,6 +263,29 @@ class TonerServiceTest(TestCase):
         self.assertEqual(second["historicos_criados"], 0)
         self.assertEqual(self.db.query(StatusTonerImpressora).count(), 1)
         self.assertEqual(self.db.query(HistoricoTonerImpressora).count(), 1)
+
+    def test_sincronizacao_remove_projecao_antiga_de_outro_indice(self):
+        machine = self.add_machine()
+        original = {
+            "cor": "black",
+            "indice_suprimento": "web_status_1",
+            "percentual": None,
+            "origem_coleta": "html",
+            "metodo_coleta": "web_status",
+        }
+        sync_toner_items(self.db, machine=machine, items=[original])
+
+        replacement = {
+            **original,
+            "indice_suprimento": "1.1",
+            "percentual": 70,
+        }
+        sync_toner_items(self.db, machine=machine, items=[replacement])
+
+        rows = self.db.query(StatusTonerImpressora).filter_by(maquina_id=machine.id).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].indice_suprimento, "1.1")
+        self.assertEqual(rows[0].percentual, 70)
 
     def test_maquina_offline_e_ignorada(self):
         machine = self.add_machine(status="offline")
@@ -297,6 +374,258 @@ class TonerServiceTest(TestCase):
         self.assertEqual(result["processadas"], 1)
         self.assertEqual(result["ignoradas_offline"], 1)
         collector.assert_called_once()
+
+    def test_printer_mib_valido_impede_fallbacks(self):
+        machine = self.add_machine()
+        snmp_oid = Mock()
+        web_status = Mock()
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=Mock(
+                return_value={"sucesso": True, "toners": [{"percentual": 64}]}
+            ),
+            snmp_oid_collector=snmp_oid,
+            web_status_collector=web_status,
+        )
+
+        self.assertEqual(result["camada_toner"], "printer_mib")
+        snmp_oid.assert_not_called()
+        web_status.assert_not_called()
+
+    def test_printer_mib_sem_percentual_tenta_snmp_oids(self):
+        machine = self.add_machine()
+        web_status = Mock()
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=Mock(
+                return_value={"sucesso": True, "toners": [{"percentual": None}]}
+            ),
+            snmp_oid_collector=Mock(
+                return_value={"sucesso": True, "toners": [{"percentual": 42}]}
+            ),
+            web_status_collector=web_status,
+        )
+
+        self.assertEqual(result["camada_toner"], "snmp_oid_fallback")
+        web_status.assert_not_called()
+
+    def test_mib_e_snmp_sem_percentual_tentam_web_status(self):
+        machine = self.add_machine()
+        web_status = Mock(
+            return_value={"sucesso": True, "toners": [{"percentual": 50}]}
+        )
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=Mock(return_value={"sucesso": False, "toners": []}),
+            snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            web_status_collector=web_status,
+        )
+
+        self.assertEqual(result["camada_toner"], "web_status")
+        web_status.assert_called_once()
+
+    def test_fallback_substitui_unknown_da_mesma_cor_sem_duplicar(self):
+        machine = self.add_machine()
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=Mock(
+                return_value={
+                    "sucesso": True,
+                    "toners": [
+                        {
+                            "cor": "black",
+                            "indice_suprimento": "1.1",
+                            "percentual": None,
+                            "origem_coleta": "snmp",
+                            "metodo_coleta": "printer_mib_walk",
+                        }
+                    ],
+                }
+            ),
+            snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            web_status_collector=Mock(
+                return_value={
+                    "sucesso": True,
+                    "toners": [
+                        {
+                            "cor": "black",
+                            "indice_suprimento": "web_status_1",
+                            "percentual": 70,
+                            "origem_coleta": "html",
+                            "metodo_coleta": "web_status",
+                        }
+                    ],
+                }
+            ),
+        )
+
+        self.assertEqual(len(result["toners"]), 1)
+        self.assertEqual(result["toners"][0]["indice_suprimento"], "1.1")
+        self.assertEqual(result["toners"][0]["percentual"], 70)
+        self.assertEqual(result["toners"][0]["metodo_coleta"], "web_status")
+
+    def test_sem_percentual_preserva_unknown_do_printer_mib(self):
+        machine = self.add_machine()
+        unknown = {"cor": "black", "percentual": None}
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=Mock(return_value={"sucesso": True, "toners": [unknown]}),
+            snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            web_status_collector=Mock(return_value={"sucesso": True, "toners": []}),
+        )
+
+        self.assertIsNone(result["toners"][0]["percentual"])
+
+    @patch(
+        "backend.app.modules.printers.monitoring.toner.fallbacks.get_decrypted_html_access_for_model"
+    )
+    def test_web_status_tenta_apenas_caminhos_aprovados(self, get_access):
+        machine = self.add_machine()
+        get_access.return_value = HtmlAccessConfig(
+            modelo_id=machine.model_id,
+            tipo_autenticacao="basic",
+            usuario="usuario",
+            senha="segredo",
+        )
+        called_paths = []
+
+        def fetcher(_host, config, **_kwargs):
+            called_paths.append(config.caminho_status)
+            return HtmlClientResponse(
+                sucesso=True,
+                status_code=200,
+                url_sanitizada=None,
+                conteudo_html="<html>sem barra</html>",
+                erro_codigo=None,
+                erro_detalhe_sanitizado=None,
+                protocolo_usado="http",
+                tipo_autenticacao="basic",
+            )
+
+        collect_toner_from_web_status(self.db, machine=machine, fetcher=fetcher)
+
+        self.assertEqual(tuple(called_paths), WEB_STATUS_PATHS)
+        self.assertNotIn("/general/information.html?kind=item", called_paths)
+
+    @patch(
+        "backend.app.modules.printers.monitoring.toner.fallbacks.get_decrypted_html_access_for_model"
+    )
+    @patch(
+        "backend.app.modules.printers.monitoring.toner.fallbacks.parse_brother_tonerremain"
+    )
+    def test_erro_do_parser_html_e_sanitizado_sem_quebrar_lote(self, parser, get_access):
+        machine = self.add_machine()
+        get_access.return_value = HtmlAccessConfig(
+            modelo_id=machine.model_id,
+            tipo_autenticacao="basic",
+            usuario="usuario",
+            senha="segredo",
+        )
+        parser.side_effect = ValueError("conteudo privado nao deve aparecer")
+        response = HtmlClientResponse(
+            sucesso=True,
+            status_code=200,
+            url_sanitizada=None,
+            conteudo_html="<html>privado</html>",
+            erro_codigo=None,
+            erro_detalhe_sanitizado=None,
+            protocolo_usado="http",
+            tipo_autenticacao="basic",
+        )
+
+        result = collect_toner_from_web_status(
+            self.db,
+            machine=machine,
+            fetcher=Mock(return_value=response),
+        )
+
+        self.assertEqual(result["erro_codigo"], "toner_web_status_parser_erro")
+        self.assertNotIn("privado", str(result))
+
+    def test_oid_brother_invalidado_nao_e_consultado(self):
+        machine = self.add_machine()
+        self.db.add(
+            PrinterSnmpOid(
+                modelo_id=machine.model_id,
+                chave_metrica="toner_black",
+                oid="1.3.6.1.4.1.2435.2.3.9.4.2.1.3.3.1.11.0",
+                tipo_valor="gauge",
+                versao_snmp="2c",
+                modo_consulta="get",
+                ativo=True,
+            )
+        )
+        self.db.commit()
+        getter = Mock()
+
+        result = collect_toner_from_snmp_oids(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            getter=getter,
+        )
+
+        getter.assert_not_called()
+        self.assertFalse(has_valid_toner_percentage(result["toners"]))
+
+    def test_oid_ativo_validado_retorna_percentual_sem_dados_brutos(self):
+        machine = self.add_machine()
+        self.db.add(
+            PrinterSnmpOid(
+                modelo_id=machine.model_id,
+                chave_metrica="toner_black",
+                oid="1.3.6.1.2.1.43.11.1.1.9.1.1",
+                tipo_valor="gauge",
+                versao_snmp="2c",
+                modo_consulta="get",
+                ativo=True,
+            )
+        )
+        self.db.commit()
+        result = collect_toner_from_snmp_oids(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            getter=Mock(
+                return_value={
+                    "sucesso": True,
+                    "alertas_brutos": [{"valor_original": "37", "oid_retornado": "oculto"}],
+                }
+            ),
+        )
+
+        self.assertEqual(result["toners"][0]["percentual"], 37)
+        self.assertNotIn("oid_retornado", result["toners"][0])
+        self.assertNotIn("valor_original", result["toners"][0])
+
+    def test_logs_da_cascata_nao_expoem_credenciais(self):
+        machine = self.add_machine()
+        with self.assertLogs(
+            "backend.app.modules.printers.monitoring.toner.services",
+            level="INFO",
+        ) as captured:
+            collect_toner_with_fallbacks(
+                self.db,
+                machine=machine,
+                settings=self.settings,
+                printer_mib_collector=Mock(return_value={"sucesso": True, "toners": []}),
+                snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+                web_status_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            )
+
+        logs = " ".join(captured.output)
+        self.assertNotIn(self.settings.snmp_community, logs)
+        self.assertNotIn("Authorization", logs)
 
 
 class TonerCeleryScheduleTest(TestCase):

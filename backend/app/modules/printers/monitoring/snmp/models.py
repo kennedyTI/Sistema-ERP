@@ -22,6 +22,10 @@ ALLOWED_METRIC_KEYS = (
     "name",
     "location",
     "page_count_total",
+    "toner_black",
+    "toner_cyan",
+    "toner_magenta",
+    "toner_yellow",
 )
 ALLOWED_VALUE_TYPES = ("string", "integer", "counter", "gauge", "boolean")
 ALLOWED_SNMP_VERSIONS = ("1", "2c")
