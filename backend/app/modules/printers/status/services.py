@@ -493,6 +493,19 @@ def _alert_history_message(
     return f"Alerta alterado: {description}"
 
 
+def _history_matches_new_classification(
+    history: HistoricoAlertaImpressora,
+    rule: PrinterAlertRule,
+) -> bool:
+    if history.codigo_evento != "classificacao_alterada":
+        return True
+    history_classification = severity_to_visual_classification(
+        _safe_severity(history.severidade),
+        recognized=rule.codigo not in {"unknown", "sem_retorno_alerta"},
+    )
+    return history_classification == history.classificacao_nova
+
+
 def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[PrinterLogRead]:
     """Une os historicos operacionais recentes sem expor detalhes tecnicos."""
     get_printer_status(db, machine_id)
@@ -550,6 +563,7 @@ def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[
             origem="alerta",
         )
         for history, rule in alert_history
+        if _history_matches_new_classification(history, rule)
     )
     events.sort(key=lambda event: (event.data_hora, event.id), reverse=True)
     return events[:effective_limit]

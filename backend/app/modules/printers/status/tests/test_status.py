@@ -271,6 +271,46 @@ class PrinterStatusApiTest(TestCase):
         self.assertNotIn("cookie", response.text)
         self.assertNotIn("resposta_bruta", response.text)
 
+    def test_logs_ignoram_alerta_verde_gravado_como_responsavel_por_vermelho(self):
+        machine = self._create_machine()
+        rule = self.db.query(PrinterAlertRule).filter_by(codigo="sleep").one()
+        now = now_sao_paulo()
+        for minutes, previous, current in (
+            (10, "verde", "vermelho"),
+            (5, "vermelho", "verde"),
+        ):
+            self.db.add(
+                HistoricoAlertaImpressora(
+                    maquina_id=machine["id"],
+                    regra_alerta_id=rule.id,
+                    codigo_alerta=rule.codigo,
+                    severidade=rule.severidade,
+                    classificacao_anterior=previous,
+                    classificacao_nova=current,
+                    origem_coleta="html",
+                    metodo_confirmacao="html_autenticado",
+                    metodo_coleta="html_autenticado",
+                    chave_alerta=f"html:html_autenticado:sleep:{minutes}",
+                    mensagem_original="Sleep",
+                    mensagem_original_normalizada="sleep",
+                    codigo_evento="classificacao_alterada",
+                    descricao_evento="Evento legado de teste.",
+                    detalhes={},
+                    verificado_em=now - timedelta(minutes=minutes),
+                )
+            )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}/logs",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        logs = response.json()["data"]
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["mensagem"], "Alerta alterado: Estado normal / dormindo")
+
     def test_logs_respeitam_limite_dez_e_ordem_decrescente(self):
         machine = self._create_machine()
         now = now_sao_paulo()
