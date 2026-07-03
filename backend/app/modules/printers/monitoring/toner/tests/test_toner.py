@@ -21,6 +21,7 @@ from backend.app.modules.printers.monitoring.toner.collector import (
     PRT_MARKER_SUPPLIES_SUPPLY_UNIT_OID,
     PRT_MARKER_SUPPLIES_TYPE_OID,
     calculate_toner_percentage,
+    collect_toner_items_from_printer_mib,
     is_toner_supply,
     resolve_toner_color,
     toner_items_from_mib_rows,
@@ -39,6 +40,7 @@ from backend.app.modules.printers.monitoring.toner.fallbacks import (
     parse_brother_tonerremain,
 )
 from backend.app.modules.printers.monitoring.toner.services import (
+    CANON_IR_C3326I_SNMP_VERSIONS,
     collect_and_sync_machine_toner,
     collect_toner_with_fallbacks,
     run_toner_batch,
@@ -155,6 +157,128 @@ class TonerCollectorTest(TestCase):
     def test_nivel_maior_que_capacidade_e_limitado(self):
         self.assertEqual(calculate_toner_percentage("150", "100"), 100)
 
+    def test_ordem_v1_retorna_percentual_sem_tentar_v2c(self):
+        versions = []
+        rows = supply_walk_result(
+            [{"description": "Black Toner", "level": "64", "max": "100"}]
+        )
+
+        def walker(**kwargs):
+            versions.append(kwargs["snmp_version"])
+            return {"sucesso": True, "linhas": rows[kwargs["base_oid"]]}
+
+        result = collect_toner_items_from_printer_mib(
+            host="192.0.2.10",
+            settings=MonitoringSettings(snmp_community="community-de-teste"),
+            walker=walker,
+            snmp_versions=("1", "2c"),
+        )
+
+        self.assertEqual(result["versao_snmp"], "1")
+        self.assertEqual(result["toners"][0]["percentual"], 64)
+        self.assertNotIn("2c", versions)
+
+    def test_v1_sem_percentual_tenta_v2c(self):
+        versions = []
+
+        def walker(**kwargs):
+            version = kwargs["snmp_version"]
+            versions.append(version)
+            level = "-2" if version == "1" else "42"
+            rows = supply_walk_result(
+                [{"description": "Black Toner", "level": level, "max": "100"}]
+            )
+            return {"sucesso": True, "linhas": rows[kwargs["base_oid"]]}
+
+        result = collect_toner_items_from_printer_mib(
+            host="192.0.2.10",
+            settings=MonitoringSettings(snmp_community="community-de-teste"),
+            walker=walker,
+            snmp_versions=("1", "2c"),
+        )
+
+        self.assertIn("1", versions)
+        self.assertIn("2c", versions)
+        self.assertEqual(result["versao_snmp"], "2c")
+        self.assertEqual(result["toners"][0]["percentual"], 42)
+
+    def test_sucesso_vazio_nao_impede_proxima_versao(self):
+        versions = []
+
+        def walker(**kwargs):
+            version = kwargs["snmp_version"]
+            versions.append(version)
+            if version == "1":
+                return {"sucesso": True, "linhas": []}
+            rows = supply_walk_result(
+                [{"description": "Cyan Toner", "level": "73", "max": "100"}]
+            )
+            return {"sucesso": True, "linhas": rows[kwargs["base_oid"]]}
+
+        result = collect_toner_items_from_printer_mib(
+            host="192.0.2.10",
+            settings=MonitoringSettings(snmp_community="community-de-teste"),
+            walker=walker,
+            snmp_versions=("1", "2c"),
+        )
+
+        self.assertIn("2c", versions)
+        self.assertEqual(result["toners"][0]["cor"], "cyan")
+        self.assertEqual(result["toners"][0]["percentual"], 73)
+
+    def test_falha_em_coluna_auxiliar_nao_impede_level(self):
+        consulted_metrics = []
+        rows = supply_walk_result(
+            [{"description": "Yellow Toner", "level": "58", "max": "100"}]
+        )
+
+        def walker(**kwargs):
+            base_oid = kwargs["base_oid"]
+            consulted_metrics.append(base_oid)
+            if base_oid == PRT_MARKER_SUPPLIES_SUPPLY_UNIT_OID:
+                return {
+                    "sucesso": False,
+                    "erro_codigo": "snmp_oid_invalido",
+                    "linhas": [],
+                }
+            return {"sucesso": True, "linhas": rows[base_oid]}
+
+        result = collect_toner_items_from_printer_mib(
+            host="192.0.2.10",
+            settings=MonitoringSettings(snmp_community="community-de-teste"),
+            walker=walker,
+            snmp_versions=("1",),
+        )
+
+        self.assertIn(PRT_MARKER_SUPPLIES_LEVEL_OID, consulted_metrics)
+        self.assertEqual(result["toners"][0]["cor"], "yellow")
+        self.assertEqual(result["toners"][0]["percentual"], 58)
+
+    def test_canon_colorida_cruza_as_quatro_cores(self):
+        rows = supply_walk_result(
+            [
+                {"description": "Black Toner", "level": "80"},
+                {"description": "Cyan Toner", "level": "70"},
+                {"description": "Magenta Toner", "level": "60"},
+                {"description": "Yellow Toner", "level": "50"},
+            ]
+        )
+
+        def walker(**kwargs):
+            return {"sucesso": True, "linhas": rows[kwargs["base_oid"]]}
+
+        result = collect_toner_items_from_printer_mib(
+            host="192.0.2.10",
+            settings=MonitoringSettings(snmp_community="community-de-teste"),
+            walker=walker,
+            snmp_versions=("1", "2c"),
+        )
+
+        self.assertEqual(
+            {item["cor"] for item in result["toners"]},
+            {"black", "cyan", "magenta", "yellow"},
+        )
+
 
 class TonerFallbackParserTest(TestCase):
     def test_parser_brother_identifica_tonerremain_e_calcula_percentual(self):
@@ -214,14 +338,22 @@ class TonerServiceTest(TestCase):
     def tearDown(self):
         self.db.close()
 
-    def add_machine(self, *, status="online", ip="192.0.2.10", active=True):
+    def add_machine(
+        self,
+        *,
+        status="online",
+        ip="192.0.2.10",
+        active=True,
+        manufacturer="Brother",
+        model_name="DCP-L2540DW",
+    ):
         model = (
             self.db.query(PrinterModel)
-            .filter_by(manufacturer="Brother", name="DCP-L2540DW")
+            .filter_by(manufacturer=manufacturer, name=model_name)
             .one_or_none()
         )
         if model is None:
-            model = PrinterModel(manufacturer="Brother", name="DCP-L2540DW")
+            model = PrinterModel(manufacturer=manufacturer, name=model_name)
         machine = PrinterMachine(
             name="Impressora Toner",
             ip_address=ip,
@@ -393,6 +525,30 @@ class TonerServiceTest(TestCase):
         self.assertEqual(result["camada_toner"], "printer_mib")
         snmp_oid.assert_not_called()
         web_status.assert_not_called()
+
+    def test_canon_ir_c3326i_prioriza_snmp_v1(self):
+        machine = self.add_machine(
+            manufacturer="Canon",
+            model_name="IR-C3326I",
+        )
+        printer_mib = Mock(
+            return_value={"sucesso": True, "toners": [{"percentual": 64}]}
+        )
+
+        collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            printer_mib_collector=printer_mib,
+            snmp_oid_collector=Mock(),
+            web_status_collector=Mock(),
+        )
+
+        printer_mib.assert_called_once_with(
+            host=machine.ip_address,
+            settings=self.settings,
+            snmp_versions=CANON_IR_C3326I_SNMP_VERSIONS,
+        )
 
     def test_printer_mib_sem_percentual_tenta_snmp_oids(self):
         machine = self.add_machine()

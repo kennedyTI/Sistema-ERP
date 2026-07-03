@@ -295,6 +295,8 @@ def collect_printer_mib_rows(
         "level": PRT_MARKER_SUPPLIES_LEVEL_OID,
     }
     walked: dict[str, dict[str, Any]] = {}
+    successful_walks = 0
+    last_error: dict[str, Any] | None = None
     for key, base_oid in base_oids.items():
         result = walker(
             host=host,
@@ -304,13 +306,19 @@ def collect_printer_mib_rows(
             timeout_seconds=timeout_seconds,
         )
         if not result.get("sucesso"):
-            return {
-                "sucesso": False,
-                "erro_codigo": result.get("erro_codigo") or "snmp_sem_resposta",
-                "erro_detalhe": result.get("erro_detalhe") or "Falha na coleta SNMP.",
-                "linhas": {},
-            }
+            walked[key] = {}
+            last_error = result
+            continue
+        successful_walks += 1
         walked[key] = rows_by_suffix(base_oid, result.get("linhas") or [])
+
+    if successful_walks == 0:
+        return {
+            "sucesso": False,
+            "erro_codigo": (last_error or {}).get("erro_codigo") or "snmp_sem_resposta",
+            "erro_detalhe": (last_error or {}).get("erro_detalhe") or "Falha na coleta SNMP.",
+            "linhas": {},
+        }
 
     descriptions = walked["description"]
     if not descriptions:
@@ -370,6 +378,7 @@ def collect_toner_items_from_printer_mib(
     host: str,
     settings: MonitoringSettings,
     walker: SupplyWalker = snmp_walk_rows,
+    snmp_versions: tuple[str, ...] = SNMP_VERSION_CANDIDATES,
 ) -> dict[str, Any]:
     if not settings.snmp_community:
         return {
@@ -380,7 +389,8 @@ def collect_toner_items_from_printer_mib(
         }
 
     last_error: dict[str, Any] | None = None
-    for snmp_version in SNMP_VERSION_CANDIDATES:
+    best_success: dict[str, Any] | None = None
+    for snmp_version in snmp_versions:
         rows_result = collect_printer_mib_rows(
             host=host,
             community=settings.snmp_community,
@@ -392,12 +402,19 @@ def collect_toner_items_from_printer_mib(
             last_error = rows_result
             continue
         toner_items = toner_items_from_mib_rows(rows_result.get("linhas") or {})
-        return {
+        current_success = {
             "sucesso": True,
             "versao_snmp": snmp_version,
             "toners": toner_items,
             "sem_toner_detectado": len(toner_items) == 0,
         }
+        if best_success is None or (not best_success["toners"] and toner_items):
+            best_success = current_success
+        if any(item.get("percentual") is not None for item in toner_items):
+            return current_success
+
+    if best_success is not None:
+        return best_success
 
     return {
         "sucesso": False,

@@ -3454,6 +3454,52 @@ configuração inválida e preservação de alertas não relacionados. Históric
 toner no modal, detecção de troca, dashboard, papel, GLPI, Protheus, previsão de
 dias restantes e `/general/information.html?kind=item` continuam fora do escopo.
 
+### Etapa 3.5.3.3 - Correcoes de logs e diagnostico Canon/Brother
+
+As transicoes entre variacoes normais com severidade `green` nao geram novos
+registros em `historico_alertas_impressoras`. O estado atual continua sendo
+atualizado, mas mudancas como Estado normal, Em espera, Dormindo, Sleep, Idle,
+Pronto, Ready, Imprimindo, Printing, Aquecendo e Warmup permanecem no mesmo
+grupo operacional. Transicoes entre `green`, `medium` e `high`, nos dois
+sentidos, continuam gerando historico normalmente.
+
+Para Canon IR-C3326I, a Printer-MIB passa a tentar SNMP v1 antes de v2c. Uma
+resposta tecnicamente bem-sucedida, mas sem percentual, nao encerra a busca. As
+colunas da Printer-MIB tambem sao consultadas de forma independente: a ausencia
+de uma coluna auxiliar nao impede a leitura de descricao, tipo, capacidade
+maxima e nivel quando os demais WALKs respondem.
+
+O diagnostico real sanitizado confirmou, sem registrar IP ou community, que a
+Canon respondeu em SNMP v1 com descricao, tipo, capacidade maxima e nivel. A
+coleta retornou Preto, Ciano, Magenta e Amarelo com percentuais validos. Nao foi
+necessario consultar v2c depois do resultado valido em v1.
+
+A Brother DCP-L1632W permanece limitada a solucao da v1: Printer-MIB, bloqueio
+dos OIDs privados invalidados e fallback `web_status` somente em
+`/home/status.html`, `/general/status.html` e `/`. O parser `tonerremain`
+continua usando `BROTHER_TONER_BAR_MAX_HEIGHT = 56`; altura ausente ou invalida
+permanece `null`, nunca `0%`. A rota
+`/general/information.html?kind=item` nao foi implementada.
+
+No diagnostico real, Brother DCP-L1632W e DCP-L2540DW retornaram toner preto
+com percentual valido pelo `web_status`. HP MFP-4303 retornou as quatro cores e
+Samsung K-4350 retornou toner preto pela Printer-MIB. O relatorio detalhado foi
+mantido apenas em `tmp/diagnosticos/`, que permanece ignorado pelo Git.
+
+A regra percentual continua sendo a palavra final somente para toner: ate 10%
+gera `high/vermelho`, de 11% a 20% gera `medium/amarelo` e a partir de 21% nao
+gera alerta de toner. Quando o percentual e desconhecido, o alerta textual
+continua como fallback. Alertas de conectividade, cilindro, papel, atolamento,
+tampa aberta, erro geral e falha de coleta nao sao alterados.
+
+Nao houve migration nesta microetapa. Os testes cobrem transicoes normais
+equivalentes, mudancas reais de severidade, ordem Canon v1/v2c, resposta vazia,
+coluna auxiliar indisponivel, cruzamento das quatro cores, parser Brother,
+caminhos HTML permitidos, OID Brother bloqueado e preservacao de `unknown`.
+Na validacao final, a suite backend concluiu 466 testes, o frontend compilou
+com auditoria npm zerada, migrations terminaram com codigo 0 e Redis,
+Celery Worker, Beat e proxy permaneceram ativos.
+
 ## Próximas etapas
 
 - ampliar fallbacks somente para modelos validados em diagnostico real;

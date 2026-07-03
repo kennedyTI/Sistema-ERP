@@ -7,9 +7,11 @@ import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
   type AlertLevel,
+  type PrinterOperationalAlert,
   type PrinterOperationalLog,
   type PrinterOperationalStatus,
   type PrinterOperationalToner,
+  type StatusSeverity,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
@@ -70,6 +72,11 @@ const tonerBarStyles: Record<PrinterOperationalToner["cor"], string> = {
   magenta: "bg-fuchsia-500",
   yellow: "bg-yellow-400",
   unknown: "bg-muted-foreground/60",
+};
+
+const tonerSeverityBarStyles: Partial<Record<StatusSeverity, string>> = {
+  high: "bg-red-500",
+  medium: "bg-amber-400",
 };
 
 const tonerCollectionMethodLabels: Record<PrinterOperationalToner["metodo_coleta"], string> = {
@@ -312,6 +319,7 @@ export function StatusDetailsDialog({
                       <TonerLevel
                         key={`${toner.cor}-${toner.descricao ?? "sem-descricao"}`}
                         toner={toner}
+                        severity={findTonerAlertSeverity(toner, current.alertas)}
                       />
                     ))}
                   </div>
@@ -365,7 +373,13 @@ export function StatusDetailsDialog({
   );
 }
 
-function TonerLevel({ toner }: { toner: PrinterOperationalToner }) {
+function TonerLevel({
+  toner,
+  severity,
+}: {
+  toner: PrinterOperationalToner;
+  severity: StatusSeverity | null;
+}) {
   const percentage = toner.percentual;
   const normalizedPercentage = percentage === null
     ? 0
@@ -398,13 +412,35 @@ function TonerLevel({ toner }: { toner: PrinterOperationalToner }) {
         <div
           className={cn(
             "h-full rounded-full transition-[width] duration-300",
-            tonerBarStyles[toner.cor],
+            tonerSeverityBarStyles[severity ?? "unknown"] ?? tonerBarStyles[toner.cor],
           )}
           style={{ width: `${normalizedPercentage}%` }}
         />
       </div>
     </div>
   );
+}
+
+function findTonerAlertSeverity(
+  toner: PrinterOperationalToner,
+  alerts: PrinterOperationalAlert[],
+): StatusSeverity | null {
+  const tonerLabel = normalizeAlertText(`toner ${toner.nome}`);
+  const alert = alerts.find(
+    (candidate) =>
+      (candidate.codigo === "toner_percentual_critico" ||
+        candidate.codigo === "toner_percentual_baixo") &&
+      normalizeAlertText(candidate.mensagem).startsWith(tonerLabel),
+  );
+  return alert?.severidade ?? null;
+}
+
+function normalizeAlertText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
 }
 
 function formatTonerCollectionMethods(toners: PrinterOperationalToner[]) {

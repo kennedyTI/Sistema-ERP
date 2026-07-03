@@ -35,12 +35,19 @@ from backend.app.modules.printers.status.models import StatusImpressora
 
 logger = logging.getLogger(__name__)
 DEFAULT_TONER_LOCK_TTL_SECONDS = 600
+CANON_IR_C3326I_SNMP_VERSIONS = ("1", "2c")
 TONER_BATCH_IGNORED_REASONS = {
     "sem_ip",
     "nao_online",
     OFFLINE_SKIP_REASON,
     "lock_ativo",
 }
+
+
+def _is_canon_ir_c3326i(machine: PrinterMachine) -> bool:
+    manufacturer = str(machine.manufacturer or "").strip().casefold()
+    model = str(machine.model or "").strip().casefold()
+    return manufacturer == "canon" and model == "ir-c3326i"
 
 
 def _machine_toner_skip_reason(db: Session, machine: PrinterMachine) -> str | None:
@@ -210,6 +217,8 @@ def collect_toner_with_fallbacks(
     }
     if walker is not None:
         mib_kwargs["walker"] = walker
+    if _is_canon_ir_c3326i(machine):
+        mib_kwargs["snmp_versions"] = CANON_IR_C3326I_SNMP_VERSIONS
     printer_mib = printer_mib_collector(**mib_kwargs)
     printer_mib_items = printer_mib.get("toners") or []
     if has_valid_toner_percentage(printer_mib_items):
