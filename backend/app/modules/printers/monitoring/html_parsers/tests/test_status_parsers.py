@@ -353,6 +353,19 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(info["unidade_tambor_percentual"], 55)
         self.assertEqual(info["toner_percentual"], 30)
 
+    def test_parser_brother_l1632w_aceita_variacoes_de_toner_e_secao(self):
+        cases = (
+            ("Vida util restante", "Toner", 10),
+            ("Vida útil restante", "Toner*", 11),
+            ("Remaining life", "Toner**", 12),
+            ("Remaining Life", "Toner", 13),
+        )
+        for section, label, expected in cases:
+            with self.subTest(section=section, label=label):
+                html = f"<h3>{section}</h3><dl><dt>{label}</dt><dd>{expected}%</dd></dl>"
+                info = parse_brother_dcp_l1632w_maintenance_info(html)
+                self.assertEqual(info["toner_percentual"], expected)
+
     def test_parser_brother_l1632w_manutencao_extrai_contador_paginas(self):
         html = fixture_html("brother_dcp_l1632w_maintenance_authenticated.html")
         info = parse_brother_dcp_l1632w_maintenance_info(html)

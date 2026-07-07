@@ -83,6 +83,7 @@ const tonerCollectionMethodLabels: Record<PrinterOperationalToner["metodo_coleta
   printer_mib_walk: "Printer-MIB",
   snmp_oid_fallback: "OIDs cadastrados",
   web_status: "web_status",
+  brother_item_authenticated: "Brother manutenção",
 };
 
 const ALERT_ROTATION_INTERVAL_MS = 4_000;

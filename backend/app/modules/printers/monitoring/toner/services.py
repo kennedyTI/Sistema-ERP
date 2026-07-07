@@ -22,6 +22,7 @@ from backend.app.modules.printers.monitoring.toner.collector import (
     collect_toner_items_from_printer_mib,
 )
 from backend.app.modules.printers.monitoring.toner.fallbacks import (
+    collect_toner_from_brother_item_authenticated,
     collect_toner_from_snmp_oids,
     collect_toner_from_web_status,
     has_valid_toner_percentage,
@@ -48,6 +49,12 @@ def _is_canon_ir_c3326i(machine: PrinterMachine) -> bool:
     manufacturer = str(machine.manufacturer or "").strip().casefold()
     model = str(machine.model or "").strip().casefold()
     return manufacturer == "canon" and model == "ir-c3326i"
+
+
+def _is_brother_dcp_l1632w(machine: PrinterMachine) -> bool:
+    manufacturer = str(machine.manufacturer or "").strip().casefold()
+    model = str(machine.model or "").strip().casefold()
+    return manufacturer == "brother" and model == "dcp-l1632w"
 
 
 def _machine_toner_skip_reason(db: Session, machine: PrinterMachine) -> str | None:
@@ -207,10 +214,41 @@ def collect_toner_with_fallbacks(
     settings: MonitoringSettings,
     walker: SupplyWalker | None = None,
     printer_mib_collector: Callable[..., dict[str, Any]] = collect_toner_items_from_printer_mib,
+    brother_item_collector: Callable[
+        ..., dict[str, Any]
+    ] = collect_toner_from_brother_item_authenticated,
     snmp_oid_collector: Callable[..., dict[str, Any]] = collect_toner_from_snmp_oids,
     web_status_collector: Callable[..., dict[str, Any]] = collect_toner_from_web_status,
 ) -> dict[str, Any]:
     """Executa a cascata aprovada sem expor dados tecnicos brutos."""
+    brother_diagnostic: dict[str, Any] | None = None
+    if _is_brother_dcp_l1632w(machine):
+        brother_item = brother_item_collector(db, machine=machine)
+        brother_item_items = brother_item.get("toners") or []
+        brother_diagnostic = dict(brother_item.get("diagnostico") or {})
+        brother_diagnostic["fallback_v1_usado"] = False
+        if has_valid_toner_percentage(brother_item_items):
+            logger.info(
+                "toner_brother_item_authenticated_sucesso",
+                extra={
+                    "event": "toner_brother_item_authenticated_sucesso",
+                    "machine_id": machine.id,
+                },
+            )
+            return {
+                **brother_item,
+                "camada_toner": "brother_item_authenticated",
+                "diagnostico_brother": brother_diagnostic,
+            }
+        logger.info(
+            "toner_brother_item_authenticated_fallback",
+            extra={
+                "event": "toner_brother_item_authenticated_fallback",
+                "machine_id": machine.id,
+                "error_code": brother_item.get("erro_codigo"),
+            },
+        )
+
     mib_kwargs: dict[str, Any] = {
         "host": machine.ip_address,
         "settings": settings,
@@ -222,7 +260,11 @@ def collect_toner_with_fallbacks(
     printer_mib = printer_mib_collector(**mib_kwargs)
     printer_mib_items = printer_mib.get("toners") or []
     if has_valid_toner_percentage(printer_mib_items):
-        return {**printer_mib, "camada_toner": "printer_mib"}
+        return {
+            **printer_mib,
+            "camada_toner": "printer_mib",
+            "diagnostico_brother": brother_diagnostic,
+        }
 
     logger.info(
         "toner_printer_mib_sem_percentual",
@@ -239,6 +281,7 @@ def collect_toner_with_fallbacks(
             **snmp_oid,
             "toners": _merge_fallback_items(printer_mib_items, snmp_oid_items),
             "camada_toner": "snmp_oid_fallback",
+            "diagnostico_brother": brother_diagnostic,
         }
 
     logger.info(
@@ -246,6 +289,8 @@ def collect_toner_with_fallbacks(
         extra={"event": "toner_snmp_oid_fallback_sem_percentual", "machine_id": machine.id},
     )
     web_status = web_status_collector(db, machine=machine)
+    if brother_diagnostic is not None:
+        brother_diagnostic["fallback_v1_usado"] = True
     web_status_items = web_status.get("toners") or []
     if has_valid_toner_percentage(web_status_items):
         logger.info(
@@ -256,6 +301,7 @@ def collect_toner_with_fallbacks(
             **web_status,
             "toners": _merge_fallback_items(printer_mib_items, web_status_items),
             "camada_toner": "web_status",
+            "diagnostico_brother": brother_diagnostic,
         }
 
     event = (
@@ -273,6 +319,7 @@ def collect_toner_with_fallbacks(
         "toners": fallback_items,
         "sem_toner_detectado": not bool(fallback_items),
         "camada_toner": "sem_percentual",
+        "diagnostico_brother": brother_diagnostic,
     }
 
 
@@ -284,6 +331,9 @@ def collect_and_sync_machine_toner(
     settings: MonitoringSettings | None = None,
     walker: SupplyWalker | None = None,
     printer_mib_collector: Callable[..., dict[str, Any]] = collect_toner_items_from_printer_mib,
+    brother_item_collector: Callable[
+        ..., dict[str, Any]
+    ] = collect_toner_from_brother_item_authenticated,
     snmp_oid_collector: Callable[..., dict[str, Any]] = collect_toner_from_snmp_oids,
     web_status_collector: Callable[..., dict[str, Any]] = collect_toner_from_web_status,
 ) -> dict[str, Any]:
@@ -314,6 +364,7 @@ def collect_and_sync_machine_toner(
             settings=config,
             walker=walker,
             printer_mib_collector=printer_mib_collector,
+            brother_item_collector=brother_item_collector,
             snmp_oid_collector=snmp_oid_collector,
             web_status_collector=web_status_collector,
         )

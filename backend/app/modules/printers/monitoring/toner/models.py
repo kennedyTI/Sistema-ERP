@@ -20,7 +20,12 @@ from backend.app.core.timezone import now_sao_paulo
 
 ALLOWED_TONER_COLORS = ("black", "cyan", "magenta", "yellow", "unknown")
 ALLOWED_TONER_ORIGINS = ("snmp", "html")
-ALLOWED_TONER_METHODS = ("printer_mib_walk", "snmp_oid_fallback", "web_status")
+ALLOWED_TONER_METHODS = (
+    "printer_mib_walk",
+    "snmp_oid_fallback",
+    "web_status",
+    "brother_item_authenticated",
+)
 ALLOWED_TONER_HISTORY_EVENTS = (
     "primeira_coleta",
     "percentual_alterado",

@@ -3500,6 +3500,57 @@ Na validacao final, a suite backend concluiu 466 testes, o frontend compilou
 com auditoria npm zerada, migrations terminaram com codigo 0 e Redis,
 Celery Worker, Beat e proxy permaneceram ativos.
 
+### Etapa 3.5.3.4 - Brother autenticado e regras finais de toner
+
+A Brother DCP-L1632W tenta primeiro a pagina de manutencao
+`/general/information.html?kind=item`. O acesso reutiliza a credencial
+criptografada cadastrada para o modelo e o cliente HTTP seguro existente. A
+sessao, cookies e campos de autenticacao permanecem somente em memoria durante
+a requisicao e nao sao projetados em log, API ou relatorio.
+
+O parser reconhece as secoes `Vida util restante` e `Remaining life`, aceita os
+rotulos `Toner`, `Toner*` e `Toner**` e extrai diretamente o percentual do
+campo correspondente. A DCP-L1632W e monocromatica, portanto a leitura e
+registrada como preto pelo metodo `brother_item_authenticated`. Falha de acesso,
+autenticacao ou parser mantem a cascata estabilizada: Printer-MIB, OIDs ativos e
+`web_status` nos caminhos v1. O limite `BROTHER_TONER_BAR_MAX_HEIGHT = 56` e o
+bloqueio do OID Brother invalidado permanecem inalterados. Ausencia de leitura
+continua sendo `null`, nunca zero inventado.
+
+No modal, o metodo aparece como `Brother manutencao` abaixo de `Nivel de toner`.
+O rodape usa o `coletado_em` mais recente para exibir apenas tempo relativo,
+como `Atualizado ha 6 min`. Caminho tecnico, OID e HTML nao sao exibidos.
+
+Os thresholds continuam armazenados por modelo em `printers_models`, nos
+campos `limite_toner_critico` e `limite_toner_baixo`, com fallback global 10/20.
+O backend aplica a regra final: ate 10% gera alerta critico, de 11% a 20% gera
+alerta baixo e 21% ou mais remove apenas alertas textuais de toner. Percentual
+valido prevalece sobre texto de toner; percentual desconhecido preserva o texto
+como fallback. Alertas de cilindro, offline, papel, atolamento, tampa, erro geral
+e falha de coleta nao sao sobrescritos.
+
+O diagnostico residual e sanitizado e fica somente em `tmp/diagnosticos/`.
+Historico de toner no modal, dashboard, papel, GLPI, Protheus e previsao de
+troca permanecem fora do escopo desta microetapa. As validacoes cobrem parser,
+autenticacao, fallback v1, contratos da API, thresholds, conflitos de alerta e
+build do frontend.
+
+Na execucao real sanitizada, 37 maquinas dos cinco modelos homologados ficaram
+no escopo: 35 estavam online e duas foram ignoradas por offline. A coleta
+retornou percentual para 33 maquinas: 13 por Brother manutencao autenticada, 12
+por Printer-MIB e oito por `web_status`. Duas Brother DCP-L1632W permaneceram
+desconhecidas. Entre as 17 DCP-L1632W online, 13 usaram a fonte preferencial,
+duas foram recuperadas pelo fallback v1 e quatro registraram falha de
+autenticacao sanitizada; nao houve erro de parser. Canon IR-C3326I, HP MFP-4303
+e Samsung K-4350 continuaram respondendo pela Printer-MIB, enquanto Brother
+DCP-L2540DW continuou pelo `web_status`.
+
+A migration `20260707_brother_item_toner` amplia somente as constraints de
+metodo das tabelas de toner para aceitar `brother_item_authenticated`. A API
+real de listagem, resumo e detalhe respondeu com sucesso, todos os toners
+projetados tinham `coletado_em` e a auditoria do payload nao encontrou cookie,
+CSRF, autorizacao, caminho tecnico ou HTML bruto.
+
 ## Próximas etapas
 
 - ampliar fallbacks somente para modelos validados em diagnostico real;

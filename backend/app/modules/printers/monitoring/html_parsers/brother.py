@@ -649,7 +649,12 @@ def parse_brother_dcp_l1632w_maintenance_info(html: str) -> dict[str, int]:
             if total is not None:
                 info["contador_paginas"] = total
 
-        if "vida" in normalized_section and "restante" in normalized_section:
+        is_remaining_life = (
+            "vida" in normalized_section and "restante" in normalized_section
+        ) or (
+            "remaining" in normalized_section and "life" in normalized_section
+        )
+        if is_remaining_life:
             if "unidade de tambor" in normalized_label:
                 percent = _extract_percent(value)
                 if percent is not None:

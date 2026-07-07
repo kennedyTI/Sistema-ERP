@@ -31,12 +31,15 @@ from backend.app.modules.printers.monitoring.toner.models import (
     StatusTonerImpressora,
 )
 from backend.app.modules.printers.monitoring.toner.fallbacks import (
+    BROTHER_ITEM_PATH,
     BROTHER_TONER_BAR_MAX_HEIGHT,
     WEB_STATUS_PATHS,
     brother_toner_percentage,
+    collect_toner_from_brother_item_authenticated,
     collect_toner_from_snmp_oids,
     collect_toner_from_web_status,
     has_valid_toner_percentage,
+    parse_brother_item_toner,
     parse_brother_tonerremain,
 )
 from backend.app.modules.printers.monitoring.toner.services import (
@@ -281,6 +284,26 @@ class TonerCollectorTest(TestCase):
 
 
 class TonerFallbackParserTest(TestCase):
+    def test_pagina_brother_item_retorna_percentual_direto(self):
+        items = parse_brother_item_toner(
+            """
+            <h3>Vida util restante</h3>
+            <dl><dt>Toner**</dt><dd>10%</dd></dl>
+            """
+        )
+
+        self.assertEqual(items[0]["cor"], "black")
+        self.assertEqual(items[0]["nome"], "Preto")
+        self.assertEqual(items[0]["percentual"], 10)
+        self.assertEqual(items[0]["metodo_coleta"], "brother_item_authenticated")
+
+    def test_pagina_brother_item_sem_percentual_nao_inventa_zero(self):
+        items = parse_brother_item_toner(
+            "<h3>Vida util restante</h3><dl><dt>Toner</dt><dd>-</dd></dl>"
+        )
+
+        self.assertEqual(items, [])
+
     def test_parser_brother_identifica_tonerremain_e_calcula_percentual(self):
         html = '<img class="tonerremain" src="black.gif" height="28">'
 
@@ -525,6 +548,138 @@ class TonerServiceTest(TestCase):
         self.assertEqual(result["camada_toner"], "printer_mib")
         snmp_oid.assert_not_called()
         web_status.assert_not_called()
+
+    def test_brother_l1632w_tenta_manutencao_autenticada_primeiro(self):
+        machine = self.add_machine(model_name="DCP-L1632W")
+        printer_mib = Mock()
+        brother_item = Mock(
+            return_value={
+                "sucesso": True,
+                "toners": [
+                    {
+                        "cor": "black",
+                        "nome": "Preto",
+                        "percentual": 10,
+                        "metodo_coleta": "brother_item_authenticated",
+                    }
+                ],
+            }
+        )
+
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            brother_item_collector=brother_item,
+            printer_mib_collector=printer_mib,
+            snmp_oid_collector=Mock(),
+            web_status_collector=Mock(),
+        )
+
+        self.assertEqual(result["camada_toner"], "brother_item_authenticated")
+        self.assertEqual(result["toners"][0]["percentual"], 10)
+        brother_item.assert_called_once_with(self.db, machine=machine)
+        printer_mib.assert_not_called()
+
+    def test_brother_l1632w_falha_de_auth_cai_no_fallback_v1(self):
+        machine = self.add_machine(model_name="DCP-L1632W")
+        web_status = Mock(
+            return_value={"sucesso": True, "toners": [{"percentual": 47}]}
+        )
+
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            brother_item_collector=Mock(
+                return_value={
+                    "sucesso": False,
+                    "erro_codigo": "html_autenticacao_falhou",
+                    "toners": [],
+                }
+            ),
+            printer_mib_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            web_status_collector=web_status,
+        )
+
+        self.assertEqual(result["camada_toner"], "web_status")
+        web_status.assert_called_once_with(self.db, machine=machine)
+
+    def test_brother_l1632w_falha_de_parser_cai_no_fallback_v1(self):
+        machine = self.add_machine(model_name="DCP-L1632W")
+        web_status = Mock(
+            return_value={"sucesso": True, "toners": [{"percentual": 52}]}
+        )
+
+        result = collect_toner_with_fallbacks(
+            self.db,
+            machine=machine,
+            settings=self.settings,
+            brother_item_collector=Mock(
+                return_value={
+                    "sucesso": False,
+                    "erro_codigo": "brother_item_parser_empty",
+                    "toners": [],
+                }
+            ),
+            printer_mib_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            snmp_oid_collector=Mock(return_value={"sucesso": True, "toners": []}),
+            web_status_collector=web_status,
+        )
+
+        self.assertEqual(result["camada_toner"], "web_status")
+        web_status.assert_called_once_with(self.db, machine=machine)
+
+    @patch(
+        "backend.app.modules.printers.monitoring.toner.fallbacks.get_decrypted_html_access_for_model"
+    )
+    def test_coleta_brother_item_usa_caminho_de_informacoes_sem_expor_segredos(
+        self, get_access
+    ):
+        machine = self.add_machine(model_name="DCP-L1632W")
+        get_access.return_value = HtmlAccessConfig(
+            modelo_id=machine.model_id,
+            tipo_autenticacao="form",
+            usuario=None,
+            senha="senha-ficticia",
+            caminho_status="/home/status.html",
+            caminho_login="/home/status.html",
+        )
+        received = {}
+
+        def fetcher(_host, config, **kwargs):
+            received["path"] = config.caminho_informacoes
+            received["page_type"] = kwargs["page_type"]
+            return HtmlClientResponse(
+                sucesso=True,
+                status_code=200,
+                url_sanitizada=None,
+                conteudo_html=(
+                    '<div id="LogInOutBox"><form action="/logout">'
+                    '<button type="submit">Logout</button></form></div>'
+                    "<h3>Vida util restante</h3>"
+                    "<dl><dt>Toner*</dt><dd>10%</dd></dl>"
+                ),
+                erro_codigo=None,
+                erro_detalhe_sanitizado=None,
+                protocolo_usado="http",
+                tipo_autenticacao="form",
+                metadados={"login_container_detected": True},
+            )
+
+        result = collect_toner_from_brother_item_authenticated(
+            self.db,
+            machine=machine,
+            fetcher=fetcher,
+        )
+
+        self.assertEqual(received, {"path": BROTHER_ITEM_PATH, "page_type": "informacoes"})
+        self.assertEqual(result["toners"][0]["percentual"], 10)
+        serialized = str(result)
+        self.assertNotIn("senha-ficticia", serialized)
+        self.assertNotIn("cookie", serialized.casefold())
+        self.assertNotIn("<h3>", serialized)
 
     def test_canon_ir_c3326i_prioriza_snmp_v1(self):
         machine = self.add_machine(

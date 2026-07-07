@@ -180,6 +180,34 @@ class PrinterStatusApiTest(TestCase):
         self.assertNotIn("community", serialized.casefold())
         self.assertNotIn("Authorization", serialized)
 
+    def test_status_detail_retorna_metodo_brother_amigavel_ao_frontend(self):
+        machine = self._create_machine()
+        self.db.add(
+            StatusTonerImpressora(
+                maquina_id=machine["id"],
+                cor="black",
+                indice_suprimento="brother_item_black",
+                descricao_coletada="Toner Preto",
+                percentual=10,
+                origem_coleta="html",
+                metodo_coleta="brother_item_authenticated",
+                sucesso=True,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        toner = response.json()["data"]["toners"][0]
+        self.assertEqual(toner["metodo_coleta"], "brother_item_authenticated")
+        self.assertNotIn("caminho", toner)
+        self.assertNotIn("url", toner)
+        self.assertNotIn("conteudo_html", toner)
+
     def _create_alert_history(self, machine_id: int, *, verified_at):
         rule = self.db.query(PrinterAlertRule).filter_by(codigo="toner_low").one()
         history = HistoricoAlertaImpressora(

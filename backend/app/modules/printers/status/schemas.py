@@ -27,7 +27,12 @@ class PrinterTonerRead(BaseModel):
     percentual: int | None = None
     descricao: str | None = None
     origem_coleta: Literal["snmp", "html"]
-    metodo_coleta: Literal["printer_mib_walk", "snmp_oid_fallback", "web_status"]
+    metodo_coleta: Literal[
+        "printer_mib_walk",
+        "snmp_oid_fallback",
+        "web_status",
+        "brother_item_authenticated",
+    ]
     coletado_em: datetime | None = None
 
 

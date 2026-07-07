@@ -16,6 +16,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from backend.app.modules.printers.machines.models import PrinterMachine
 from backend.app.modules.printers.monitoring.config import MonitoringSettings
 from backend.app.modules.printers.monitoring.html_client.client import fetch_html_page
+from backend.app.modules.printers.monitoring.html_client.client import parse_brother_login_form
 from backend.app.modules.printers.monitoring.html_client.models import HtmlClientResponse
 from backend.app.modules.printers.monitoring.html_credentials.services import (
     get_decrypted_html_access_for_model,
@@ -26,6 +27,9 @@ from backend.app.modules.printers.monitoring.snmp.alert_collector import (
 )
 from backend.app.modules.printers.monitoring.snmp.oids import list_active_oids_for_model
 from backend.app.modules.printers.monitoring.snmp.seed import INVALIDATED_SNMP_OIDS
+from backend.app.modules.printers.monitoring.html_parsers.brother import (
+    parse_brother_dcp_l1632w_maintenance_info,
+)
 from backend.app.modules.printers.monitoring.toner.collector import (
     calculate_toner_percentage,
     normalize_text,
@@ -35,6 +39,7 @@ from backend.app.modules.printers.monitoring.toner.collector import (
 logger = logging.getLogger(__name__)
 
 BROTHER_TONER_BAR_MAX_HEIGHT = 56
+BROTHER_ITEM_PATH = "/general/information.html?kind=item"
 WEB_STATUS_PATHS = ("/home/status.html", "/general/status.html", "/")
 TONER_SNMP_METRICS = {
     "toner_black": "black",
@@ -228,6 +233,137 @@ def parse_brother_tonerremain(html: str) -> list[dict[str, Any]]:
             }
         )
     return items
+
+
+def parse_brother_item_toner(html: str) -> list[dict[str, Any]]:
+    info = parse_brother_dcp_l1632w_maintenance_info(html or "")
+    percentage = info.get("toner_percentual")
+    if not isinstance(percentage, int) or not 0 <= percentage <= 100:
+        return []
+    return [
+        {
+            "cor": "black",
+            "nome": "Preto",
+            "indice_suprimento": "brother_item_black",
+            "descricao_coletada": "Toner Preto",
+            "nivel_atual": percentage,
+            "capacidade_maxima": 100,
+            "percentual": percentage,
+            "origem_coleta": "html",
+            "metodo_coleta": "brother_item_authenticated",
+            "sucesso": True,
+            "erro_codigo": None,
+        }
+    ]
+
+
+def collect_toner_from_brother_item_authenticated(
+    db: Session,
+    *,
+    machine: PrinterMachine,
+    fetcher: Callable[..., HtmlClientResponse] = fetch_html_page,
+) -> dict[str, Any]:
+    """Consulta a pagina Brother autenticada sem persistir sessao ou HTML."""
+    supported = (
+        _lookup_key(machine.manufacturer) == "brother"
+        and _lookup_key(machine.model) == "dcp-l1632w"
+    )
+    if not machine.model_id or not supported:
+        return {
+            "sucesso": False,
+            "erro_codigo": "brother_item_nao_suportado",
+            "toners": [],
+        }
+
+    access = get_decrypted_html_access_for_model(db, model_id=machine.model_id)
+    if access is None:
+        return {
+            "sucesso": False,
+            "erro_codigo": "brother_item_sem_credencial",
+            "toners": [],
+            "diagnostico": {
+                "html_autenticado_tentado": False,
+                "autenticacao_necessaria": None,
+                "autenticacao_funcionou": False,
+                "pagina_real_recebida": False,
+                "parser_encontrou_toner": False,
+            },
+        }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", InsecureRequestWarning)
+        response = fetcher(
+            machine.ip_address,
+            replace(access, caminho_informacoes=BROTHER_ITEM_PATH),
+            page_type="informacoes",
+        )
+
+    metadata = response.metadados or {}
+    try:
+        target_form = parse_brother_login_form(response.conteudo_html)
+    except Exception:
+        return {
+            "sucesso": False,
+            "erro_codigo": "brother_item_parser_erro",
+            "toners": [],
+            "diagnostico": {
+                "html_autenticado_tentado": True,
+                "autenticacao_necessaria": None,
+                "autenticacao_funcionou": False,
+                "pagina_real_recebida": bool(response.sucesso),
+                "parser_encontrou_toner": False,
+            },
+        }
+    authentication_required = bool(
+        metadata.get("login_form_detected")
+        or metadata.get("password_input_detected")
+        or target_form.form_detected
+        or target_form.password_input_detected
+    )
+    target_is_login = bool(target_form.password_input_detected)
+    authenticated = bool(response.sucesso and not target_is_login)
+    try:
+        items = parse_brother_item_toner(response.conteudo_html or "") if authenticated else []
+    except Exception:
+        items = []
+        parser_failed = True
+    else:
+        parser_failed = False
+    diagnostic = {
+        "html_autenticado_tentado": True,
+        "autenticacao_necessaria": authentication_required,
+        "autenticacao_funcionou": authenticated,
+        "pagina_real_recebida": authenticated and bool(response.conteudo_html),
+        "parser_encontrou_toner": has_valid_toner_percentage(items),
+    }
+
+    if not response.sucesso:
+        return {
+            "sucesso": False,
+            "erro_codigo": response.erro_codigo or "brother_item_acesso_falhou",
+            "toners": [],
+            "diagnostico": diagnostic,
+        }
+    if parser_failed:
+        return {
+            "sucesso": False,
+            "erro_codigo": "brother_item_parser_erro",
+            "toners": [],
+            "diagnostico": diagnostic,
+        }
+    if not items:
+        return {
+            "sucesso": False,
+            "erro_codigo": "brother_item_parser_empty",
+            "toners": [],
+            "diagnostico": diagnostic,
+        }
+    return {
+        "sucesso": True,
+        "toners": items,
+        "caminho": BROTHER_ITEM_PATH,
+        "diagnostico": diagnostic,
+    }
 
 
 def collect_toner_from_web_status(

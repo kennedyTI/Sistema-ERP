@@ -20,7 +20,11 @@ export interface PrinterOperationalToner {
   percentual: number | null;
   descricao: string | null;
   origem_coleta: "snmp" | "html";
-  metodo_coleta: "printer_mib_walk" | "snmp_oid_fallback" | "web_status";
+  metodo_coleta:
+    | "printer_mib_walk"
+    | "snmp_oid_fallback"
+    | "web_status"
+    | "brother_item_authenticated";
   coletado_em: string | null;
 }
 
