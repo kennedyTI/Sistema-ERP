@@ -384,6 +384,20 @@ class AlertRulesEngineTest(TestCase):
                 self.assertEqual(result["codigo"], "replace_drum")
                 self.assertEqual(result["severidade"], "high")
 
+    def test_replace_drum_reconhece_fim_de_vida_do_cartucho_canon(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_drum"
+        )
+        result = classify_alert(
+            "Drum Cartridge nnn has reached the end of its lifetime.",
+            [make_rule(**rule)],
+        )
+
+        self.assertEqual(result["codigo"], "replace_drum")
+        self.assertEqual(result["severidade"], "high")
+
     def test_sem_servico_retorna_high(self):
         rule = next(
             item

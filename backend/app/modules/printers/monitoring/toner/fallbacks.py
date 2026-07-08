@@ -30,6 +30,9 @@ from backend.app.modules.printers.monitoring.snmp.seed import INVALIDATED_SNMP_O
 from backend.app.modules.printers.monitoring.html_parsers.brother import (
     parse_brother_dcp_l1632w_maintenance_info,
 )
+from backend.app.modules.printers.monitoring.html_parsers.canon import (
+    parse_canon_ir_c3326i_toner_levels,
+)
 from backend.app.modules.printers.monitoring.toner.collector import (
     calculate_toner_percentage,
     normalize_text,
@@ -157,7 +160,7 @@ def _height_from_attrs(attrs: dict[str, str]) -> int | None:
         if not match:
             continue
         height = int(match.group(0))
-        return height if height > 0 else None
+        return height if height >= 0 else None
     return None
 
 
@@ -166,7 +169,7 @@ def brother_toner_percentage(height: Any) -> int | None:
         numeric_height = int(str(height).strip())
     except (TypeError, ValueError):
         return None
-    if numeric_height <= 0:
+    if numeric_height < 0:
         return None
     return min(100, round((numeric_height / BROTHER_TONER_BAR_MAX_HEIGHT) * 100))
 
@@ -255,6 +258,31 @@ def parse_brother_item_toner(html: str) -> list[dict[str, Any]]:
             "erro_codigo": None,
         }
     ]
+
+
+def parse_canon_web_toner(html: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for index, parsed in enumerate(
+        parse_canon_ir_c3326i_toner_levels(html or ""),
+        start=1,
+    ):
+        color = str(parsed["cor"])
+        percentage = int(parsed["percentual"])
+        items.append(
+            {
+                "cor": color,
+                "indice_suprimento": f"canon_web_{index}",
+                "descricao_coletada": f"Toner {TONER_COLOR_NAMES[color]}",
+                "nivel_atual": percentage,
+                "capacidade_maxima": 100,
+                "percentual": percentage,
+                "origem_coleta": "html",
+                "metodo_coleta": "web_status",
+                "sucesso": True,
+                "erro_codigo": None,
+            }
+        )
+    return items
 
 
 def collect_toner_from_brother_item_authenticated(
@@ -372,12 +400,44 @@ def collect_toner_from_web_status(
     machine: PrinterMachine,
     fetcher: Callable[..., HtmlClientResponse] = fetch_html_page,
 ) -> dict[str, Any]:
-    """Tenta somente paginas de status aprovadas e parser Brother sem headless."""
-    if not machine.model_id or _lookup_key(machine.manufacturer) != "brother":
+    """Consulta percentuais HTML homologados sem headless."""
+    manufacturer = _lookup_key(machine.manufacturer)
+    model = _lookup_key(machine.model)
+    supported_brother = manufacturer == "brother"
+    supported_canon = manufacturer == "canon" and model == "ir-c3326i"
+    if not machine.model_id or not (supported_brother or supported_canon):
         return {"sucesso": False, "erro_codigo": "toner_web_status_nao_suportado", "toners": []}
     access = get_decrypted_html_access_for_model(db, model_id=machine.model_id)
     if access is None:
         return {"sucesso": False, "erro_codigo": "toner_web_status_sem_credencial", "toners": []}
+
+    if supported_canon:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", InsecureRequestWarning)
+            response = fetcher(
+                machine.ip_address,
+                access,
+                page_type="status",
+            )
+        if not response.sucesso or not response.conteudo_html:
+            return {
+                "sucesso": False,
+                "erro_codigo": response.erro_codigo or "toner_web_status_acesso_falhou",
+                "toners": [],
+            }
+        try:
+            items = parse_canon_web_toner(response.conteudo_html)
+        except Exception:
+            return {
+                "sucesso": False,
+                "erro_codigo": "toner_web_status_parser_erro",
+                "toners": [],
+            }
+        return {
+            "sucesso": True,
+            "toners": items,
+            "sem_percentual": not has_valid_toner_percentage(items),
+        }
 
     detected_items: list[dict[str, Any]] = []
     parser_failed = False

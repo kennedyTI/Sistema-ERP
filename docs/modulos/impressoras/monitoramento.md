@@ -3524,10 +3524,12 @@ como `Atualizado ha 6 min`. Caminho tecnico, OID e HTML nao sao exibidos.
 Os thresholds continuam armazenados por modelo em `printers_models`, nos
 campos `limite_toner_critico` e `limite_toner_baixo`, com fallback global 10/20.
 O backend aplica a regra final: ate 10% gera alerta critico, de 11% a 20% gera
-alerta baixo e 21% ou mais remove apenas alertas textuais de toner. Percentual
-valido prevalece sobre texto de toner; percentual desconhecido preserva o texto
-como fallback. Alertas de cilindro, offline, papel, atolamento, tampa, erro geral
-e falha de coleta nao sao sobrescritos.
+alerta baixo e 21% ou mais remove apenas alertas textuais de toner. Quando todos
+os percentuais validos estao acima dos limites e nao existe outro alerta real,
+a API projeta `Toner em nivel normal` com severidade `green`. Percentual valido
+prevalece sobre texto de toner; percentual desconhecido preserva o texto como
+fallback. Alertas de cilindro, offline, papel, atolamento, tampa, erro geral e
+falha de coleta nao sao sobrescritos.
 
 O diagnostico residual e sanitizado e fica somente em `tmp/diagnosticos/`.
 Historico de toner no modal, dashboard, papel, GLPI, Protheus e previsao de
@@ -3550,6 +3552,19 @@ metodo das tabelas de toner para aceitar `brother_item_authenticated`. A API
 real de listagem, resumo e detalhe respondeu com sucesso, todos os toners
 projetados tinham `coletado_em` e a auditoria do payload nao encontrou cookie,
 CSRF, autorizacao, caminho tecnico ou HTML bruto.
+
+### Ajustes reais Brother e Canon
+
+O valor autenticado `0%` da Brother DCP-L1632W e uma leitura valida e gera
+alerta critico; valores negativos e ausencia de leitura continuam sendo
+desconhecidos. Para Canon IR-C3326I, o fallback autenticado reutiliza o cliente
+HTML seguro e aceita tanto a tabela renderizada quanto o objeto JavaScript
+`tonerVolInfo` da pagina de status. Nenhum HTML, cookie ou credencial e
+persistido.
+
+A regra `replace_drum` tambem reconhece a mensagem Canon de cartucho de cilindro
+no fim da vida util. Assim, percentuais saudaveis neutralizam apenas alertas de
+toner: um alerta real de cilindro permanece com sua severidade propria.
 
 ## Próximas etapas
 

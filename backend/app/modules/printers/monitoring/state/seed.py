@@ -60,7 +60,8 @@ INITIAL_ALERT_RULES = (
         "severidade": "high",
         "tipo_regra": "contains",
         "padrao": (
-            "replace drum,drum end,drum replace,substituir cilindro,"
+            "replace drum,drum end,drum replace,drum cartridge,"
+            "reached the end of its lifetime,substituir cilindro,"
             "substituir o cilindro,trocar cilindro,subs cilindro,"
             "subs. cilindro,subs o cilindro,subs. o cilindro,"
             "subst cilindro,subst. cilindro,subst o cilindro,"

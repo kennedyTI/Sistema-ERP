@@ -738,7 +738,7 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["nivel_alerta"], "amarelo")
         self.assertEqual(data["alertas"][0]["codigo"], "toner_percentual_baixo")
 
-    def test_percentual_vinte_e_um_remove_alerta_textual_de_toner(self):
+    def test_percentual_vinte_e_um_projeta_toner_normal_verde(self):
         machine = self._create_machine()
         status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
         status.status_operacional = "online"
@@ -758,10 +758,33 @@ class PrinterStatusApiTest(TestCase):
         summary = self.client.get("/api/v2/printers/status/summary", headers=headers)
 
         self.assertEqual(detail.status_code, 200)
-        self.assertEqual(detail.json()["data"]["alerta"], "Sem alerta")
-        self.assertEqual(detail.json()["data"]["severidade"], "unknown")
-        self.assertEqual(detail.json()["data"]["alertas"], [])
+        self.assertEqual(detail.json()["data"]["alerta"], "Toner em nivel normal")
+        self.assertEqual(detail.json()["data"]["severidade"], "green")
+        self.assertEqual(detail.json()["data"]["nivel_alerta"], "verde")
+        self.assertEqual(
+            detail.json()["data"]["alertas"][0]["codigo"],
+            "toner_percentual_normal",
+        )
         self.assertEqual(summary.json()["data"]["substituir_toner"], 0)
+
+    def test_sem_alerta_textual_com_toner_saudavel_projeta_estado_verde(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_toner(machine["id"], 30)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["alerta"], "Toner em nivel normal")
+        self.assertEqual(data["severidade"], "green")
+        self.assertEqual(data["nivel_alerta"], "verde")
+        self.assertEqual(data["alertas"][0]["codigo"], "toner_percentual_normal")
 
     def test_cilindro_high_prevalece_sobre_toner_dezoito(self):
         machine = self._create_machine()

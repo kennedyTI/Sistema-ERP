@@ -41,6 +41,7 @@ from backend.app.modules.printers.monitoring.toner.fallbacks import (
     has_valid_toner_percentage,
     parse_brother_item_toner,
     parse_brother_tonerremain,
+    parse_canon_web_toner,
 )
 from backend.app.modules.printers.monitoring.toner.services import (
     CANON_IR_C3326I_SNMP_VERSIONS,
@@ -324,11 +325,38 @@ class TonerFallbackParserTest(TestCase):
     def test_altura_invalida_nao_vira_zero_nem_quebra(self):
         self.assertIsNone(brother_toner_percentage(None))
         self.assertIsNone(brother_toner_percentage("invalida"))
-        self.assertIsNone(brother_toner_percentage(0))
         items = parse_brother_tonerremain(
             '<img class="tonerremain" height="invalida">'
         )
         self.assertIsNone(items[0]["percentual"])
+
+    def test_altura_zero_representa_toner_realmente_vazio(self):
+        self.assertEqual(brother_toner_percentage(0), 0)
+        items = parse_brother_tonerremain(
+            '<img class="tonerremain" src="black.gif" height="0">'
+        )
+        self.assertEqual(items[0]["percentual"], 0)
+        self.assertTrue(items[0]["sucesso"])
+
+    def test_parser_canon_web_retorna_cores_e_percentuais(self):
+        items = parse_canon_web_toner(
+            """
+            <h5>Toner restante</h5>
+            <table>
+              <tr><td>Ciano :</td><td>40%</td></tr>
+              <tr><td>Magenta :</td><td>30%</td></tr>
+              <tr><td>Amarelo :</td><td>30%</td></tr>
+              <tr><td>Preto :</td><td>90%</td></tr>
+            </table>
+            <h5>Painel de Mensagem</h5>
+            """
+        )
+
+        self.assertEqual(
+            [(item["cor"], item["percentual"]) for item in items],
+            [("cyan", 40), ("magenta", 30), ("yellow", 30), ("black", 90)],
+        )
+        self.assertTrue(all(item["metodo_coleta"] == "web_status" for item in items))
 
     def test_altura_acima_do_maximo_e_limitada_a_cem(self):
         self.assertEqual(brother_toner_percentage(80), 100)
@@ -827,6 +855,53 @@ class TonerServiceTest(TestCase):
 
         self.assertEqual(tuple(called_paths), WEB_STATUS_PATHS)
         self.assertNotIn("/general/information.html?kind=item", called_paths)
+
+    @patch(
+        "backend.app.modules.printers.monitoring.toner.fallbacks.get_decrypted_html_access_for_model"
+    )
+    def test_web_status_canon_usa_pagina_autenticada_cadastrada(self, get_access):
+        machine = self.add_machine(
+            manufacturer="Canon",
+            model_name="IR-C3326I",
+        )
+        get_access.return_value = HtmlAccessConfig(
+            modelo_id=machine.model_id,
+            tipo_autenticacao="form",
+            usuario="usuario-ficticio",
+            senha="senha-ficticia",
+            caminho_status="/",
+            porta=8000,
+        )
+        fetcher = Mock(
+            return_value=HtmlClientResponse(
+                sucesso=True,
+                status_code=200,
+                url_sanitizada=None,
+                conteudo_html=(
+                    "<h5>Toner restante</h5><table>"
+                    "<tr><td>Ciano :</td><td>40%</td></tr>"
+                    "<tr><td>Magenta :</td><td>30%</td></tr>"
+                    "<tr><td>Amarelo :</td><td>30%</td></tr>"
+                    "<tr><td>Preto :</td><td>90%</td></tr>"
+                    "</table><h5>Painel de Mensagem</h5>"
+                ),
+                erro_codigo=None,
+                erro_detalhe_sanitizado=None,
+                protocolo_usado="http",
+                tipo_autenticacao="form",
+            )
+        )
+
+        result = collect_toner_from_web_status(
+            self.db,
+            machine=machine,
+            fetcher=fetcher,
+        )
+
+        self.assertTrue(result["sucesso"])
+        self.assertFalse(result["sem_percentual"])
+        self.assertEqual(len(result["toners"]), 4)
+        fetcher.assert_called_once_with(machine.ip_address, get_access.return_value, page_type="status")
 
     @patch(
         "backend.app.modules.printers.monitoring.toner.fallbacks.get_decrypted_html_access_for_model"

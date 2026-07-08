@@ -18,6 +18,7 @@ from backend.app.modules.printers.monitoring.html_parsers.brother import (
 )
 from backend.app.modules.printers.monitoring.html_parsers.canon import (
     CanonIrC3326iStatusParser,
+    parse_canon_ir_c3326i_toner_levels,
 )
 from backend.app.modules.printers.monitoring.html_parsers.hp import HpMfp4303StatusParser
 from backend.app.modules.printers.monitoring.html_parsers.registry import (
@@ -78,6 +79,54 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(result.mensagens_brutas, ["Ocorreu um erro."])
         self.assertNotEqual(result.estado_principal, "Modo de espera.")
         self.assertNotIn("Modo de espera.", result.mensagens_brutas)
+
+    def test_parser_canon_extrai_quatro_percentuais_de_toner(self):
+        html = """
+        <h5>Toner restante</h5>
+        <table>
+          <tr><th>Cor</th><th>Nivel do Toner</th></tr>
+          <tr><td>Ciano :</td><td>40%</td></tr>
+          <tr><td>Magenta :</td><td>30%</td></tr>
+          <tr><td>Amarelo :</td><td>30%</td></tr>
+          <tr><td>Preto :</td><td>90%</td></tr>
+        </table>
+        <h5>Painel de Mensagem</h5>
+        """
+
+        self.assertEqual(
+            parse_canon_ir_c3326i_toner_levels(html),
+            [
+                {"cor": "cyan", "percentual": 40},
+                {"cor": "magenta", "percentual": 30},
+                {"cor": "yellow", "percentual": 30},
+                {"cor": "black", "percentual": 90},
+            ],
+        )
+
+    def test_parser_canon_extrai_percentuais_do_script_sem_headless(self):
+        html = """
+        <h4>Remaining Toner</h4>
+        <script>
+          function Draw_TonerVol() {
+            var tonerVolInfo = {
+              "tonerCVol":"40",
+              "tonerMVol":"30",
+              "tonerYVol":"30",
+              "tonerKVol":"90"
+            };
+          }
+        </script>
+        """
+
+        self.assertEqual(
+            parse_canon_ir_c3326i_toner_levels(html),
+            [
+                {"cor": "cyan", "percentual": 40},
+                {"cor": "magenta", "percentual": 30},
+                {"cor": "yellow", "percentual": 30},
+                {"cor": "black", "percentual": 90},
+            ],
+        )
 
     def test_parser_samsung_extrai_estado_e_alerta(self):
         result = parse_status_html_for_model(

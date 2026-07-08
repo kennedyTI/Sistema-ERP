@@ -96,23 +96,36 @@ class TonerAlertPolicyTest(TestCase):
         self.assertEqual(alerts[0]["mensagem"], "Toner Preto crítico: 8%")
         self.assertEqual(alerts[0]["severidade"], "high")
 
-    def test_substituir_toner_com_vinte_e_um_e_removido(self):
+    def test_substituir_toner_com_vinte_e_um_vira_estado_verde(self):
         alerts = reconcile_toner_alerts(
             [textual_alert()],
             [toner(21)],
             printer_model=None,
         )
 
-        self.assertEqual(alerts, [])
+        self.assertEqual(alerts[0]["codigo"], "toner_percentual_normal")
+        self.assertEqual(alerts[0]["severidade"], "green")
+        self.assertEqual(alerts[0]["nivel_alerta"], "verde")
 
-    def test_pouco_toner_com_trinta_e_cinco_e_removido(self):
+    def test_pouco_toner_com_trinta_e_cinco_vira_estado_verde(self):
         alerts = reconcile_toner_alerts(
             [textual_alert("toner_low", "Há pouco toner", "medium")],
             [toner(35)],
             printer_model=None,
         )
 
-        self.assertEqual(alerts, [])
+        self.assertEqual(alerts[0]["codigo"], "toner_percentual_normal")
+        self.assertEqual(alerts[0]["severidade"], "green")
+
+    def test_sem_alerta_textual_com_percentuais_saudaveis_vira_estado_verde(self):
+        alerts = reconcile_toner_alerts(
+            [],
+            [toner(30), toner(40, cor="cyan")],
+            printer_model=None,
+        )
+
+        self.assertEqual(alerts[0]["codigo"], "toner_percentual_normal")
+        self.assertEqual(alerts[0]["severidade"], "green")
 
     def test_alerta_de_cilindro_nao_e_sobrescrito(self):
         cylinder = textual_alert("replace_drum", "Trocar cilindro", "high")

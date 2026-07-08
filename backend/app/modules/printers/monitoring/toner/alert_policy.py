@@ -153,9 +153,20 @@ def reconcile_toner_alerts(
     if not has_valid_toner_percentage(rows):
         return alerts
 
+    textual_toner_alerts = [alert for alert in alerts if is_textual_toner_alert(alert)]
     non_toner_alerts = [alert for alert in alerts if not is_textual_toner_alert(alert)]
     calculated = toner_percentage_alerts(
         rows,
         thresholds=resolve_toner_thresholds(printer_model),
     )
+    if not non_toner_alerts and not calculated:
+        return [
+            {
+                "codigo": "toner_percentual_normal",
+                "mensagem": "Toner em nivel normal",
+                "nivel_alerta": "verde",
+                "severidade": "green",
+                "prioridade": 900,
+            }
+        ]
     return non_toner_alerts + calculated
