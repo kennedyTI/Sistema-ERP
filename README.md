@@ -2,9 +2,9 @@
 
 Sistema ERP modular desenvolvido para demonstrar uma arquitetura corporativa moderna, com backend em FastAPI, administração via Django Admin, autenticação centralizada, permissões por grupos, frontend React/Vite e execução em containers Docker com proxy HTTPS.
 
-A versão atual publicada é a **v2.4.0 — Status e alertas de impressoras**.
+A versão atual publicada é a **v2.4.1 — Toner de impressoras**.
 
-Registro detalhado da release: [docs/releases/v2.4.0-status-alertas-impressoras.md](docs/releases/v2.4.0-status-alertas-impressoras.md).
+Registro detalhado da release: [docs/releases/v2.4.1-toner-impressoras.md](docs/releases/v2.4.1-toner-impressoras.md).
 
 ---
 
@@ -464,14 +464,15 @@ Observação: as branches já entregues até a versão atual tiveram nomes incre
 | `v2.2.0-printers-machines-crud` | Cadastro inicial de máquinas |
 | `v2.3.0-maquinas-e-status-operacional` | Máquinas, status operacional e polimento visual |
 | `v2.4.0-status-alertas-impressoras` | Status e alertas de impressoras |
+| `v2.4.1-toner-impressoras` | Coleta percentual e regras operacionais de toner |
 
 ### Planejadas
 
 | Release planejada | Escopo previsto |
 | ----------------- | --------------- |
-| `v2.5.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
-| `v2.6.0-suprimentos` | Papel, toner e histórico inicial |
-| `v2.7.0-integracoes` | Protheus/GLPI e integrações corporativas |
+| `v2.5.0-integracao-glpi-chamados` | Integração de chamados com GLPI |
+| `v2.6.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
+| `v2.7.0-suprimentos` | Papel e histórico ampliado |
 
 As tags publicadas não devem ser reescritas. Ajustes documentais posteriores à publicação podem entrar em commits normais de documentação.
 
@@ -505,14 +506,14 @@ No momento, os screenshots ainda não estão versionados oficialmente.
 Estado atual:
 
 ```text
-Versão atual: v2.4.0-status-alertas-impressoras
-Etapa atual: Etapa 3.5.2 — Status e Alertas
-Status da etapa: percentual de toner via Printer-MIB em validação na feature
+Versão atual: v2.4.1-toner-impressoras
+Etapa concluída: Etapa 3.5.3 — Porcentagem de toner
+Próxima etapa: v2.5.0 — Integração GLPI de chamados
 ```
 
-Validações da release v2.4.0:
+Validações da release v2.4.1:
 
-- 392 testes aprovados;
+- 482 testes aprovados;
 - Django check sem problemas;
 - frontend build aprovado;
 - npm audit com 0 vulnerabilidades;
