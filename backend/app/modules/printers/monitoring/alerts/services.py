@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.timezone import now_sao_paulo
 from backend.app.modules.printers.machines.models import PrinterMachine
+from backend.app.modules.printers.integrations.glpi_service import (
+    process_confirmed_printer_supply_alerts,
+)
 from backend.app.modules.printers.monitoring.alerts.models import (
     AlertaImpressora,
     HistoricoAlertaImpressora,
@@ -714,6 +717,7 @@ def collect_and_sync_machine_alerts(
     collector: Callable[..., dict[str, Any]] = collect_snmp_alerts_for_machine,
     html_collector: Callable[..., dict[str, Any]] = collect_html_alerts_for_machine,
     ipp_collector: Callable[..., dict[str, Any]] = collect_ipp_alerts_for_machine,
+    glpi_dispatcher: Callable[..., list[Any]] = process_confirmed_printer_supply_alerts,
     max_snmp_attempts: int = SNMP_ALERT_MAX_ATTEMPTS,
 ) -> dict[str, Any]:
     """Orquestra coleta SNMP com lock e sincronizacao atomica."""
@@ -834,6 +838,16 @@ def collect_and_sync_machine_alerts(
             db,
             collection_result=last_result,
         )
+        try:
+            glpi_results = glpi_dispatcher(db, machine_id=machine_id)
+            sync_result["glpi_chamados"] = len(glpi_results)
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "Falha controlada na integracao GLPI da maquina id=%s.",
+                machine_id,
+            )
+            sync_result["glpi_erro"] = "falha_integracao"
         sync_result.update(
             {
                 "processada": True,

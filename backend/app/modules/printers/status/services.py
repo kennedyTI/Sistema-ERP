@@ -29,6 +29,8 @@ from backend.app.modules.printers.status.schemas import (
     PrinterStatusRead,
     PrinterStatusSummary,
 )
+from backend.app.modules.printers.supplies.models import PrinterSupply
+from backend.app.modules.printers.supplies.services import list_supplies_for_models
 
 
 class PrinterStatusNotFoundError(Exception):
@@ -313,7 +315,23 @@ def _display_alert_projection(
     }
 
 
-def _toners_to_read(rows: list[StatusTonerImpressora] | None) -> list[dict[str, object]]:
+SUPPLY_COLOR_BY_TONER_COLOR = {
+    "black": "PRETO",
+    "cyan": "CIANO",
+    "magenta": "MAGENTA",
+    "yellow": "AMARELO",
+}
+
+
+def _toners_to_read(
+    rows: list[StatusTonerImpressora] | None,
+    supplies: list[PrinterSupply] | None,
+) -> list[dict[str, object]]:
+    code_by_color = {
+        supply.cor: supply.codigo_protheus
+        for supply in (supplies or [])
+        if supply.suprimento == "TONER"
+    }
     return [
         {
             "cor": row.cor,
@@ -323,8 +341,28 @@ def _toners_to_read(rows: list[StatusTonerImpressora] | None) -> list[dict[str, 
             "origem_coleta": row.origem_coleta,
             "metodo_coleta": row.metodo_coleta,
             "coletado_em": row.coletado_em,
+            "codigo_protheus": code_by_color.get(
+                SUPPLY_COLOR_BY_TONER_COLOR.get(row.cor)
+            ),
         }
         for row in (rows or [])
+    ]
+
+
+def _supplies_to_read(
+    supplies: list[PrinterSupply] | None,
+    *,
+    supply_type: str,
+) -> list[dict[str, object]]:
+    return [
+        {
+            "id": supply.id,
+            "suprimento": supply.suprimento,
+            "cor": supply.cor,
+            "codigo_protheus": supply.codigo_protheus,
+        }
+        for supply in (supplies or [])
+        if supply.suprimento == supply_type
     ]
 
 
@@ -356,6 +394,7 @@ def _status_to_read(
     *,
     alert_projection: dict[str, object] | None = None,
     toner_rows: list[StatusTonerImpressora] | None = None,
+    supply_rows: list[PrinterSupply] | None = None,
 ) -> PrinterStatusRead:
     machine = status.maquina
     manufacturer = machine.manufacturer
@@ -392,7 +431,12 @@ def _status_to_read(
         severidade=str(display_alert["severidade"]),
         alerta=alert_message,
         alertas=display_alert["alertas"],
-        toners=_toners_to_read(toner_rows),
+        toners=_toners_to_read(toner_rows, supply_rows),
+        suprimentos_toner=_supplies_to_read(supply_rows, supply_type="TONER"),
+        cilindro=next(
+            iter(_supplies_to_read(supply_rows, supply_type="CILINDRO")),
+            None,
+        ),
         mensagem=alert_message,
         mensagem_alerta=alert_message,
         mensagem_operador=status.mensagem_operador,
@@ -430,11 +474,20 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         db,
         [status.maquina_id for status in statuses],
     )
+    supply_projections = list_supplies_for_models(
+        db,
+        [
+            status.maquina.model_id
+            for status in statuses
+            if status.maquina.model_id is not None
+        ],
+    )
     return [
         _status_to_read(
             status,
             alert_projection=alert_projections.get(status.maquina_id),
             toner_rows=toner_projections.get(status.maquina_id),
+            supply_rows=supply_projections.get(status.maquina.model_id),
         )
         for status in statuses
     ]
@@ -515,10 +568,16 @@ def get_printer_status(db: Session, machine_id: int) -> StatusImpressora:
 
 def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
     status = get_printer_status(db, machine_id)
+    supplies = (
+        list_supplies_for_models(db, [status.maquina.model_id]).get(status.maquina.model_id)
+        if status.maquina.model_id is not None
+        else []
+    )
     return _status_to_read(
         status,
         alert_projection=_alert_projection_for_rows(db, [machine_id]).get(machine_id),
         toner_rows=list_toners_for_machines(db, [machine_id]).get(machine_id),
+        supply_rows=supplies,
     )
 
 

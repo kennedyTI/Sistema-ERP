@@ -55,6 +55,7 @@ services:
       && alembic -c backend/alembic.ini upgrade head
       && python backend/scripts/seed_printer_alert_rules.py
       && python backend/scripts/seed_printer_snmp_oids.py
+      && python backend/scripts/seed_printer_supplies.py
       && python manage.py migrate --noinput
       && python manage.py seed_admin_groups"
     volumes:

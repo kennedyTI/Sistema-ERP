@@ -518,6 +518,42 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertEqual(current[0].origem_coleta, "sistema")
         self.assertEqual(current[0].metodo_confirmacao, "falha_cascata")
 
+    def test_dispara_glpi_somente_depois_de_persistir_alerta_confirmado(self):
+        dispatched = []
+
+        def dispatcher(db, *, machine_id):
+            current = (
+                db.query(AlertaImpressora)
+                .filter(AlertaImpressora.maquina_id == machine_id)
+                .all()
+            )
+            dispatched.append((machine_id, len(current)))
+            return [object()]
+
+        result = collect_and_sync_machine_alerts(
+            self.db,
+            machine_id=self.machine.id,
+            redis_client=FakeRedis(),
+            settings=MonitoringSettings(snmp_community=SENSITIVE_MARKER),
+            collector=SequenceCollector(
+                alert_result(
+                    self.machine.id,
+                    [raw_alert("Substituir toner")],
+                    [
+                        normalized_alert(
+                            "replace_toner",
+                            severity="high",
+                            classification="vermelho",
+                        )
+                    ],
+                )
+            ),
+            glpi_dispatcher=dispatcher,
+        )
+
+        self.assertEqual(dispatched, [(self.machine.id, 1)])
+        self.assertEqual(result["glpi_chamados"], 1)
+
     def test_canon_com_snmp_vazio_usa_html_autenticado_como_fallback(self):
         canon_model = self.add_model(manufacturer="Canon", name="IR-C3326I")
         canon_machine = self.add_machine(model=canon_model, ip="192.0.2.30")

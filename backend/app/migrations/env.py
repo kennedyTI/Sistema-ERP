@@ -10,6 +10,7 @@ from sqlalchemy import engine_from_config, pool, text
 from backend.app.core.database import Base, DATABASE_URL, OPERATIONS_SCHEMA
 from backend.app.modules.audit.orm import AuditLog  # noqa: F401
 from backend.app.modules.audit.orm import Log  # noqa: F401
+from backend.app.modules.integracoes.glpi.models.glpi_chamados import GlpiChamado  # noqa: F401
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel  # noqa: F401
 from backend.app.modules.printers.monitoring.alerts.models import (  # noqa: F401
     AlertaImpressora,
@@ -29,6 +30,7 @@ from backend.app.modules.printers.status.models import (  # noqa: F401
     LogImpressora,
     StatusImpressora,
 )
+from backend.app.modules.printers.supplies.models import PrinterSupply  # noqa: F401
 
 config = context.config
 

@@ -3566,8 +3566,59 @@ A regra `replace_drum` tambem reconhece a mensagem Canon de cartucho de cilindro
 no fim da vida util. Assim, percentuais saudaveis neutralizam apenas alertas de
 toner: um alerta real de cilindro permanece com sua severidade propria.
 
+## Integracao GLPI - base inicial de abertura de chamados
+
+Esta etapa adiciona a integracao generica em
+`backend/app/modules/integracoes/glpi` e mantem no modulo Impressoras somente a
+responsabilidade de interpretar o evento, localizar o suprimento e montar o
+conteudo do chamado. Detalhes HTTP, sessao, tokens e payload REST pertencem ao
+modulo GLPI.
+
+### Gatilhos e nao duplicidade
+
+Somente alertas atuais ja confirmados com codigo `replace_toner` ou
+`replace_drum` podem iniciar o fluxo. Toner baixo, percentual baixo, papel,
+offline, tampa, erro momentaneo e qualquer outro alerta nao abrem chamado.
+
+Toner usa o hash
+`impressoras:maquina:{id}:substituir_toner:{cor}`; cilindro usa
+`impressoras:maquina:{id}:substituir_cilindro`. Registro local pendente ou
+aberto e sem encerramento impede uma segunda chamada para o mesmo evento.
+
+### Tabelas e codigo Protheus
+
+`glpi_chamados` armazena tentativa, roteamento GLPI, ticket ID, payload enviado,
+resposta sanitizada, erro, contador e datas. `normalizado_em` e `encerrado_em`
+existem apenas como preparacao; fechamento automatico nao foi implementado.
+
+`impressoras_suprimentos` relaciona o modelo em `printers_models` a TONER ou
+CILINDRO, cor e codigo Protheus. A impressora fisica continua ligada somente ao
+modelo. A combinacao modelo, tipo e cor e unica.
+
+Em modelo monocromatico, o toner unico resolve como PRETO. Em modelo colorido,
+a cor deve estar identificada com seguranca na mensagem. Cor ambigua ou codigo
+Protheus ausente gera `bloqueado_dados_incompletos` e nenhuma chamada externa.
+
+### Modal e API
+
+O detalhe de Status preserva o contrato anterior e acrescenta
+`codigo_protheus` nas leituras de toner, `suprimentos_toner` com todas as cores
+compativeis e `cilindro`. O modal exibe o codigo abaixo de cada barra e o codigo
+do cilindro ao lado do centro de custo. Ausencia aparece como `nao cadastrado`
+sem interromper a tela.
+
+### Limites e seguranca
+
+A integracao permanece desabilitada por padrao com `GLPI_ENABLED=false`. Tokens,
+cookies, CSRF, Authorization, HTML bruto e respostas brutas nao sao
+versionados. Antes de habilitar, entidade, categoria, localizacao e origem da
+solicitacao devem ser confirmadas no GLPI. Fechamento, solucao, estoque,
+Protheus, Cartuchos GLPI, dashboard, Papel e novos gatilhos continuam fora do
+escopo. A configuracao completa esta em `docs/integracoes/glpi.md`.
+
 ## Próximas etapas
 
+- homologar uma abertura GLPI controlada com IDs e tokens fora do Git;
 - ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - validar a coleta percentual de toner em modelos adicionais;
