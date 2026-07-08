@@ -109,6 +109,7 @@ INSTALLED_APPS = [
     "backend.app.modules.printers.monitoring.state.apps.PrinterAlertRulesConfig",
     "backend.app.modules.printers.monitoring.alerts.apps.PrinterAlertsConfig",
     "backend.app.modules.printers.monitoring.html_credentials.apps.PrinterHtmlCredentialsConfig",
+    "backend.app.modules.printers.monitoring.toner.apps.PrinterTonerConfig",
 ]
 
 

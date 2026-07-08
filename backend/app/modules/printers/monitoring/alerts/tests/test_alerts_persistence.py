@@ -820,6 +820,139 @@ class AlertsPersistenceServiceTest(TestCase):
         self.assertEqual(histories[-1].classificacao_anterior, "amarelo")
         self.assertEqual(histories[-1].classificacao_nova, "vermelho")
 
+    def test_historico_usa_alerta_que_define_nova_classificacao(self):
+        self.sync(
+            [raw_alert("Sleep")],
+            [normalized_alert("sleep", severity="green", classification="verde")],
+        )
+        self.sync(
+            [
+                raw_alert("Sleep", oid=f"{ALERT_BASE_OID}.1.1"),
+                raw_alert("Trocar Cilindro", oid=f"{ALERT_BASE_OID}.1.2"),
+            ],
+            [
+                normalized_alert("sleep", severity="green", classification="verde"),
+                normalized_alert("replace_drum", severity="high", classification="vermelho"),
+            ],
+        )
+
+        history = self.histories()[-1]
+        self.assertEqual(history.codigo_evento, "classificacao_alterada")
+        self.assertEqual(history.codigo_alerta, "replace_drum")
+        self.assertEqual(history.severidade, "high")
+        self.assertEqual(history.mensagem_original, "Trocar Cilindro")
+        self.assertEqual(history.classificacao_anterior, "verde")
+        self.assertEqual(history.classificacao_nova, "vermelho")
+
+    def test_nao_registra_troca_entre_estados_verdes(self):
+        self.sync(
+            [raw_alert("Em espera")],
+            [normalized_alert("idle", severity="green", classification="verde")],
+        )
+        self.sync(
+            [raw_alert("Dormindo")],
+            [normalized_alert("sleep", severity="green", classification="verde")],
+        )
+
+        self.assertEqual(len(self.histories()), 0)
+
+    def test_nao_registra_transicoes_equivalentes_do_grupo_normal(self):
+        transitions = (
+            ("Estado normal", "ok", "Em espera", "idle"),
+            ("Estado normal", "ok", "Dormindo", "sleep"),
+            ("Sleep", "sleep", "Ready", "ok"),
+            ("Pronto", "ok", "Imprimindo", "ok"),
+            ("Imprimindo", "ok", "Em espera", "idle"),
+            ("Idle", "idle", "Sleep", "sleep"),
+        )
+
+        for previous_message, previous_code, current_message, current_code in transitions:
+            with self.subTest(previous=previous_message, current=current_message):
+                self.sync(
+                    [raw_alert(previous_message)],
+                    [
+                        normalized_alert(
+                            previous_code,
+                            severity="green",
+                            classification="verde",
+                        )
+                    ],
+                )
+                self.sync(
+                    [raw_alert(current_message)],
+                    [
+                        normalized_alert(
+                            current_code,
+                            severity="green",
+                            classification="verde",
+                        )
+                    ],
+                )
+
+        self.assertEqual(len(self.histories()), 0)
+
+    def test_registra_transicao_de_green_para_medium(self):
+        self.sync(
+            [raw_alert("Estado normal")],
+            [normalized_alert("ok", severity="green", classification="verde")],
+        )
+        self.sync(
+            [raw_alert("Toner baixo")],
+            [normalized_alert("toner_low", severity="medium", classification="amarelo")],
+        )
+
+        history = self.histories()[-1]
+        self.assertEqual(history.classificacao_anterior, "verde")
+        self.assertEqual(history.classificacao_nova, "amarelo")
+
+    def test_registra_substituir_toner_para_toner_baixo(self):
+        self.sync(
+            [raw_alert("Substituir toner")],
+            [normalized_alert("replace_toner", severity="high", classification="vermelho")],
+        )
+        self.sync(
+            [raw_alert("Toner baixo")],
+            [normalized_alert("toner_low", severity="medium", classification="amarelo")],
+        )
+
+        history = self.histories()[-1]
+        self.assertEqual(history.classificacao_anterior, "vermelho")
+        self.assertEqual(history.classificacao_nova, "amarelo")
+
+    def test_registra_retorno_de_vermelho_para_verde(self):
+        self.sync(
+            [raw_alert("Trocar Cilindro")],
+            [normalized_alert("replace_drum", severity="high", classification="vermelho")],
+        )
+        self.sync(
+            [raw_alert("Dormindo")],
+            [normalized_alert("sleep", severity="green", classification="verde")],
+        )
+
+        histories = self.histories()
+        self.assertEqual(len(histories), 2)
+        self.assertEqual(histories[0].codigo_alerta, "replace_drum")
+        self.assertEqual(histories[0].classificacao_nova, "vermelho")
+        self.assertEqual(histories[1].codigo_alerta, "sleep")
+        self.assertEqual(histories[1].classificacao_anterior, "vermelho")
+        self.assertEqual(histories[1].classificacao_nova, "verde")
+
+    def test_registra_retorno_de_amarelo_para_verde(self):
+        self.sync(
+            [raw_alert("Toner baixo")],
+            [normalized_alert("toner_low", severity="medium", classification="amarelo")],
+        )
+        self.sync(
+            [raw_alert("Pronto")],
+            [normalized_alert("ok", severity="green", classification="verde")],
+        )
+
+        histories = self.histories()
+        self.assertEqual(len(histories), 2)
+        self.assertEqual(histories[1].codigo_alerta, "ok")
+        self.assertEqual(histories[1].classificacao_anterior, "amarelo")
+        self.assertEqual(histories[1].classificacao_nova, "verde")
+
     def test_nao_registra_primeira_coleta_verde(self):
         self.sync(
             [raw_alert("Em espera")],

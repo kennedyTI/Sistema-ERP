@@ -320,6 +320,27 @@ def _add_history(
     )
 
 
+def _history_entry_for_classification(
+    entries: list[dict[str, Any]],
+    rules_by_code: dict[str, PrinterAlertRule],
+    classification: str,
+) -> dict[str, Any]:
+    matching_entries = [
+        entry
+        for entry in entries
+        if _classification_from_rule(rules_by_code[entry["regra_codigo"]])
+        == classification
+    ]
+    candidates = matching_entries or entries
+    return min(
+        candidates,
+        key=lambda entry: (
+            rules_by_code[entry["regra_codigo"]].prioridade,
+            rules_by_code[entry["regra_codigo"]].codigo,
+        ),
+    )
+
+
 def sync_machine_alerts_from_collection_result(
     db: Session,
     *,
@@ -443,12 +464,16 @@ def sync_machine_alerts_from_collection_result(
     previous_for_history = previous_classification or "verde"
     if previous_classification is None:
         if new_classification != "verde":
-            first_entry = entries[0]
+            history_entry = _history_entry_for_classification(
+                entries,
+                rules_by_code,
+                new_classification,
+            )
             _add_history(
                 db,
                 machine=machine,
-                entry=first_entry,
-                rule=rules_by_code[first_entry["regra_codigo"]],
+                entry=history_entry,
+                rule=rules_by_code[history_entry["regra_codigo"]],
                 event_code="estado_inicial_alerta",
                 previous_classification=previous_for_history,
                 current_classification=new_classification,
@@ -456,12 +481,16 @@ def sync_machine_alerts_from_collection_result(
             )
             history_created = True
     elif previous_classification != new_classification:
-        first_entry = entries[0]
+        history_entry = _history_entry_for_classification(
+            entries,
+            rules_by_code,
+            new_classification,
+        )
         _add_history(
             db,
             machine=machine,
-            entry=first_entry,
-            rule=rules_by_code[first_entry["regra_codigo"]],
+            entry=history_entry,
+            rule=rules_by_code[history_entry["regra_codigo"]],
             event_code="classificacao_alterada",
             previous_classification=previous_classification,
             current_classification=new_classification,

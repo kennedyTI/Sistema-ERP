@@ -2,9 +2,9 @@
 
 Sistema ERP modular desenvolvido para demonstrar uma arquitetura corporativa moderna, com backend em FastAPI, administração via Django Admin, autenticação centralizada, permissões por grupos, frontend React/Vite e execução em containers Docker com proxy HTTPS.
 
-A versão atual publicada é a **v2.4.0 — Status e alertas de impressoras**.
+A versão atual publicada é a **v2.4.1 — Toner de impressoras**.
 
-Registro detalhado da release: [docs/releases/v2.4.0-status-alertas-impressoras.md](docs/releases/v2.4.0-status-alertas-impressoras.md).
+Registro detalhado da release: [docs/releases/v2.4.1-toner-impressoras.md](docs/releases/v2.4.1-toner-impressoras.md).
 
 ---
 
@@ -416,11 +416,11 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 | Etapa 1 | Fundação do módulo Impressoras | Concluída |
 | Etapa 2 | Cadastro de Máquinas | Concluída |
 | Etapa 3 | Status e Dashboard | Parcial: Status concluído; Dashboard real pendente |
-| Etapa 4 | Papel, Toner e Histórico | Não iniciada |
+| Etapa 4 | Papel, Toner e Histórico | Parcial: percentual de toner em desenvolvimento |
 | Etapa 3.5.1 | Conectividade 60s com Redis/Celery e histórico confirmado | Concluída |
 | Etapa 3.5.2 | Alertas e estado da máquina em 5min | Concluída |
-| Etapa 3.5.3 | Coleta rica em 60min | Não iniciada |
-| Etapa 3.5.4 | Papel, toner e históricos | Não iniciada |
+| Etapa 3.5.3 | Percentual de toner via Printer-MIB em 60min | Em desenvolvimento |
+| Etapa 3.5.4 | Papel e históricos ampliados | Não iniciada |
 | Etapa 3.5.5 | Dashboard operacional | Não iniciada |
 
 ### Próximas frentes planejadas
@@ -428,7 +428,7 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 - Dashboard real do módulo Impressoras;
 - catálogo próprio de modelos de impressora;
 - Papel;
-- Toner;
+- ampliação da coleta de Toner;
 - histórico operacional ampliado;
 - integração Protheus;
 - integração GLPI;
@@ -464,14 +464,15 @@ Observação: as branches já entregues até a versão atual tiveram nomes incre
 | `v2.2.0-printers-machines-crud` | Cadastro inicial de máquinas |
 | `v2.3.0-maquinas-e-status-operacional` | Máquinas, status operacional e polimento visual |
 | `v2.4.0-status-alertas-impressoras` | Status e alertas de impressoras |
+| `v2.4.1-toner-impressoras` | Coleta percentual e regras operacionais de toner |
 
 ### Planejadas
 
 | Release planejada | Escopo previsto |
 | ----------------- | --------------- |
-| `v2.5.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
-| `v2.6.0-suprimentos` | Papel, toner e histórico inicial |
-| `v2.7.0-integracoes` | Protheus/GLPI e integrações corporativas |
+| `v2.5.0-integracao-glpi-chamados` | Integração de chamados com GLPI |
+| `v2.6.0-dashboard-impressoras` | Dashboard real do módulo Impressoras |
+| `v2.7.0-suprimentos` | Papel e histórico ampliado |
 
 As tags publicadas não devem ser reescritas. Ajustes documentais posteriores à publicação podem entrar em commits normais de documentação.
 
@@ -505,14 +506,14 @@ No momento, os screenshots ainda não estão versionados oficialmente.
 Estado atual:
 
 ```text
-Versão atual: v2.4.0-status-alertas-impressoras
-Etapa atual: Etapa 3.5.2 — Status e Alertas
-Status da etapa: Status e alertas promovidos para main; Dashboard real pendente
+Versão atual: v2.4.1-toner-impressoras
+Etapa concluída: Etapa 3.5.3 — Porcentagem de toner
+Próxima etapa: v2.5.0 — Integração GLPI de chamados
 ```
 
-Validações da release v2.4.0:
+Validações da release v2.4.1:
 
-- 392 testes aprovados;
+- 482 testes aprovados;
 - Django check sem problemas;
 - frontend build aprovado;
 - npm audit com 0 vulnerabilidades;
@@ -531,7 +532,7 @@ Limitações não bloqueantes conhecidas:
 - aviso antigo de chunks acima de 500 kB no build frontend;
 - uso de certificado self-signed em ambiente local;
 - Dashboard real ainda pendente;
-- Papel, Toner, Histórico ampliado e coleta rica de 60 minutos ainda não iniciados.
+- Papel e histórico ampliado ainda não iniciados; percentual de toner básico em validação.
 
 ---
 

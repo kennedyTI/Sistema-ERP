@@ -18,6 +18,7 @@ from backend.app.modules.printers.monitoring.html_parsers.brother import (
 )
 from backend.app.modules.printers.monitoring.html_parsers.canon import (
     CanonIrC3326iStatusParser,
+    parse_canon_ir_c3326i_toner_levels,
 )
 from backend.app.modules.printers.monitoring.html_parsers.hp import HpMfp4303StatusParser
 from backend.app.modules.printers.monitoring.html_parsers.registry import (
@@ -78,6 +79,54 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(result.mensagens_brutas, ["Ocorreu um erro."])
         self.assertNotEqual(result.estado_principal, "Modo de espera.")
         self.assertNotIn("Modo de espera.", result.mensagens_brutas)
+
+    def test_parser_canon_extrai_quatro_percentuais_de_toner(self):
+        html = """
+        <h5>Toner restante</h5>
+        <table>
+          <tr><th>Cor</th><th>Nivel do Toner</th></tr>
+          <tr><td>Ciano :</td><td>40%</td></tr>
+          <tr><td>Magenta :</td><td>30%</td></tr>
+          <tr><td>Amarelo :</td><td>30%</td></tr>
+          <tr><td>Preto :</td><td>90%</td></tr>
+        </table>
+        <h5>Painel de Mensagem</h5>
+        """
+
+        self.assertEqual(
+            parse_canon_ir_c3326i_toner_levels(html),
+            [
+                {"cor": "cyan", "percentual": 40},
+                {"cor": "magenta", "percentual": 30},
+                {"cor": "yellow", "percentual": 30},
+                {"cor": "black", "percentual": 90},
+            ],
+        )
+
+    def test_parser_canon_extrai_percentuais_do_script_sem_headless(self):
+        html = """
+        <h4>Remaining Toner</h4>
+        <script>
+          function Draw_TonerVol() {
+            var tonerVolInfo = {
+              "tonerCVol":"40",
+              "tonerMVol":"30",
+              "tonerYVol":"30",
+              "tonerKVol":"90"
+            };
+          }
+        </script>
+        """
+
+        self.assertEqual(
+            parse_canon_ir_c3326i_toner_levels(html),
+            [
+                {"cor": "cyan", "percentual": 40},
+                {"cor": "magenta", "percentual": 30},
+                {"cor": "yellow", "percentual": 30},
+                {"cor": "black", "percentual": 90},
+            ],
+        )
 
     def test_parser_samsung_extrai_estado_e_alerta(self):
         result = parse_status_html_for_model(
@@ -352,6 +401,19 @@ class HtmlStatusParserByModelTest(TestCase):
         self.assertEqual(info["total_paginas_impressas_a4_letter"], 4556)
         self.assertEqual(info["unidade_tambor_percentual"], 55)
         self.assertEqual(info["toner_percentual"], 30)
+
+    def test_parser_brother_l1632w_aceita_variacoes_de_toner_e_secao(self):
+        cases = (
+            ("Vida util restante", "Toner", 10),
+            ("Vida útil restante", "Toner*", 11),
+            ("Remaining life", "Toner**", 12),
+            ("Remaining Life", "Toner", 13),
+        )
+        for section, label, expected in cases:
+            with self.subTest(section=section, label=label):
+                html = f"<h3>{section}</h3><dl><dt>{label}</dt><dd>{expected}%</dd></dl>"
+                info = parse_brother_dcp_l1632w_maintenance_info(html)
+                self.assertEqual(info["toner_percentual"], expected)
 
     def test_parser_brother_l1632w_manutencao_extrai_contador_paginas(self):
         html = fixture_html("brother_dcp_l1632w_maintenance_authenticated.html")

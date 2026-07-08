@@ -17,6 +17,10 @@ from backend.app.modules.printers.monitoring.alerts.models import (
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
 from backend.app.modules.printers.monitoring.state.seed import seed_alert_rules
+from backend.app.modules.printers.monitoring.toner.models import (
+    HistoricoTonerImpressora,
+    StatusTonerImpressora,
+)
 from backend.app.modules.printers.status.models import (
     HistoricoStatusImpressora,
     LogImpressora,
@@ -37,9 +41,11 @@ class PrinterStatusApiTest(TestCase):
         PrinterMachine.__table__.create(engine)
         PrinterAlertRule.__table__.create(engine)
         AlertaImpressora.__table__.create(engine)
+        StatusTonerImpressora.__table__.create(engine)
         StatusImpressora.__table__.create(engine)
         HistoricoStatusImpressora.__table__.create(engine)
         HistoricoAlertaImpressora.__table__.create(engine)
+        HistoricoTonerImpressora.__table__.create(engine)
         LogImpressora.__table__.create(engine)
         self.session_factory = sessionmaker(bind=engine)
         self.db = self.session_factory()
@@ -104,6 +110,22 @@ class PrinterStatusApiTest(TestCase):
         self.db.commit()
         return alert
 
+    def _create_toner(self, machine_id: int, percentual, *, cor="black", indice="1.1"):
+        row = StatusTonerImpressora(
+            maquina_id=machine_id,
+            cor=cor,
+            indice_suprimento=indice,
+            descricao_coletada=f"Toner {cor}",
+            percentual=percentual,
+            origem_coleta="snmp",
+            metodo_coleta="printer_mib_walk",
+            sucesso=True,
+            coletado_em=now_sao_paulo(),
+        )
+        self.db.add(row)
+        self.db.commit()
+        return row
+
     def _create_status_history(self, machine_id: int, *, verified_at, current="online"):
         previous = "offline" if current == "online" else "online"
         history = HistoricoStatusImpressora(
@@ -120,6 +142,71 @@ class PrinterStatusApiTest(TestCase):
         self.db.add(history)
         self.db.commit()
         return history
+
+    def test_status_detail_retorna_toners_sem_dados_tecnicos(self):
+        machine = self._create_machine()
+        self.db.add(
+            StatusTonerImpressora(
+                maquina_id=machine["id"],
+                cor="black",
+                indice_suprimento="1.1",
+                descricao_coletada="Black Toner",
+                tipo_suprimento="3",
+                unidade_suprimento="19",
+                nivel_atual=78,
+                capacidade_maxima=100,
+                percentual=78,
+                origem_coleta="html",
+                metodo_coleta="web_status",
+                sucesso=True,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["toners"][0]["cor"], "black")
+        self.assertEqual(data["toners"][0]["nome"], "Preto")
+        self.assertEqual(data["toners"][0]["percentual"], 78)
+        self.assertEqual(data["toners"][0]["origem_coleta"], "html")
+        self.assertEqual(data["toners"][0]["metodo_coleta"], "web_status")
+        serialized = str(data["toners"])
+        self.assertNotIn("oid", serialized.casefold())
+        self.assertNotIn("community", serialized.casefold())
+        self.assertNotIn("Authorization", serialized)
+
+    def test_status_detail_retorna_metodo_brother_amigavel_ao_frontend(self):
+        machine = self._create_machine()
+        self.db.add(
+            StatusTonerImpressora(
+                maquina_id=machine["id"],
+                cor="black",
+                indice_suprimento="brother_item_black",
+                descricao_coletada="Toner Preto",
+                percentual=10,
+                origem_coleta="html",
+                metodo_coleta="brother_item_authenticated",
+                sucesso=True,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        toner = response.json()["data"]["toners"][0]
+        self.assertEqual(toner["metodo_coleta"], "brother_item_authenticated")
+        self.assertNotIn("caminho", toner)
+        self.assertNotIn("url", toner)
+        self.assertNotIn("conteudo_html", toner)
 
     def _create_alert_history(self, machine_id: int, *, verified_at):
         rule = self.db.query(PrinterAlertRule).filter_by(codigo="toner_low").one()
@@ -229,6 +316,46 @@ class PrinterStatusApiTest(TestCase):
         self.assertNotIn("Authorization", response.text)
         self.assertNotIn("cookie", response.text)
         self.assertNotIn("resposta_bruta", response.text)
+
+    def test_logs_ignoram_alerta_verde_gravado_como_responsavel_por_vermelho(self):
+        machine = self._create_machine()
+        rule = self.db.query(PrinterAlertRule).filter_by(codigo="sleep").one()
+        now = now_sao_paulo()
+        for minutes, previous, current in (
+            (10, "verde", "vermelho"),
+            (5, "vermelho", "verde"),
+        ):
+            self.db.add(
+                HistoricoAlertaImpressora(
+                    maquina_id=machine["id"],
+                    regra_alerta_id=rule.id,
+                    codigo_alerta=rule.codigo,
+                    severidade=rule.severidade,
+                    classificacao_anterior=previous,
+                    classificacao_nova=current,
+                    origem_coleta="html",
+                    metodo_confirmacao="html_autenticado",
+                    metodo_coleta="html_autenticado",
+                    chave_alerta=f"html:html_autenticado:sleep:{minutes}",
+                    mensagem_original="Sleep",
+                    mensagem_original_normalizada="sleep",
+                    codigo_evento="classificacao_alterada",
+                    descricao_evento="Evento legado de teste.",
+                    detalhes={},
+                    verificado_em=now - timedelta(minutes=minutes),
+                )
+            )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}/logs",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        logs = response.json()["data"]
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["mensagem"], "Alerta alterado: Estado normal / dormindo")
 
     def test_logs_respeitam_limite_dez_e_ordem_decrescente(self):
         machine = self._create_machine()
@@ -586,6 +713,159 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["alerta"], "Há pouco toner")
         self.assertEqual(data["nivel_alerta"], "amarelo")
         self.assertEqual(data["severidade"], "low")
+
+    def test_percentual_dezoito_corrige_substituir_toner_para_medium(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Subs. toner",
+        )
+        self._create_toner(machine["id"], 18)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["alerta"], "Toner Preto baixo: 18%")
+        self.assertEqual(data["severidade"], "medium")
+        self.assertEqual(data["nivel_alerta"], "amarelo")
+        self.assertEqual(data["alertas"][0]["codigo"], "toner_percentual_baixo")
+
+    def test_percentual_vinte_e_um_projeta_toner_normal_verde(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_toner",
+            message="Subs. toner",
+        )
+        self._create_toner(machine["id"], 21)
+        headers = auth_headers(printers_status=True)
+
+        detail = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=headers,
+        )
+        summary = self.client.get("/api/v2/printers/status/summary", headers=headers)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["data"]["alerta"], "Toner em nivel normal")
+        self.assertEqual(detail.json()["data"]["severidade"], "green")
+        self.assertEqual(detail.json()["data"]["nivel_alerta"], "verde")
+        self.assertEqual(
+            detail.json()["data"]["alertas"][0]["codigo"],
+            "toner_percentual_normal",
+        )
+        self.assertEqual(summary.json()["data"]["substituir_toner"], 0)
+
+    def test_sem_alerta_textual_com_toner_saudavel_projeta_estado_verde(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_toner(machine["id"], 30)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertEqual(data["alerta"], "Toner em nivel normal")
+        self.assertEqual(data["severidade"], "green")
+        self.assertEqual(data["nivel_alerta"], "verde")
+        self.assertEqual(data["alertas"][0]["codigo"], "toner_percentual_normal")
+
+    def test_cilindro_high_prevalece_sobre_toner_dezoito(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_current_alert(
+            machine["id"],
+            code="replace_drum",
+            message="Trocar cilindro",
+        )
+        self._create_toner(machine["id"], 18)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        data = response.json()["data"]
+        self.assertEqual(data["alerta"], "Trocar cilindro")
+        self.assertEqual(data["severidade"], "high")
+        self.assertEqual(
+            [alert["codigo"] for alert in data["alertas"]],
+            ["replace_drum", "toner_percentual_baixo"],
+        )
+
+    def test_offline_nao_e_sobrescrito_por_toner_critico(self):
+        machine = self._create_machine()
+        self._create_toner(machine["id"], 8)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        data = response.json()["data"]
+        self.assertEqual(data["status_operacional"], "offline")
+        self.assertEqual(data["alerta"], "Sem serviço")
+        self.assertEqual(data["severidade"], "high")
+        self.assertEqual(data["alertas"][0]["codigo"], "sem_servico")
+
+    def test_multiplos_toners_criticos_sao_retornados_para_alternancia(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        self.db.commit()
+        self._create_toner(machine["id"], 8, cor="black", indice="1.1")
+        self._create_toner(machine["id"], 9, cor="magenta", indice="1.2")
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        data = response.json()["data"]
+        self.assertEqual(data["severidade"], "high")
+        self.assertEqual(len(data["alertas"]), 2)
+        self.assertTrue(all(alert["severidade"] == "high" for alert in data["alertas"]))
+        self.assertEqual(
+            {alert["mensagem"] for alert in data["alertas"]},
+            {"Toner Preto crítico: 8%", "Toner Magenta crítico: 9%"},
+        )
+
+    def test_threshold_do_modelo_altera_classificacao_da_api(self):
+        machine = self._create_machine()
+        status = self.db.query(StatusImpressora).filter_by(maquina_id=machine["id"]).one()
+        status.status_operacional = "online"
+        model = self.db.query(PrinterModel).one()
+        model.critical_toner_threshold = 20
+        model.low_toner_threshold = 30
+        self.db.commit()
+        self._create_toner(machine["id"], 18)
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        data = response.json()["data"]
+        self.assertEqual(data["alerta"], "Toner Preto crítico: 18%")
+        self.assertEqual(data["severidade"], "high")
 
     def test_sleep_sozinho_permanece_verde(self):
         machine = self._create_machine()

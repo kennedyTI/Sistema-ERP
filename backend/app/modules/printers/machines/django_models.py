@@ -1,5 +1,7 @@
 """Models Django unmanaged para exposicao no Admin."""
 
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -10,6 +12,22 @@ class PrinterModelAdminModel(models.Model):
     type = models.CharField("TIPO", max_length=80, null=True, blank=True)
     color_mode = models.CharField("COR_MODELO", max_length=40, null=True, blank=True)
     url_imagem = models.CharField("URL DA IMAGEM", max_length=500, null=True, blank=True)
+    critical_toner_threshold = models.IntegerField(
+        "LIMITE TONER CRITICO",
+        db_column="limite_toner_critico",
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Padrao global quando vazio: 10%.",
+    )
+    low_toner_threshold = models.IntegerField(
+        "LIMITE TONER BAIXO",
+        db_column="limite_toner_baixo",
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Padrao global quando vazio: 20%.",
+    )
     notes = models.TextField("OBSERVACOES", null=True, blank=True)
     created_at = models.DateTimeField("CRIADO EM", null=True, blank=True)
     updated_at = models.DateTimeField("ATUALIZADO EM", null=True, blank=True)
@@ -24,6 +42,21 @@ class PrinterModelAdminModel(models.Model):
 
     def __str__(self):
         return f"{self.manufacturer} {self.name}"
+
+    def clean(self):
+        super().clean()
+        if (
+            self.critical_toner_threshold is not None
+            and self.low_toner_threshold is not None
+            and self.critical_toner_threshold > self.low_toner_threshold
+        ):
+            raise ValidationError(
+                {
+                    "critical_toner_threshold": (
+                        "O limite critico deve ser menor ou igual ao limite baixo."
+                    )
+                }
+            )
 
 
 class PrinterMachineAdminModel(models.Model):

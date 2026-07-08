@@ -16,6 +16,7 @@ from backend.app.modules.printers.monitoring.services import (
     monitor_machine_connectivity,
     run_connectivity_batch,
 )
+from backend.app.modules.printers.monitoring.toner.services import run_toner_batch
 
 
 @celery_app.task(name="printers_connectivity_all")
@@ -64,6 +65,34 @@ def printers_alerts_all():
         return {
             "executada": True,
             **run_alerts_batch(
+                db,
+                redis_client=redis_client,
+                settings=settings,
+            ),
+        }
+    finally:
+        db.close()
+        release_lock(lock_key, token, client=redis_client)
+
+
+@celery_app.task(name="printers_toner_all")
+def printers_toner_all():
+    settings = get_monitoring_settings()
+    redis_client = get_redis_client()
+    lock_key = "printers:lock:toner:global"
+    token = acquire_lock(
+        lock_key,
+        settings.global_lock_ttl_seconds,
+        client=redis_client,
+    )
+    if token is None:
+        return {"executada": False, "motivo": "lock_global_ativo"}
+
+    db = SessionLocal()
+    try:
+        return {
+            "executada": True,
+            **run_toner_batch(
                 db,
                 redis_client=redis_client,
                 settings=settings,

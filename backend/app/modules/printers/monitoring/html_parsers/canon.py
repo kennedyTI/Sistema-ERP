@@ -1,6 +1,7 @@
 """Parser HTML de status para modelos Canon."""
 
 import html as html_module
+import json
 import re
 
 from backend.app.modules.printers.monitoring.html_parsers.base import (
@@ -77,6 +78,87 @@ CANON_DYNAMIC_STATUS_TRANSLATIONS = {
     "printing...": "Imprimindo.",
     "ready to print.": "Pronta para imprimir.",
 }
+CANON_TONER_COLOR_NAMES = {
+    "ciano": "cyan",
+    "cyan": "cyan",
+    "magenta": "magenta",
+    "amarelo": "yellow",
+    "yellow": "yellow",
+    "preto": "black",
+    "black": "black",
+}
+CANON_TONER_SECTION_TERMS = {"toner restante", "remaining toner"}
+CANON_TONER_SECTION_STOP_TERMS = {
+    "painel de mensagem",
+    "message board",
+    "programacoes basicas",
+    "basic settings",
+}
+CANON_TONER_SCRIPT_PATTERN = re.compile(
+    r"var\s+tonerVolInfo\s*=\s*(?P<payload>\{.*?\})\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
+CANON_TONER_SCRIPT_COLORS = {
+    "tonerCVol": "cyan",
+    "tonerMVol": "magenta",
+    "tonerYVol": "yellow",
+    "tonerKVol": "black",
+}
+
+
+def parse_canon_ir_c3326i_toner_levels(html: str) -> list[dict[str, object]]:
+    """Extrai somente percentuais de toner da secao de consumiveis Canon."""
+    chunks = extract_visible_text_chunks(html or "")
+    section_index = next(
+        (
+            index
+            for index, chunk in enumerate(chunks)
+            if normalize_text(chunk) in CANON_TONER_SECTION_TERMS
+        ),
+        None,
+    )
+    items: list[dict[str, object]] = []
+    if section_index is not None:
+        for index in range(section_index + 1, min(len(chunks), section_index + 32)):
+            normalized = normalize_text(chunks[index]).strip(" :")
+            if normalized in CANON_TONER_SECTION_STOP_TERMS:
+                break
+            color = CANON_TONER_COLOR_NAMES.get(normalized)
+            if color is None:
+                continue
+            percentage = next(
+                (
+                    int(match.group(1))
+                    for candidate in chunks[index + 1 : index + 4]
+                    if (match := re.search(r"\b(\d{1,3})(?:[.,]\d+)?\s*%", candidate))
+                    and 0 <= int(match.group(1)) <= 100
+                ),
+                None,
+            )
+            if percentage is not None:
+                items.append({"cor": color, "percentual": percentage})
+    if items:
+        return items
+
+    script_match = CANON_TONER_SCRIPT_PATTERN.search(html or "")
+    if script_match is None:
+        return []
+    try:
+        payload = json.loads(script_match.group("payload"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+    for key, color in CANON_TONER_SCRIPT_COLORS.items():
+        raw_value = payload.get(key)
+        if isinstance(raw_value, bool):
+            continue
+        try:
+            percentage = int(str(raw_value).strip())
+        except (TypeError, ValueError):
+            continue
+        if 0 <= percentage <= 100:
+            items.append({"cor": color, "percentual": percentage})
+    return items
 
 
 class CanonIrC3326iStatusParser(HtmlStatusParser):

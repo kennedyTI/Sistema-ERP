@@ -60,7 +60,8 @@ INITIAL_ALERT_RULES = (
         "severidade": "high",
         "tipo_regra": "contains",
         "padrao": (
-            "replace drum,drum end,drum replace,substituir cilindro,"
+            "replace drum,drum end,drum replace,drum cartridge,"
+            "reached the end of its lifetime,substituir cilindro,"
             "substituir o cilindro,trocar cilindro,subs cilindro,"
             "subs. cilindro,subs o cilindro,subs. o cilindro,"
             "subst cilindro,subst. cilindro,subst o cilindro,"
@@ -79,6 +80,15 @@ INITIAL_ALERT_RULES = (
         "ativo": True,
     },
     {
+        "codigo": "paper_jam_inside",
+        "descricao": "Atolamento interno",
+        "severidade": "medium",
+        "tipo_regra": "contains",
+        "padrao": "atol. dentro,atol dentro,atolamento dentro",
+        "prioridade": 7,
+        "ativo": True,
+    },
+    {
         "codigo": "cover_open",
         "descricao": "Tampa aberta",
         "severidade": "high",
@@ -94,6 +104,15 @@ INITIAL_ALERT_RULES = (
         "tipo_regra": "contains",
         "padrao": "no paper,paper is out,paper out,sem papel,no tray,bandeja vazia",
         "prioridade": 15,
+        "ativo": True,
+    },
+    {
+        "codigo": "no_paper_tray_b1",
+        "descricao": "Sem papel na bandeja B1",
+        "severidade": "medium",
+        "tipo_regra": "contains",
+        "padrao": "s/ papel b1,sem papel b1",
+        "prioridade": 14,
         "ativo": True,
     },
     {
@@ -174,7 +193,8 @@ INITIAL_ALERT_RULES = (
         "tipo_regra": "contains",
         "padrao": (
             "ready,online,operational,printing,imprimindo,a imprimir,"
-            "em impressao,em impressão,pronta,pronto,aquecendo,warmup,ok"
+            "em impressao,em impressão,pronta,pronto,aquecendo,warmup,"
+            "estado normal,ok"
         ),
         "prioridade": 110,
         "ativo": True,

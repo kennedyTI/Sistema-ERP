@@ -104,8 +104,10 @@ class AlertRuleSeedTest(TestCase):
                 "replace_toner",
                 "replace_drum",
                 "paper_jam",
+                "paper_jam_inside",
                 "cover_open",
                 "no_paper",
+                "no_paper_tray_b1",
                 "maintenance",
                 "memory_full",
                 "paper_low",
@@ -256,6 +258,30 @@ class AlertRulesEngineTest(TestCase):
         self.assertEqual(result["codigo"], "sleep")
         self.assertEqual(result["severidade"], "green")
 
+    def test_estado_normal_retorna_green(self):
+        rule = next(item for item in INITIAL_ALERT_RULES if item["codigo"] == "ok")
+        result = classify_alert("Estado normal", [make_rule(**rule)])
+
+        self.assertEqual(result["codigo"], "ok")
+        self.assertEqual(result["severidade"], "green")
+
+    def test_alertas_abreviados_de_papel_retornam_medium(self):
+        cases = {
+            "Atol. dentro": "paper_jam_inside",
+            "S/ Papel B1": "no_paper_tray_b1",
+        }
+        rules = [
+            make_rule(**item)
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] in set(cases.values())
+        ]
+
+        for message, expected_code in cases.items():
+            with self.subTest(message=message):
+                result = classify_alert(message, rules)
+                self.assertEqual(result["codigo"], expected_code)
+                self.assertEqual(result["severidade"], "medium")
+
     def test_imprimindo_retorna_green(self):
         rule = next(item for item in INITIAL_ALERT_RULES if item["codigo"] == "ok")
         result = classify_alert("Imprimindo", [make_rule(**rule)])
@@ -357,6 +383,20 @@ class AlertRulesEngineTest(TestCase):
 
                 self.assertEqual(result["codigo"], "replace_drum")
                 self.assertEqual(result["severidade"], "high")
+
+    def test_replace_drum_reconhece_fim_de_vida_do_cartucho_canon(self):
+        rule = next(
+            item
+            for item in INITIAL_ALERT_RULES
+            if item["codigo"] == "replace_drum"
+        )
+        result = classify_alert(
+            "Drum Cartridge nnn has reached the end of its lifetime.",
+            [make_rule(**rule)],
+        )
+
+        self.assertEqual(result["codigo"], "replace_drum")
+        self.assertEqual(result["severidade"], "high")
 
     def test_sem_servico_retorna_high(self):
         rule = next(

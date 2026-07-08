@@ -3323,10 +3323,253 @@ persistidos simultaneamente e o seletor compartilhado do frontend alterna
 entre eles a cada quatro segundos. O indicador visual fora de `#ink_level` e
 ignorado para evitar falso positivo, e nenhum HTML bruto e persistido.
 
+### Ajuste de aliases operacionais
+
+As mensagens abreviadas `Atol. dentro` e `S/ Papel B1`, observadas em campo,
+possuem regras específicas com severidade `medium` e classificação visual
+amarela. As regras críticas genéricas de atolamento e ausência de papel foram
+preservadas. `Dormindo` continua associado a `sleep/green`, e `Estado normal`
+passa a ser reconhecido por `ok/green`.
+
+## Etapa 3.5.3 - Porcentagem de toner com base na solução testada da v1
+
+Esta etapa porta para a arquitetura modular da v2 somente a estratégia de
+percentual de toner já validada na v1. A coleta usa SNMP WALK na Printer-MIB,
+cruza os resultados pelo índice do suprimento e não usa HTML, browser headless
+ou regras de alertas para inferir nível.
+
+### OIDs e cálculo
+
+| Informação | OID base |
+| --- | --- |
+| Tipo | `1.3.6.1.2.1.43.11.1.1.5` |
+| Descrição | `1.3.6.1.2.1.43.11.1.1.6` |
+| Unidade | `1.3.6.1.2.1.43.11.1.1.7` |
+| Capacidade máxima | `1.3.6.1.2.1.43.11.1.1.8` |
+| Nível atual | `1.3.6.1.2.1.43.11.1.1.9` |
+
+O percentual é calculado por `nivel_atual / capacidade_maxima * 100`, limitado
+ao intervalo de 0 a 100. Os sentinelas negativos da Printer-MIB (`-1`, `-2` e
+`-3`), capacidade zero e valores inválidos resultam em percentual
+`Desconhecido`; eles nunca são convertidos em zero.
+
+Somente suprimentos classificados como toner são considerados. Tambor,
+cilindro, reservatório residual, fusor, correia, revelador, papel e bandeja são
+ignorados. As cores projetadas são preto, ciano, magenta, amarelo e
+desconhecido.
+
+### Persistência, API e execução
+
+- `status_toner_impressoras` mantém a leitura atual por máquina, cor e índice;
+- `historico_toner_impressoras` registra apenas primeira coleta, mudança de
+  percentual, transição conhecido/desconhecido ou mudança de erro;
+- a API de Status expõe `toners[]`, sem community SNMP ou resposta bruta;
+- o modal de Status apresenta os percentuais disponíveis;
+- máquinas inativas, sem IP ou offline não entram na coleta;
+- a task `printers_toner_all` usa locks Redis e roda a cada 3600 segundos,
+  configurável por `PRINTER_TONER_INTERVAL_SECONDS`.
+
+A migration `20260701_printer_toner_status` deve ser aplicada antes de iniciar
+API e workers com esta versão. No Docker Compose, o serviço `migrations`
+continua sendo a barreira de inicialização dos demais serviços.
+
+### Limites da entrega inicial
+
+Na entrega inicial não foram adicionados alertas baseados em percentual, papel,
+dashboard, coleta rica de outros suprimentos ou alteração da cascata de
+alertas. A regra operacional por percentual foi adicionada posteriormente na
+microetapa 3.5.3.2; os demais itens permanecem para etapas futuras.
+
+### Etapa 3.5.3.1 - Fallbacks de toner portados da v1
+
+A correção preserva a Printer-MIB como primeira tentativa e adiciona duas
+camadas controladas somente quando nenhum percentual numérico válido foi
+obtido:
+
+1. OIDs de toner ativos no catálogo `oids_snmp_impressoras`, tratados como
+   configurações previamente validadas e registrados com método
+   `snmp_oid_fallback`;
+2. páginas HTML de status para modelos Brother suportados, registradas com
+   origem `html` e método `web_status`.
+
+O fallback web tenta, nesta ordem, apenas `/home/status.html`,
+`/general/status.html` e `/`. A rota
+`/general/information.html?kind=item` ficou explicitamente fora desta etapa.
+Não há browser headless, automação de navegador nem persistência de HTML bruto.
+
+O parser Brother identifica imagens com a classe `tonerremain`. A altura da
+barra é convertida com `BROTHER_TONER_BAR_MAX_HEIGHT = 56` e a fórmula
+`round(altura / 56 * 100)`, limitada a 100. Em modelos monocromáticos, uma barra
+sem cor explícita representa toner preto. Altura ausente, zero ou inválida
+permanece desconhecida (`null`), nunca `0%` inventado.
+
+Os OIDs privados Brother já invalidados continuam fora do seed e são
+bloqueados mesmo se cadastrados por engano. Nenhum OID experimental foi
+promovido. A migration `20260702_toner_v1_fallbacks` amplia somente as
+constraints de métricas, origens e métodos das tabelas existentes; nenhuma
+tabela adicional de toner foi criada.
+
+As validações cobrem a ordem da cascata, interrupção após sucesso, caminhos
+HTML permitidos, parser `tonerremain`, unknown nulo, bloqueio dos OIDs
+invalidados, máquina offline, payload sanitizado, histórico anti-spam e
+preservação de Status/Alertas. Melhorias de UI, novas rotas embarcadas e novos
+OIDs privados permanecem pendências futuras condicionadas a diagnóstico real.
+
+### Etapa 3.5.3.2 - Contexto operacional e alertas configuráveis de toner
+
+O modal mantém as barras existentes e passa a exibir, logo abaixo de `Nível de
+toner`, o método amigável da coleta: `Printer-MIB`, `OIDs cadastrados` ou
+`web_status`. Quando há mais de um método entre as cores, eles são apresentados
+na mesma linha. O rodapé da seção usa o `coletado_em` mais recente para mostrar
+somente tempo relativo, como `Atualizado há 6 min`, sem data ou hora absoluta.
+
+Os limites operacionais ficam no cadastro `printers_models`, nas colunas
+`limite_toner_critico` e `limite_toner_baixo`. O Django Admin permite configurar
+os valores por modelo entre 0 e 100 e exige que o crítico seja menor ou igual
+ao baixo. Configuração ausente, parcial ou inválida usa o fallback global:
+
+```text
+percentual <= 10 -> Toner crítico / high / vermelho
+percentual <= 20 -> Toner baixo / medium / amarelo
+percentual >= 21 -> sem alerta de toner
+```
+
+A decisão é feita somente no backend. O frontend não calcula thresholds e usa
+a severidade recebida pela API. Quando existe percentual válido, alertas
+textuais de toner, como `Subs. toner` e `Há pouco toner`, são substituídos pelo
+resultado calculado. Com percentual desconhecido, o alerta textual continua
+como fallback. Em impressoras coloridas, cada cor é avaliada e a projeção
+principal mantém a maior severidade; alertas equivalentes continuam disponíveis
+para a alternância já existente no frontend.
+
+A reconciliação é restrita a toner. Offline/Sem serviço, cilindro, papel,
+atolamento, tampa aberta, erro geral e falha de coleta não são removidos nem
+rebaixados. A coleta estabilizada Printer-MIB -> OIDs ativos -> `web_status`
+permanece inalterada. A migration `20260702_toner_alert_thresholds` acrescenta
+somente os dois limites e suas constraints à tabela de modelos.
+
+Os testes cobrem os limites 10, 11, 20 e 21, percentual desconhecido, conflito
+com alertas textuais, múltiplas cores, configuração por modelo, fallback global,
+configuração inválida e preservação de alertas não relacionados. Histórico de
+toner no modal, detecção de troca, dashboard, papel, GLPI, Protheus, previsão de
+dias restantes e `/general/information.html?kind=item` continuam fora do escopo.
+
+### Etapa 3.5.3.3 - Correcoes de logs e diagnostico Canon/Brother
+
+As transicoes entre variacoes normais com severidade `green` nao geram novos
+registros em `historico_alertas_impressoras`. O estado atual continua sendo
+atualizado, mas mudancas como Estado normal, Em espera, Dormindo, Sleep, Idle,
+Pronto, Ready, Imprimindo, Printing, Aquecendo e Warmup permanecem no mesmo
+grupo operacional. Transicoes entre `green`, `medium` e `high`, nos dois
+sentidos, continuam gerando historico normalmente.
+
+Para Canon IR-C3326I, a Printer-MIB passa a tentar SNMP v1 antes de v2c. Uma
+resposta tecnicamente bem-sucedida, mas sem percentual, nao encerra a busca. As
+colunas da Printer-MIB tambem sao consultadas de forma independente: a ausencia
+de uma coluna auxiliar nao impede a leitura de descricao, tipo, capacidade
+maxima e nivel quando os demais WALKs respondem.
+
+O diagnostico real sanitizado confirmou, sem registrar IP ou community, que a
+Canon respondeu em SNMP v1 com descricao, tipo, capacidade maxima e nivel. A
+coleta retornou Preto, Ciano, Magenta e Amarelo com percentuais validos. Nao foi
+necessario consultar v2c depois do resultado valido em v1.
+
+A Brother DCP-L1632W permanece limitada a solucao da v1: Printer-MIB, bloqueio
+dos OIDs privados invalidados e fallback `web_status` somente em
+`/home/status.html`, `/general/status.html` e `/`. O parser `tonerremain`
+continua usando `BROTHER_TONER_BAR_MAX_HEIGHT = 56`; altura ausente ou invalida
+permanece `null`, nunca `0%`. A rota
+`/general/information.html?kind=item` nao foi implementada.
+
+No diagnostico real, Brother DCP-L1632W e DCP-L2540DW retornaram toner preto
+com percentual valido pelo `web_status`. HP MFP-4303 retornou as quatro cores e
+Samsung K-4350 retornou toner preto pela Printer-MIB. O relatorio detalhado foi
+mantido apenas em `tmp/diagnosticos/`, que permanece ignorado pelo Git.
+
+A regra percentual continua sendo a palavra final somente para toner: ate 10%
+gera `high/vermelho`, de 11% a 20% gera `medium/amarelo` e a partir de 21% nao
+gera alerta de toner. Quando o percentual e desconhecido, o alerta textual
+continua como fallback. Alertas de conectividade, cilindro, papel, atolamento,
+tampa aberta, erro geral e falha de coleta nao sao alterados.
+
+Nao houve migration nesta microetapa. Os testes cobrem transicoes normais
+equivalentes, mudancas reais de severidade, ordem Canon v1/v2c, resposta vazia,
+coluna auxiliar indisponivel, cruzamento das quatro cores, parser Brother,
+caminhos HTML permitidos, OID Brother bloqueado e preservacao de `unknown`.
+Na validacao final, a suite backend concluiu 466 testes, o frontend compilou
+com auditoria npm zerada, migrations terminaram com codigo 0 e Redis,
+Celery Worker, Beat e proxy permaneceram ativos.
+
+### Etapa 3.5.3.4 - Brother autenticado e regras finais de toner
+
+A Brother DCP-L1632W tenta primeiro a pagina de manutencao
+`/general/information.html?kind=item`. O acesso reutiliza a credencial
+criptografada cadastrada para o modelo e o cliente HTTP seguro existente. A
+sessao, cookies e campos de autenticacao permanecem somente em memoria durante
+a requisicao e nao sao projetados em log, API ou relatorio.
+
+O parser reconhece as secoes `Vida util restante` e `Remaining life`, aceita os
+rotulos `Toner`, `Toner*` e `Toner**` e extrai diretamente o percentual do
+campo correspondente. A DCP-L1632W e monocromatica, portanto a leitura e
+registrada como preto pelo metodo `brother_item_authenticated`. Falha de acesso,
+autenticacao ou parser mantem a cascata estabilizada: Printer-MIB, OIDs ativos e
+`web_status` nos caminhos v1. O limite `BROTHER_TONER_BAR_MAX_HEIGHT = 56` e o
+bloqueio do OID Brother invalidado permanecem inalterados. Ausencia de leitura
+continua sendo `null`, nunca zero inventado.
+
+No modal, o metodo aparece como `Brother manutencao` abaixo de `Nivel de toner`.
+O rodape usa o `coletado_em` mais recente para exibir apenas tempo relativo,
+como `Atualizado ha 6 min`. Caminho tecnico, OID e HTML nao sao exibidos.
+
+Os thresholds continuam armazenados por modelo em `printers_models`, nos
+campos `limite_toner_critico` e `limite_toner_baixo`, com fallback global 10/20.
+O backend aplica a regra final: ate 10% gera alerta critico, de 11% a 20% gera
+alerta baixo e 21% ou mais remove apenas alertas textuais de toner. Quando todos
+os percentuais validos estao acima dos limites e nao existe outro alerta real,
+a API projeta `Toner em nivel normal` com severidade `green`. Percentual valido
+prevalece sobre texto de toner; percentual desconhecido preserva o texto como
+fallback. Alertas de cilindro, offline, papel, atolamento, tampa, erro geral e
+falha de coleta nao sao sobrescritos.
+
+O diagnostico residual e sanitizado e fica somente em `tmp/diagnosticos/`.
+Historico de toner no modal, dashboard, papel, GLPI, Protheus e previsao de
+troca permanecem fora do escopo desta microetapa. As validacoes cobrem parser,
+autenticacao, fallback v1, contratos da API, thresholds, conflitos de alerta e
+build do frontend.
+
+Na execucao real sanitizada, 37 maquinas dos cinco modelos homologados ficaram
+no escopo: 35 estavam online e duas foram ignoradas por offline. A coleta
+retornou percentual para 33 maquinas: 13 por Brother manutencao autenticada, 12
+por Printer-MIB e oito por `web_status`. Duas Brother DCP-L1632W permaneceram
+desconhecidas. Entre as 17 DCP-L1632W online, 13 usaram a fonte preferencial,
+duas foram recuperadas pelo fallback v1 e quatro registraram falha de
+autenticacao sanitizada; nao houve erro de parser. Canon IR-C3326I, HP MFP-4303
+e Samsung K-4350 continuaram respondendo pela Printer-MIB, enquanto Brother
+DCP-L2540DW continuou pelo `web_status`.
+
+A migration `20260707_brother_item_toner` amplia somente as constraints de
+metodo das tabelas de toner para aceitar `brother_item_authenticated`. A API
+real de listagem, resumo e detalhe respondeu com sucesso, todos os toners
+projetados tinham `coletado_em` e a auditoria do payload nao encontrou cookie,
+CSRF, autorizacao, caminho tecnico ou HTML bruto.
+
+### Ajustes reais Brother e Canon
+
+O valor autenticado `0%` da Brother DCP-L1632W e uma leitura valida e gera
+alerta critico; valores negativos e ausencia de leitura continuam sendo
+desconhecidos. Para Canon IR-C3326I, o fallback autenticado reutiliza o cliente
+HTML seguro e aceita tanto a tabela renderizada quanto o objeto JavaScript
+`tonerVolInfo` da pagina de status. Nenhum HTML, cookie ou credencial e
+persistido.
+
+A regra `replace_drum` tambem reconhece a mensagem Canon de cartucho de cilindro
+no fim da vida util. Assim, percentuais saudaveis neutralizam apenas alertas de
+toner: um alerta real de cilindro permanece com sua severidade propria.
+
 ## Próximas etapas
 
 - ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
-- 3.5.3: coleta rica em 60 minutos;
-- 3.5.4: papel, toner e históricos;
+- validar a coleta percentual de toner em modelos adicionais;
+- 3.5.4: papel e históricos ampliados;
 - 3.5.5: dashboard.

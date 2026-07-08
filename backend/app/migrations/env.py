@@ -20,6 +20,10 @@ from backend.app.modules.printers.monitoring.html_credentials.models import (  #
 )
 from backend.app.modules.printers.monitoring.snmp.models import PrinterSnmpOid  # noqa: F401
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule  # noqa: F401
+from backend.app.modules.printers.monitoring.toner.models import (  # noqa: F401
+    HistoricoTonerImpressora,
+    StatusTonerImpressora,
+)
 from backend.app.modules.printers.status.models import (  # noqa: F401
     HistoricoStatusImpressora,
     LogImpressora,

@@ -15,6 +15,11 @@ from backend.app.modules.printers.monitoring.snmp.alert_collector import (
     severity_to_visual_classification,
 )
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
+from backend.app.modules.printers.monitoring.toner.models import StatusTonerImpressora
+from backend.app.modules.printers.monitoring.toner.alert_policy import (
+    reconcile_toner_alerts,
+)
+from backend.app.modules.printers.monitoring.toner.services import list_toners_for_machines
 from backend.app.modules.printers.status.models import (
     HistoricoStatusImpressora,
     StatusImpressora,
@@ -53,6 +58,13 @@ COLOR_TRANSLATIONS = {
     "cyan": "ciano",
     "magenta": "magenta",
     "yellow": "amarelo",
+}
+TONER_NAMES = {
+    "black": "Preto",
+    "cyan": "Ciano",
+    "magenta": "Magenta",
+    "yellow": "Amarelo",
+    "unknown": "Desconhecido",
 }
 ALERT_MESSAGE_TRANSLATIONS = (
     (
@@ -97,6 +109,15 @@ def _alert_sort_key(item: dict[str, object]) -> tuple[int, int, str, str]:
         rule.prioridade,
         str(item["mensagem"]).casefold(),
         rule.codigo.casefold(),
+    )
+
+
+def _projected_alert_sort_key(item: dict[str, object]) -> tuple[int, int, str, str]:
+    return (
+        -severity_weight(str(item.get("severidade"))),
+        int(item.get("prioridade") or 1000),
+        str(item.get("mensagem") or "").casefold(),
+        str(item.get("codigo") or "").casefold(),
     )
 
 
@@ -205,6 +226,32 @@ def _model_display(manufacturer: str | None, model: str | None) -> str | None:
     return model or manufacturer
 
 
+def _toner_aware_alert_projection(
+    alert_projection: dict[str, object] | None,
+    toner_rows: list[StatusTonerImpressora] | None,
+    *,
+    printer_model,
+) -> dict[str, object] | None:
+    current_alerts = list((alert_projection or {}).get("alertas") or [])
+    reconciled = reconcile_toner_alerts(
+        current_alerts,
+        toner_rows,
+        printer_model=printer_model,
+    )
+    if not reconciled:
+        return None
+    reconciled.sort(key=_projected_alert_sort_key)
+    primary = reconciled[0]
+    return {
+        "nivel_alerta": primary["nivel_alerta"],
+        "severidade": primary["severidade"],
+        "mensagem_alerta": primary["mensagem"],
+        "codigos_alerta": [alert["codigo"] for alert in reconciled],
+        "verificado_em": (alert_projection or {}).get("verificado_em"),
+        "alertas": reconciled,
+    }
+
+
 def _severity_from_alert_level(alert_level: str) -> str:
     return SEVERITY_BY_ALERT_LEVEL.get(alert_level, "unknown")
 
@@ -266,6 +313,21 @@ def _display_alert_projection(
     }
 
 
+def _toners_to_read(rows: list[StatusTonerImpressora] | None) -> list[dict[str, object]]:
+    return [
+        {
+            "cor": row.cor,
+            "nome": TONER_NAMES.get(row.cor, "Desconhecido"),
+            "percentual": row.percentual,
+            "descricao": row.descricao_coletada,
+            "origem_coleta": row.origem_coleta,
+            "metodo_coleta": row.metodo_coleta,
+            "coletado_em": row.coletado_em,
+        }
+        for row in (rows or [])
+    ]
+
+
 # ---------------------------------------------------------------------
 # 📌 STATUS INICIAL DA MÁQUINA
 # ---------------------------------------------------------------------
@@ -293,13 +355,19 @@ def _status_to_read(
     status: StatusImpressora,
     *,
     alert_projection: dict[str, object] | None = None,
+    toner_rows: list[StatusTonerImpressora] | None = None,
 ) -> PrinterStatusRead:
     machine = status.maquina
     manufacturer = machine.manufacturer
     model = machine.model
     model_display = _model_display(manufacturer, model)
     operational_status = "online" if status.status_operacional == "online" else "offline"
-    display_alert = _display_alert_projection(status, alert_projection)
+    toner_aware_projection = _toner_aware_alert_projection(
+        alert_projection,
+        toner_rows,
+        printer_model=machine.printer_model,
+    )
+    display_alert = _display_alert_projection(status, toner_aware_projection)
     alert_level = str(display_alert["nivel_alerta"])
     alert_message = str(display_alert["mensagem_alerta"])
     return PrinterStatusRead(
@@ -324,6 +392,7 @@ def _status_to_read(
         severidade=str(display_alert["severidade"]),
         alerta=alert_message,
         alertas=display_alert["alertas"],
+        toners=_toners_to_read(toner_rows),
         mensagem=alert_message,
         mensagem_alerta=alert_message,
         mensagem_operador=status.mensagem_operador,
@@ -357,10 +426,15 @@ def list_printer_statuses(db: Session) -> list[PrinterStatusRead]:
         db,
         [status.maquina_id for status in statuses],
     )
+    toner_projections = list_toners_for_machines(
+        db,
+        [status.maquina_id for status in statuses],
+    )
     return [
         _status_to_read(
             status,
             alert_projection=alert_projections.get(status.maquina_id),
+            toner_rows=toner_projections.get(status.maquina_id),
         )
         for status in statuses
     ]
@@ -377,39 +451,48 @@ def summarize_printer_statuses(db: Session) -> PrinterStatusSummary:
         db,
         [status.maquina_id for status in statuses],
     )
+    toner_projections = list_toners_for_machines(
+        db,
+        [status.maquina_id for status in statuses],
+    )
+    display_alerts = {
+        status.maquina_id: _display_alert_projection(
+            status,
+            _toner_aware_alert_projection(
+                alert_projections.get(status.maquina_id),
+                toner_projections.get(status.maquina_id),
+                printer_model=status.maquina.printer_model,
+            ),
+        )
+        for status in statuses
+    }
     return PrinterStatusSummary(
         total_impressoras=len(statuses),
         online=sum(status.status_operacional == "online" for status in statuses),
         offline=sum(status.status_operacional != "online" for status in statuses),
         com_alerta=sum(
-            str(
-                _display_alert_projection(
-                    status,
-                    alert_projections.get(status.maquina_id),
-                )["nivel_alerta"]
-            )
+            str(display_alerts[status.maquina_id]["nivel_alerta"])
             in {"amarelo", "vermelho"}
             for status in statuses
         ),
-        # Regra transitória até existir um domínio próprio para suprimentos.
+        # 📌 O card considera alertas textuais ou calculados pelo percentual.
         substituir_toner=sum(
             status.status_operacional == "online"
             and (
-                "replace_toner"
-                in (
-                    _display_alert_projection(
-                        status,
-                        alert_projections.get(status.maquina_id),
-                    ).get("codigos_alerta")
-                    or []
+                any(
+                    code
+                    in {
+                        "replace_toner",
+                        "toner_low",
+                        "toner_percentual_baixo",
+                        "toner_percentual_critico",
+                    }
+                    for code in (
+                        display_alerts[status.maquina_id].get("codigos_alerta") or []
+                    )
                 )
                 or "substituir toner"
-                in str(
-                    _display_alert_projection(
-                        status,
-                        alert_projections.get(status.maquina_id),
-                    )["mensagem_alerta"]
-                ).casefold()
+                in str(display_alerts[status.maquina_id]["mensagem_alerta"]).casefold()
             )
             for status in statuses
         ),
@@ -435,6 +518,7 @@ def read_printer_status(db: Session, machine_id: int) -> PrinterStatusRead:
     return _status_to_read(
         status,
         alert_projection=_alert_projection_for_rows(db, [machine_id]).get(machine_id),
+        toner_rows=list_toners_for_machines(db, [machine_id]).get(machine_id),
     )
 
 
@@ -459,6 +543,19 @@ def _alert_history_message(
     if history.codigo_evento == "estado_inicial_alerta":
         return f"Alerta detectado: {description}"
     return f"Alerta alterado: {description}"
+
+
+def _history_matches_new_classification(
+    history: HistoricoAlertaImpressora,
+    rule: PrinterAlertRule,
+) -> bool:
+    if history.codigo_evento != "classificacao_alterada":
+        return True
+    history_classification = severity_to_visual_classification(
+        _safe_severity(history.severidade),
+        recognized=rule.codigo not in {"unknown", "sem_retorno_alerta"},
+    )
+    return history_classification == history.classificacao_nova
 
 
 def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[PrinterLogRead]:
@@ -518,6 +615,7 @@ def list_printer_logs(db: Session, machine_id: int, *, limit: int = 10) -> list[
             origem="alerta",
         )
         for history, rule in alert_history
+        if _history_matches_new_classification(history, rule)
     )
     events.sort(key=lambda event: (event.data_hora, event.id), reverse=True)
     return events[:effective_limit]

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Loader2 } from "lucide-react";
+import { Activity, Droplet, Loader2 } from "lucide-react";
 
 import { PrinterModelImage } from "@/modules/printers/shared/PrinterModelImage";
 import { selectHighestSeverityAlerts } from "@/modules/printers/status/alertSelection";
@@ -7,8 +7,11 @@ import {
   fetchPrinterStatusDetail,
   fetchPrinterStatusLogs,
   type AlertLevel,
+  type PrinterOperationalAlert,
   type PrinterOperationalLog,
   type PrinterOperationalStatus,
+  type PrinterOperationalToner,
+  type StatusSeverity,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 import { Badge } from "@/shared/ui/badge";
@@ -53,6 +56,34 @@ const alertPillStyles: Record<AlertLevel, string> = {
   verde: "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
   amarelo: "border-amber-400/40 bg-amber-500/12 text-amber-700 dark:text-amber-300",
   vermelho: "border-red-500/30 bg-red-500/12 text-red-700 dark:text-red-300",
+};
+
+const tonerDotStyles: Record<PrinterOperationalToner["cor"], string> = {
+  black: "bg-slate-950 ring-1 ring-slate-500/40",
+  cyan: "bg-cyan-500",
+  magenta: "bg-fuchsia-500",
+  yellow: "bg-yellow-400",
+  unknown: "bg-muted-foreground",
+};
+
+const tonerBarStyles: Record<PrinterOperationalToner["cor"], string> = {
+  black: "bg-slate-950",
+  cyan: "bg-cyan-500",
+  magenta: "bg-fuchsia-500",
+  yellow: "bg-yellow-400",
+  unknown: "bg-muted-foreground/60",
+};
+
+const tonerSeverityBarStyles: Partial<Record<StatusSeverity, string>> = {
+  high: "bg-red-500",
+  medium: "bg-amber-400",
+};
+
+const tonerCollectionMethodLabels: Record<PrinterOperationalToner["metodo_coleta"], string> = {
+  printer_mib_walk: "Printer-MIB",
+  snmp_oid_fallback: "OIDs cadastrados",
+  web_status: "web_status",
+  brother_item_authenticated: "Brother manutenção",
 };
 
 const ALERT_ROTATION_INTERVAL_MS = 4_000;
@@ -110,6 +141,9 @@ export function StatusDetailsDialog({
   }, [open, status]);
 
   const current = details ?? status;
+  const toners = current?.toners ?? [];
+  const tonerCollectionLabel = formatTonerCollectionMethods(toners);
+  const tonerUpdatedLabel = formatTonerUpdatedAgo(toners);
   const displayAlerts = current ? selectHighestSeverityAlerts(current) : [];
   const visibleAlert = displayAlerts.length
     ? displayAlerts[alertRotationIndex % displayAlerts.length]
@@ -258,6 +292,49 @@ export function StatusDetailsDialog({
               <Separator />
 
               <section>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Droplet className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Nível de toner
+                    </h3>
+                  </div>
+                  {tonerCollectionLabel && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Coleta: {tonerCollectionLabel}
+                    </p>
+                  )}
+                </div>
+                {toners.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Nenhuma informação de toner coletada.
+                  </p>
+                ) : (
+                  <div
+                    className={cn(
+                      "mt-3 grid gap-x-8 gap-y-4",
+                      toners.length === 1 ? "max-w-sm" : "sm:grid-cols-2",
+                    )}
+                  >
+                    {toners.map((toner) => (
+                      <TonerLevel
+                        key={`${toner.cor}-${toner.descricao ?? "sem-descricao"}`}
+                        toner={toner}
+                        severity={findTonerAlertSeverity(toner, current.alertas)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {tonerUpdatedLabel && (
+                  <p className="mt-3 text-right text-xs text-muted-foreground">
+                    {tonerUpdatedLabel}
+                  </p>
+                )}
+              </section>
+
+              <Separator />
+
+              <section>
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary" />
                   <h3 className="text-sm font-semibold">
@@ -295,6 +372,97 @@ export function StatusDetailsDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function TonerLevel({
+  toner,
+  severity,
+}: {
+  toner: PrinterOperationalToner;
+  severity: StatusSeverity | null;
+}) {
+  const percentage = toner.percentual;
+  const normalizedPercentage = percentage === null
+    ? 0
+    : Math.min(100, Math.max(0, percentage));
+  const percentageLabel = percentage === null ? "Desconhecido" : `${percentage}%`;
+
+  return (
+    <div className="min-w-0" title={toner.descricao || undefined}>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="flex min-w-0 items-center gap-2 font-medium">
+          <span
+            className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tonerDotStyles[toner.cor])}
+            aria-hidden="true"
+          />
+          <span className="truncate">{toner.nome}</span>
+        </span>
+        <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
+          {percentageLabel}
+        </span>
+      </div>
+      <div
+        className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+        role="progressbar"
+        aria-label={`Nível do toner ${toner.nome}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percentage ?? undefined}
+        aria-valuetext={percentageLabel}
+      >
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-300",
+            tonerSeverityBarStyles[severity ?? "unknown"] ?? tonerBarStyles[toner.cor],
+          )}
+          style={{ width: `${normalizedPercentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function findTonerAlertSeverity(
+  toner: PrinterOperationalToner,
+  alerts: PrinterOperationalAlert[],
+): StatusSeverity | null {
+  const tonerLabel = normalizeAlertText(`toner ${toner.nome}`);
+  const alert = alerts.find(
+    (candidate) =>
+      (candidate.codigo === "toner_percentual_critico" ||
+        candidate.codigo === "toner_percentual_baixo") &&
+      normalizeAlertText(candidate.mensagem).startsWith(tonerLabel),
+  );
+  return alert?.severidade ?? null;
+}
+
+function normalizeAlertText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+}
+
+function formatTonerCollectionMethods(toners: PrinterOperationalToner[]) {
+  const labels = Array.from(
+    new Set(toners.map((toner) => tonerCollectionMethodLabels[toner.metodo_coleta])),
+  );
+  return labels.join(" / ");
+}
+
+function formatTonerUpdatedAgo(toners: PrinterOperationalToner[]) {
+  const timestamps = toners
+    .map((toner) => toner.coletado_em)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (timestamps.length === 0) return null;
+
+  const latestTimestamp = Math.max(...timestamps);
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - latestTimestamp) / 60_000));
+  if (elapsedMinutes === 0) return "Atualizado agora";
+  return `Atualizado há ${elapsedMinutes} min`;
 }
 
 function Detail({ label, value }: { label: string; value: string | null | undefined }) {
