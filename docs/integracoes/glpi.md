@@ -139,9 +139,50 @@ fica critica enquanto ja existe chamado ativo da mesma impressora.
 - timeout e verificacao TLS sao configuraveis;
 - nenhuma chamada externa ocorre enquanto `GLPI_ENABLED=false`.
 
+## Validacao real controlada
+
+Em 2026-07-09 foi executado um teste real e controlado em ambiente
+local/homologacao, com credenciais fora do Git e sem habilitar a integracao por
+padrao.
+
+Chamados criados:
+
+- toner: ticket GLPI `15252`, registro local `glpi_chamados.id=1`;
+- cilindro: ticket GLPI `15253`, registro local `glpi_chamados.id=2`.
+
+Validacoes confirmadas:
+
+- titulo e corpo seguiram o contrato atual;
+- entidade `1`, categoria `77`, localizacao `1`, origem `1`, impacto `3`,
+  prioridade `3` e urgencia `3` foram aceitos pelo GLPI;
+- requerente `1781`, usuario atribuido `1257` e grupo atribuido `2` foram
+  aplicados;
+- `payload_enviado`, `resposta_glpi`, `glpi_ticket_id` e status local foram
+  persistidos em `glpi_chamados`;
+- repeticoes controladas respeitaram o hash de deduplicacao e nao abriram novos
+  tickets.
+
+Observacao operacional: o payload enviou `status=1`, mas o GLPI retornou
+`status=2` apos a atribuicao automatica de usuario/grupo. A decisao desta etapa
+e aceitar `status=2` como comportamento esperado quando a atribuicao ocorre no
+momento da abertura.
+
+Nenhum fechamento automatico foi executado. Antes de promover esta etapa para
+`main`, deve ser feita uma homologacao completa em ciclo real de coleta para
+confirmar ausencia de duplicidade em alertas recorrentes.
+
+## Fluxo Git da etapa
+
+Branch de trabalho: `feature/integracao-glpi-chamados-impressoras`.
+
+Fluxo aprovado: validar a branch, integrar em `develop` e manter `main`
+bloqueada ate a homologacao completa do ciclo real de coleta. O motivo do
+bloqueio e validar o risco operacional de chamados duplicados quando alertas
+persistem por varios ciclos.
+
 ## Proximos passos
 
-1. validar os IDs de entidade, categoria e localizacao no ambiente GLPI;
-2. executar abertura controlada em homologacao com credenciais fora do Git;
+1. executar homologacao completa em ciclo real de coleta;
+2. confirmar que alertas recorrentes nao abrem tickets duplicados;
 3. definir normalizacao do evento e encerramento futuro;
 4. somente depois avaliar fechamento, estoque ou Protheus.

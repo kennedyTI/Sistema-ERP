@@ -3646,9 +3646,33 @@ solicitacao devem ser confirmadas no GLPI. Fechamento, solucao, estoque,
 Protheus, Cartuchos GLPI, dashboard, Papel e novos gatilhos continuam fora do
 escopo. A configuracao completa esta em `docs/integracoes/glpi.md`.
 
+### Validacao real controlada
+
+Em 2026-07-09, a branch
+`feature/integracao-glpi-chamados-impressoras` executou teste real e controlado
+de abertura GLPI em ambiente local/homologacao, usando credenciais fora do Git.
+
+Resultados:
+
+- toner: ticket GLPI `15252`, registro local `glpi_chamados.id=1`;
+- cilindro: ticket GLPI `15253`, registro local `glpi_chamados.id=2`;
+- requerente `1781`, usuario atribuido `1257` e grupo atribuido `2`
+  confirmados;
+- repeticoes controladas respeitaram a deduplicacao e nao abriram tickets
+  adicionais.
+
+O GLPI retornou `status=2` apos a atribuicao automatica, mesmo com payload de
+abertura em `status=1`. Para esta etapa, esse retorno e considerado esperado
+quando usuario/grupo sao atribuidos no momento da abertura.
+
+Antes de promover para `main`, a integracao deve passar por homologacao
+completa em ciclo real de coleta, validando principalmente se alertas
+recorrentes nao criam chamados duplicados.
+
 ## Próximas etapas
 
-- homologar uma abertura GLPI controlada com IDs e tokens fora do Git;
+- homologar o ciclo real de coleta com GLPI habilitado e credenciais fora do
+  Git;
 - ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - validar a coleta percentual de toner em modelos adicionais;
