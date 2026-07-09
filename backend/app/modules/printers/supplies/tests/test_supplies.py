@@ -10,7 +10,9 @@ from backend.app.modules.integracoes.glpi.schemas.abertura_chamado_schema import
 from backend.app.modules.printers.integrations.glpi_service import process_confirmed_printer_supply_alerts
 from backend.app.modules.printers.machines.models import PrinterMachine, PrinterModel
 from backend.app.modules.printers.monitoring.alerts.models import AlertaImpressora
+from backend.app.modules.printers.monitoring.snmp.models import PrinterSnmpOid
 from backend.app.modules.printers.monitoring.state.models import PrinterAlertRule
+from backend.app.modules.printers.monitoring.toner.models import StatusTonerImpressora
 from backend.app.modules.printers.status.models import (  # noqa: F401
     HistoricoStatusImpressora,
     LogImpressora,
@@ -34,8 +36,10 @@ class PrinterSuppliesTest(TestCase):
         )
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
+        PrinterSnmpOid.__table__.create(engine)
         PrinterAlertRule.__table__.create(engine)
         AlertaImpressora.__table__.create(engine)
+        StatusTonerImpressora.__table__.create(engine)
         PrinterSupply.__table__.create(engine)
         self.db = sessionmaker(bind=engine)()
         self.models = {}
@@ -93,7 +97,7 @@ class PrinterSuppliesTest(TestCase):
         self.assertGreater(result.updated, 0)
         self.assertIsNone(samsung_toner.codigo_protheus)
 
-    def _create_alert(self, *, manufacturer, model_name, code, message):
+    def _create_machine(self, *, manufacturer, model_name):
         model = self.models[(manufacturer.upper(), model_name.upper())]
         machine = PrinterMachine(
             name=f"IMP-{model.id}",
@@ -103,6 +107,28 @@ class PrinterSuppliesTest(TestCase):
             cost_center="CC-100",
             is_active=True,
         )
+        self.db.add(machine)
+        self.db.flush()
+        self.db.commit()
+        return machine
+
+    def _create_toner(self, machine, *, color="black", percent=9, index="1.1"):
+        self.db.add(
+            StatusTonerImpressora(
+                maquina_id=machine.id,
+                cor=color,
+                indice_suprimento=index,
+                percentual=percent,
+                origem_coleta="snmp",
+                metodo_coleta="printer_mib_walk",
+                sucesso=True,
+                coletado_em=now_sao_paulo(),
+            )
+        )
+        self.db.commit()
+
+    def _create_alert(self, *, manufacturer, model_name, code, message):
+        machine = self._create_machine(manufacturer=manufacturer, model_name=model_name)
         rule = PrinterAlertRule(
             codigo=code,
             descricao=code,
@@ -112,7 +138,7 @@ class PrinterSuppliesTest(TestCase):
             prioridade=1,
             ativo=True,
         )
-        self.db.add_all([machine, rule])
+        self.db.add(rule)
         self.db.flush()
         alert = AlertaImpressora(
             maquina_id=machine.id,
@@ -136,17 +162,21 @@ class PrinterSuppliesTest(TestCase):
             base_url="https://glpi.example.com",
             app_token="placeholder",
             user_token="placeholder",
+            entity_id=1,
             printer_supply_category_id=77,
             location_cariacica_id=9,
+            request_type_id=1,
+            requester_user_id=1781,
+            assign_user_id=1257,
+            assign_group_id=2,
         )
 
-    def test_monta_chamado_de_toner_com_codigo_e_hash_exato(self):
-        machine = self._create_alert(
+    def test_monta_chamado_de_toner_critico_monocromatico(self):
+        machine = self._create_machine(
             manufacturer="Brother",
             model_name="DCP-L1632W",
-            code="replace_toner",
-            message="Substituir toner",
         )
+        self._create_toner(machine, color="black", percent=9)
         captured = []
 
         def opener(db, request, settings):
@@ -167,18 +197,59 @@ class PrinterSuppliesTest(TestCase):
         self.assertEqual(results[0].status_integracao, "aberto")
         self.assertEqual(
             captured[0].hash_deduplicacao,
-            f"impressoras:maquina:{machine.id}:substituir_toner:preto",
+            f"impressoras:maquina:{machine.id}:toner_abaixo_10",
         )
-        self.assertIn("Codigo Protheus: 319942", captured[0].descricao)
-        self.assertIn("Ramal: 1010", captured[0].descricao)
+        self.assertEqual(captured[0].titulo, "Toner abaixo de 10% - Tecnologia")
+        self.assertIn("Código do produto: PRETO 319942", captured[0].descricao)
+        self.assertIn(
+            "O(s) toner(s) preto da impressora", captured[0].descricao
+        )
+        self.assertIn("está(ão) abaixo de 10%", captured[0].descricao)
+        self.assertEqual(captured[0].assign_user_id, 1257)
+        self.assertEqual(captured[0].assign_group_id, 2)
+
+    def test_toner_colorido_multiplas_cores_gera_um_chamado(self):
+        machine = self._create_machine(
+            manufacturer="Canon",
+            model_name="IR-C3326I",
+        )
+        self._create_toner(machine, color="black", percent=8, index="1.1")
+        self._create_toner(machine, color="cyan", percent=7, index="1.2")
+        self._create_toner(machine, color="yellow", percent=9, index="1.3")
+        captured = []
+
+        def opener(db, request, settings):
+            captured.append(request)
+            return ResultadoAberturaGlpi(
+                registro_id=1,
+                status_integracao="aberto",
+                glpi_ticket_id=101,
+            )
+
+        results = process_confirmed_printer_supply_alerts(
+            self.db,
+            machine_id=machine.id,
+            settings=self._settings(),
+            opener=opener,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(captured), 1)
+        self.assertIn("PRETO 319899", captured[0].descricao)
+        self.assertIn("CIANO 319901", captured[0].descricao)
+        self.assertIn("AMARELO 319902", captured[0].descricao)
+        self.assertIn("preto, ciano e amarelo", captured[0].descricao)
+        self.assertEqual(
+            captured[0].hash_deduplicacao,
+            f"impressoras:maquina:{machine.id}:toner_abaixo_10",
+        )
 
     def test_bloqueia_toner_sem_codigo_protheus(self):
-        machine = self._create_alert(
+        machine = self._create_machine(
             manufacturer="Samsung",
             model_name="K-4350",
-            code="replace_toner",
-            message="Substituir toner preto",
         )
+        self._create_toner(machine, color="black", percent=8)
         blocked = []
 
         def blocker(db, request, erro, settings):
@@ -200,13 +271,12 @@ class PrinterSuppliesTest(TestCase):
         self.assertIn("Codigo Protheus nao cadastrado", blocked[0])
         self.assertIn("SAMSUNG K-4350", blocked[0].upper())
 
-    def test_bloqueia_cor_nao_identificada_em_impressora_colorida(self):
-        machine = self._create_alert(
+    def test_bloqueia_cor_critica_nao_identificada(self):
+        machine = self._create_machine(
             manufacturer="Canon",
             model_name="IR-C3326I",
-            code="replace_toner",
-            message="Substituir toner",
         )
+        self._create_toner(machine, color="unknown", percent=8)
         opened = []
         blocked = []
 
@@ -230,7 +300,7 @@ class PrinterSuppliesTest(TestCase):
         )
 
         self.assertEqual(opened, [])
-        self.assertIn("Cor do toner nao identificada", blocked[0])
+        self.assertIn("Cor do toner critico nao identificada", blocked[0])
 
     def test_monta_chamado_de_cilindro(self):
         machine = self._create_alert(
@@ -256,7 +326,10 @@ class PrinterSuppliesTest(TestCase):
             captured[0].hash_deduplicacao,
             f"impressoras:maquina:{machine.id}:substituir_cilindro",
         )
-        self.assertIn("Codigo Protheus: 320516", captured[0].descricao)
+        self.assertEqual(captured[0].titulo, "Substituir cilindro - Tecnologia")
+        self.assertIn("Código do produto: CILINDRO 320516", captured[0].descricao)
+        self.assertIn("precisa ser substituído", captured[0].descricao)
+        self.assertNotIn("abaixo de 10%", captured[0].descricao)
 
     def test_nao_abre_chamado_para_toner_baixo(self):
         machine = self._create_alert(

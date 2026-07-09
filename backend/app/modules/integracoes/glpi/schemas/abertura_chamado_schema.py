@@ -16,6 +16,10 @@ class AbrirChamadoGlpiRequest(BaseModel):
     descricao: str = Field(min_length=1)
     categoria_id: int | None = None
     localizacao_id: int | None = None
+    urgency: int | None = None
+    requester_user_id: int | None = None
+    assign_user_id: int | None = None
+    assign_group_id: int | None = None
     hash_deduplicacao: str = Field(min_length=1, max_length=255)
     metadados: dict[str, Any] = Field(default_factory=dict)
 

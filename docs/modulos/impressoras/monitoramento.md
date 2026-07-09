@@ -3576,14 +3576,43 @@ modulo GLPI.
 
 ### Gatilhos e nao duplicidade
 
-Somente alertas atuais ja confirmados com codigo `replace_toner` ou
-`replace_drum` podem iniciar o fluxo. Toner baixo, percentual baixo, papel,
-offline, tampa, erro momentaneo e qualquer outro alerta nao abrem chamado.
+Toner abre chamado somente pelo percentual atual abaixo de 10. Para impressora
+monocromatica, o evento considera o toner preto. Para impressora colorida, um
+unico chamado contem todas as cores criticas e todos os codigos Protheus
+correspondentes. Nao ha um chamado por cor.
 
-Toner usa o hash
-`impressoras:maquina:{id}:substituir_toner:{cor}`; cilindro usa
+Cilindro abre chamado somente por alerta atual confirmado como `replace_drum`
+ou alias equivalente normalizado pela Rules Engine. Percentual de cilindro nao
+e gatilho nesta etapa.
+
+Toner baixo sem percentual critico, papel, offline, tampa, erro momentaneo e
+qualquer outro alerta nao abrem chamado.
+
+Toner usa o hash principal
+`impressoras:maquina:{id}:toner_abaixo_10`; as cores e codigos ficam em
+metadados/payload. Isso evita duplicar chamado se outra cor ficar critica
+enquanto ja existe chamado ativo da mesma impressora. Cilindro usa
 `impressoras:maquina:{id}:substituir_cilindro`. Registro local pendente ou
 aberto e sem encerramento impede uma segunda chamada para o mesmo evento.
+
+### Titulo, corpo e atribuicao
+
+Titulos:
+
+```text
+Toner abaixo de 10% - {local}
+Substituir cilindro - {local}
+```
+
+O corpo do chamado contem local, nome da maquina, modelo, IP, centro de custo,
+codigo do produto e a mensagem operacional aprovada. Para toner, a mensagem usa
+`O(s) toner(s) ... esta(ao) abaixo de 10%`. Para cilindro, a mensagem informa
+apenas que o cilindro precisa ser substituido, sem percentual.
+
+O payload GLPI recebe, por configuracao, urgencia, requerente, usuario
+atribuido e grupo atribuido. Esses IDs ficam em variaveis de ambiente
+(`GLPI_DEFAULT_URGENCY`, `GLPI_REQUESTER_USER_ID`, `GLPI_ASSIGN_USER_ID` e
+`GLPI_ASSIGN_GROUP_ID`) e nao sao hardcoded na regra de negocio.
 
 ### Tabelas e codigo Protheus
 
@@ -3596,8 +3625,9 @@ CILINDRO, cor e codigo Protheus. A impressora fisica continua ligada somente ao
 modelo. A combinacao modelo, tipo e cor e unica.
 
 Em modelo monocromatico, o toner unico resolve como PRETO. Em modelo colorido,
-a cor deve estar identificada com seguranca na mensagem. Cor ambigua ou codigo
-Protheus ausente gera `bloqueado_dados_incompletos` e nenhuma chamada externa.
+as cores criticas sao lidas dos percentuais atuais de toner. Cor desconhecida,
+suprimento ausente ou codigo Protheus ausente gera
+`bloqueado_dados_incompletos` e nenhuma chamada externa.
 
 ### Modal e API
 

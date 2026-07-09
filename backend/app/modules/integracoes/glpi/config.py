@@ -39,7 +39,10 @@ class GlpiSettings:
     default_status: int = 1
     default_impact: int = 3
     default_priority: int = 3
+    default_urgency: int = 3
     requester_user_id: int | None = None
+    assign_user_id: int | None = None
+    assign_group_id: int | None = None
     timeout_seconds: float = 10.0
     verify_ssl: bool = True
 
@@ -73,7 +76,10 @@ def get_glpi_settings() -> GlpiSettings:
         default_status=_optional_int("GLPI_DEFAULT_STATUS") or 1,
         default_impact=_optional_int("GLPI_DEFAULT_IMPACT") or 3,
         default_priority=_optional_int("GLPI_DEFAULT_PRIORITY") or 3,
+        default_urgency=_optional_int("GLPI_DEFAULT_URGENCY") or 3,
         requester_user_id=_optional_int("GLPI_REQUESTER_USER_ID"),
+        assign_user_id=_optional_int("GLPI_ASSIGN_USER_ID"),
+        assign_group_id=_optional_int("GLPI_ASSIGN_GROUP_ID"),
         timeout_seconds=float(os.getenv("GLPI_TIMEOUT_SECONDS", "10")),
         verify_ssl=_bool("GLPI_VERIFY_SSL", True),
     )

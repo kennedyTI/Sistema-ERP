@@ -49,10 +49,18 @@ def _ticket_input(
         "requesttypes_id": settings.request_type_id,
         "impact": settings.default_impact,
         "priority": settings.default_priority,
+        "urgency": request.urgency or settings.default_urgency,
         "locations_id": location_id,
     }
-    if settings.requester_user_id is not None:
-        payload["_users_id_requester"] = settings.requester_user_id
+    requester_user_id = request.requester_user_id or settings.requester_user_id
+    assign_user_id = request.assign_user_id or settings.assign_user_id
+    assign_group_id = request.assign_group_id or settings.assign_group_id
+    if requester_user_id is not None:
+        payload["_users_id_requester"] = requester_user_id
+    if assign_user_id is not None:
+        payload["_users_id_assign"] = assign_user_id
+    if assign_group_id is not None:
+        payload["_groups_id_assign"] = assign_group_id
     return {key: value for key, value in payload.items() if value is not None}
 
 
@@ -67,6 +75,10 @@ def _missing_routing_fields(
         "GLPI_LOCATION_CARIACICA_ID": request.localizacao_id
         or settings.location_cariacica_id,
         "GLPI_REQUEST_TYPE_ID": settings.request_type_id,
+        "GLPI_REQUESTER_USER_ID": request.requester_user_id
+        or settings.requester_user_id,
+        "GLPI_ASSIGN_USER_ID": request.assign_user_id or settings.assign_user_id,
+        "GLPI_ASSIGN_GROUP_ID": request.assign_group_id or settings.assign_group_id,
     }
     return [name for name, value in fields.items() if value is None]
 

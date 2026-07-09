@@ -44,18 +44,22 @@ class GlpiOpeningServiceTest(TestCase):
             printer_supply_category_id=77,
             location_cariacica_id=9,
             request_type_id=1,
+            default_urgency=3,
+            requester_user_id=1781,
+            assign_user_id=1257,
+            assign_group_id=2,
         )
 
     def tearDown(self):
         self.db.close()
 
-    def request(self, deduplication_hash="impressoras:maquina:1:substituir_toner:preto"):
+    def request(self, deduplication_hash="impressoras:maquina:1:toner_abaixo_10"):
         return AbrirChamadoGlpiRequest(
             origem_modulo="impressoras",
             origem_entidade="maquina",
             origem_entidade_id="1",
-            tipo_evento="substituir_toner",
-            titulo="[Impressora] Substituir toner - IMP-001 - TI",
+            tipo_evento="toner_abaixo_10",
+            titulo="Toner abaixo de 10% - TI",
             descricao="Descricao segura",
             hash_deduplicacao=deduplication_hash,
             metadados={"codigo_protheus": "319942"},
@@ -80,6 +84,10 @@ class GlpiOpeningServiceTest(TestCase):
         self.assertIsNone(row.encerrado_em)
         self.assertEqual(row.payload_enviado["input"]["itilcategories_id"], 77)
         self.assertEqual(row.payload_enviado["input"]["locations_id"], 9)
+        self.assertEqual(row.payload_enviado["input"]["urgency"], 3)
+        self.assertEqual(row.payload_enviado["input"]["_users_id_requester"], 1781)
+        self.assertEqual(row.payload_enviado["input"]["_users_id_assign"], 1257)
+        self.assertEqual(row.payload_enviado["input"]["_groups_id_assign"], 2)
 
     def test_nao_abre_chamado_duplicado(self):
         client = SuccessfulClient()
@@ -126,6 +134,9 @@ class GlpiOpeningServiceTest(TestCase):
             printer_supply_category_id=77,
             location_cariacica_id=None,
             request_type_id=1,
+            requester_user_id=1781,
+            assign_user_id=1257,
+            assign_group_id=2,
         )
         client = SuccessfulClient()
 
