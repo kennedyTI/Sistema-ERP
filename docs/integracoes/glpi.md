@@ -67,7 +67,7 @@ habilitada. Se algum estiver ausente, o registro fica como
 O titulo enviado ao GLPI segue o formato:
 
 ```text
-Toner abaixo de 10% - {local}
+Toner critico ate 10% - {local}
 Substituir cilindro - {local}
 ```
 
@@ -83,7 +83,7 @@ IP: {ip}
 Centro de custo: {centro_custo}
 Codigo do produto: {cor codigo | cor codigo}
 
-O(s) toner(s) {cores} da impressora {nome_maquina} esta(ao) abaixo de 10%.
+O(s) toner(s) {cores} da impressora {nome_maquina} esta(ao) em nivel critico, ate 10%.
 Chamado aberto para acompanhamento tecnico!
 ```
 
@@ -96,9 +96,9 @@ Chamado aberto para acompanhamento tecnico!
 
 ### Regras de abertura
 
-- Toner abre chamado somente quando o percentual atual esta abaixo de 10.
-- Impressora monocromatica abre chamado para preto abaixo de 10.
-- Impressora colorida abre um unico chamado com todas as cores abaixo de 10 e
+- Toner abre chamado somente quando o percentual atual esta em ate 10.
+- Impressora monocromatica abre chamado para preto em ate 10.
+- Impressora colorida abre um unico chamado com todas as cores em ate 10 e
   todos os codigos Protheus correspondentes.
 - Toner colorido sem cor segura ou sem codigo Protheus nao abre chamado e gera
   bloqueio local claro.

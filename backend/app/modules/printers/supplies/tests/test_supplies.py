@@ -199,14 +199,42 @@ class PrinterSuppliesTest(TestCase):
             captured[0].hash_deduplicacao,
             f"impressoras:maquina:{machine.id}:toner_abaixo_10",
         )
-        self.assertEqual(captured[0].titulo, "Toner abaixo de 10% - Tecnologia")
+        self.assertEqual(captured[0].titulo, "Toner crítico até 10% - Tecnologia")
         self.assertIn("Código do produto: PRETO 319942", captured[0].descricao)
         self.assertIn(
             "O(s) toner(s) preto da impressora", captured[0].descricao
         )
-        self.assertIn("está(ão) abaixo de 10%", captured[0].descricao)
+        self.assertIn("está(ão) em nível crítico, até 10%", captured[0].descricao)
         self.assertEqual(captured[0].assign_user_id, 1257)
         self.assertEqual(captured[0].assign_group_id, 2)
+
+    def test_monta_chamado_para_toner_exatamente_no_limite_critico(self):
+        machine = self._create_machine(
+            manufacturer="HP",
+            model_name="MFP-4303",
+        )
+        self._create_toner(machine, color="black", percent=10)
+        captured = []
+
+        def opener(db, request, settings):
+            captured.append(request)
+            return ResultadoAberturaGlpi(
+                registro_id=1,
+                status_integracao="aberto",
+                glpi_ticket_id=100,
+            )
+
+        results = process_confirmed_printer_supply_alerts(
+            self.db,
+            machine_id=machine.id,
+            settings=self._settings(),
+            opener=opener,
+        )
+
+        self.assertEqual(results[0].status_integracao, "aberto")
+        self.assertEqual(captured[0].titulo, "Toner crítico até 10% - Tecnologia")
+        self.assertIn("PRETO 319893", captured[0].descricao)
+        self.assertEqual(captured[0].metadados["percentuais"], [10])
 
     def test_toner_colorido_multiplas_cores_gera_um_chamado(self):
         machine = self._create_machine(

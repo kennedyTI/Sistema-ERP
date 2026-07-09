@@ -3576,7 +3576,7 @@ modulo GLPI.
 
 ### Gatilhos e nao duplicidade
 
-Toner abre chamado somente pelo percentual atual abaixo de 10. Para impressora
+Toner abre chamado somente pelo percentual atual em ate 10. Para impressora
 monocromatica, o evento considera o toner preto. Para impressora colorida, um
 unico chamado contem todas as cores criticas e todos os codigos Protheus
 correspondentes. Nao ha um chamado por cor.
@@ -3600,13 +3600,13 @@ aberto e sem encerramento impede uma segunda chamada para o mesmo evento.
 Titulos:
 
 ```text
-Toner abaixo de 10% - {local}
+Toner critico ate 10% - {local}
 Substituir cilindro - {local}
 ```
 
 O corpo do chamado contem local, nome da maquina, modelo, IP, centro de custo,
 codigo do produto e a mensagem operacional aprovada. Para toner, a mensagem usa
-`O(s) toner(s) ... esta(ao) abaixo de 10%`. Para cilindro, a mensagem informa
+`O(s) toner(s) ... esta(ao) em nivel critico, ate 10%`. Para cilindro, a mensagem informa
 apenas que o cilindro precisa ser substituido, sem percentual.
 
 O payload GLPI recebe, por configuracao, urgencia, requerente, usuario

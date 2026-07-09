@@ -119,7 +119,7 @@ def _toner_description(machine: PrinterMachine, items: list[SupplyItem]) -> str:
     body = _base_body(machine, _product_codes(items))
     body.append(
         f"O(s) toner(s) {_join_readable(colors)} da impressora {machine.name} "
-        "está(ão) abaixo de 10%. Chamado aberto para acompanhamento técnico!"
+        "está(ão) em nível crítico, até 10%. Chamado aberto para acompanhamento técnico!"
     )
     return "\n".join(body)
 
@@ -251,7 +251,7 @@ def _request_for_toner(
     request = _base_request(
         machine,
         event_type=TONER_EVENT_TYPE,
-        title=f"Toner abaixo de 10% - {_location(machine)}",
+        title=f"Toner crítico até 10% - {_location(machine)}",
         description=_toner_description(machine, items),
         deduplication_hash=_toner_deduplication_hash(machine.id),
         metadata={
@@ -317,7 +317,7 @@ def _critical_toner_rows(db: Session, machine_id: int) -> list[StatusTonerImpres
         .filter(
             StatusTonerImpressora.maquina_id == machine_id,
             StatusTonerImpressora.percentual.is_not(None),
-            StatusTonerImpressora.percentual < TONER_CRITICAL_THRESHOLD,
+            StatusTonerImpressora.percentual <= TONER_CRITICAL_THRESHOLD,
         )
         .order_by(StatusTonerImpressora.cor.asc(), StatusTonerImpressora.id.asc())
         .all()
