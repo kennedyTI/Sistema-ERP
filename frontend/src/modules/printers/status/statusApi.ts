@@ -26,6 +26,14 @@ export interface PrinterOperationalToner {
     | "web_status"
     | "brother_item_authenticated";
   coletado_em: string | null;
+  codigo_protheus: string | null;
+}
+
+export interface PrinterCompatibleSupply {
+  id: number;
+  suprimento: "TONER" | "CILINDRO";
+  cor: "PRETO" | "CIANO" | "MAGENTA" | "AMARELO" | null;
+  codigo_protheus: string | null;
 }
 
 export interface PrinterOperationalStatus {
@@ -51,6 +59,8 @@ export interface PrinterOperationalStatus {
   alerta: string | null;
   alertas: PrinterOperationalAlert[];
   toners: PrinterOperationalToner[];
+  suprimentos_toner: PrinterCompatibleSupply[];
+  cilindro: PrinterCompatibleSupply | null;
   mensagem: string | null;
   mensagem_alerta: string | null;
   mensagem_operador: string;

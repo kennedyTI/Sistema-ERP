@@ -3566,8 +3566,113 @@ A regra `replace_drum` tambem reconhece a mensagem Canon de cartucho de cilindro
 no fim da vida util. Assim, percentuais saudaveis neutralizam apenas alertas de
 toner: um alerta real de cilindro permanece com sua severidade propria.
 
+## Integracao GLPI - base inicial de abertura de chamados
+
+Esta etapa adiciona a integracao generica em
+`backend/app/modules/integracoes/glpi` e mantem no modulo Impressoras somente a
+responsabilidade de interpretar o evento, localizar o suprimento e montar o
+conteudo do chamado. Detalhes HTTP, sessao, tokens e payload REST pertencem ao
+modulo GLPI.
+
+### Gatilhos e nao duplicidade
+
+Toner abre chamado somente pelo percentual atual abaixo de 10. Para impressora
+monocromatica, o evento considera o toner preto. Para impressora colorida, um
+unico chamado contem todas as cores criticas e todos os codigos Protheus
+correspondentes. Nao ha um chamado por cor.
+
+Cilindro abre chamado somente por alerta atual confirmado como `replace_drum`
+ou alias equivalente normalizado pela Rules Engine. Percentual de cilindro nao
+e gatilho nesta etapa.
+
+Toner baixo sem percentual critico, papel, offline, tampa, erro momentaneo e
+qualquer outro alerta nao abrem chamado.
+
+Toner usa o hash principal
+`impressoras:maquina:{id}:toner_abaixo_10`; as cores e codigos ficam em
+metadados/payload. Isso evita duplicar chamado se outra cor ficar critica
+enquanto ja existe chamado ativo da mesma impressora. Cilindro usa
+`impressoras:maquina:{id}:substituir_cilindro`. Registro local pendente ou
+aberto e sem encerramento impede uma segunda chamada para o mesmo evento.
+
+### Titulo, corpo e atribuicao
+
+Titulos:
+
+```text
+Toner abaixo de 10% - {local}
+Substituir cilindro - {local}
+```
+
+O corpo do chamado contem local, nome da maquina, modelo, IP, centro de custo,
+codigo do produto e a mensagem operacional aprovada. Para toner, a mensagem usa
+`O(s) toner(s) ... esta(ao) abaixo de 10%`. Para cilindro, a mensagem informa
+apenas que o cilindro precisa ser substituido, sem percentual.
+
+O payload GLPI recebe, por configuracao, urgencia, requerente, usuario
+atribuido e grupo atribuido. Esses IDs ficam em variaveis de ambiente
+(`GLPI_DEFAULT_URGENCY`, `GLPI_REQUESTER_USER_ID`, `GLPI_ASSIGN_USER_ID` e
+`GLPI_ASSIGN_GROUP_ID`) e nao sao hardcoded na regra de negocio.
+
+### Tabelas e codigo Protheus
+
+`glpi_chamados` armazena tentativa, roteamento GLPI, ticket ID, payload enviado,
+resposta sanitizada, erro, contador e datas. `normalizado_em` e `encerrado_em`
+existem apenas como preparacao; fechamento automatico nao foi implementado.
+
+`impressoras_suprimentos` relaciona o modelo em `printers_models` a TONER ou
+CILINDRO, cor e codigo Protheus. A impressora fisica continua ligada somente ao
+modelo. A combinacao modelo, tipo e cor e unica.
+
+Em modelo monocromatico, o toner unico resolve como PRETO. Em modelo colorido,
+as cores criticas sao lidas dos percentuais atuais de toner. Cor desconhecida,
+suprimento ausente ou codigo Protheus ausente gera
+`bloqueado_dados_incompletos` e nenhuma chamada externa.
+
+### Modal e API
+
+O detalhe de Status preserva o contrato anterior e acrescenta
+`codigo_protheus` nas leituras de toner, `suprimentos_toner` com todas as cores
+compativeis e `cilindro`. O modal exibe o codigo abaixo de cada barra e o codigo
+do cilindro ao lado do centro de custo. Ausencia aparece como `nao cadastrado`
+sem interromper a tela.
+
+### Limites e seguranca
+
+A integracao permanece desabilitada por padrao com `GLPI_ENABLED=false`. Tokens,
+cookies, CSRF, Authorization, HTML bruto e respostas brutas nao sao
+versionados. Antes de habilitar, entidade, categoria, localizacao e origem da
+solicitacao devem ser confirmadas no GLPI. Fechamento, solucao, estoque,
+Protheus, Cartuchos GLPI, dashboard, Papel e novos gatilhos continuam fora do
+escopo. A configuracao completa esta em `docs/integracoes/glpi.md`.
+
+### Validacao real controlada
+
+Em 2026-07-09, a branch
+`feature/integracao-glpi-chamados-impressoras` executou teste real e controlado
+de abertura GLPI em ambiente local/homologacao, usando credenciais fora do Git.
+
+Resultados:
+
+- toner: ticket GLPI `15252`, registro local `glpi_chamados.id=1`;
+- cilindro: ticket GLPI `15253`, registro local `glpi_chamados.id=2`;
+- requerente `1781`, usuario atribuido `1257` e grupo atribuido `2`
+  confirmados;
+- repeticoes controladas respeitaram a deduplicacao e nao abriram tickets
+  adicionais.
+
+O GLPI retornou `status=2` apos a atribuicao automatica, mesmo com payload de
+abertura em `status=1`. Para esta etapa, esse retorno e considerado esperado
+quando usuario/grupo sao atribuidos no momento da abertura.
+
+Antes de promover para `main`, a integracao deve passar por homologacao
+completa em ciclo real de coleta, validando principalmente se alertas
+recorrentes nao criam chamados duplicados.
+
 ## Próximas etapas
 
+- homologar o ciclo real de coleta com GLPI habilitado e credenciais fora do
+  Git;
 - ampliar fallbacks somente para modelos validados em diagnostico real;
 - expor consultas publicas dos alertas quando houver necessidade de frontend;
 - validar a coleta percentual de toner em modelos adicionais;

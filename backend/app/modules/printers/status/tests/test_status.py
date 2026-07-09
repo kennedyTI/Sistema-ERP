@@ -26,6 +26,7 @@ from backend.app.modules.printers.status.models import (
     LogImpressora,
     StatusImpressora,
 )
+from backend.app.modules.printers.supplies.models import PrinterSupply
 from backend.tests.auth_helpers import auth_headers
 
 
@@ -39,6 +40,7 @@ class PrinterStatusApiTest(TestCase):
         AuditLog.__table__.create(engine)
         PrinterModel.__table__.create(engine)
         PrinterMachine.__table__.create(engine)
+        PrinterSupply.__table__.create(engine)
         PrinterAlertRule.__table__.create(engine)
         AlertaImpressora.__table__.create(engine)
         StatusTonerImpressora.__table__.create(engine)
@@ -145,6 +147,25 @@ class PrinterStatusApiTest(TestCase):
 
     def test_status_detail_retorna_toners_sem_dados_tecnicos(self):
         machine = self._create_machine()
+        model = self.db.query(PrinterModel).one()
+        self.db.add_all(
+            [
+                PrinterSupply(
+                    modelo_impressora_id=model.id,
+                    suprimento="TONER",
+                    cor="PRETO",
+                    codigo_protheus="319999",
+                    ativo=True,
+                ),
+                PrinterSupply(
+                    modelo_impressora_id=model.id,
+                    suprimento="CILINDRO",
+                    cor=None,
+                    codigo_protheus="320999",
+                    ativo=True,
+                ),
+            ]
+        )
         self.db.add(
             StatusTonerImpressora(
                 maquina_id=machine["id"],
@@ -175,10 +196,35 @@ class PrinterStatusApiTest(TestCase):
         self.assertEqual(data["toners"][0]["percentual"], 78)
         self.assertEqual(data["toners"][0]["origem_coleta"], "html")
         self.assertEqual(data["toners"][0]["metodo_coleta"], "web_status")
+        self.assertEqual(data["toners"][0]["codigo_protheus"], "319999")
+        self.assertEqual(data["suprimentos_toner"][0]["codigo_protheus"], "319999")
+        self.assertEqual(data["cilindro"]["codigo_protheus"], "320999")
         serialized = str(data["toners"])
         self.assertNotIn("oid", serialized.casefold())
         self.assertNotIn("community", serialized.casefold())
         self.assertNotIn("Authorization", serialized)
+
+    def test_status_detail_tolera_codigo_protheus_ausente(self):
+        machine = self._create_machine()
+        model = self.db.query(PrinterModel).one()
+        self.db.add(
+            PrinterSupply(
+                modelo_impressora_id=model.id,
+                suprimento="TONER",
+                cor="PRETO",
+                codigo_protheus=None,
+                ativo=True,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.get(
+            f"/api/v2/printers/status/{machine['id']}",
+            headers=auth_headers(printers_status=True),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["data"]["suprimentos_toner"][0]["codigo_protheus"])
 
     def test_status_detail_retorna_metodo_brother_amigavel_ao_frontend(self):
         machine = self._create_machine()

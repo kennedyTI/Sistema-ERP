@@ -511,6 +511,14 @@ Etapa concluída: Etapa 3.5.3 — Porcentagem de toner
 Próxima etapa: v2.5.0 — Integração GLPI de chamados
 ```
 
+Estado de desenvolvimento da integracao GLPI:
+
+- branch de trabalho: `feature/integracao-glpi-chamados-impressoras`;
+- fluxo aprovado: validar na feature e integrar em `develop`;
+- `main` permanece bloqueada ate homologacao completa do ciclo real de coleta;
+- motivo do bloqueio: confirmar ausencia de chamados duplicados em alertas
+  recorrentes antes de publicar a proxima release.
+
 Validações da release v2.4.1:
 
 - 482 testes aprovados;

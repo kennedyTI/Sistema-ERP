@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.modules.printers.supplies.schemas import PrinterSupplyRead
+
 
 StatusOperacional = Literal["online", "offline"]
 NivelAlerta = Literal["cinza", "verde", "amarelo", "vermelho"]
@@ -34,6 +36,7 @@ class PrinterTonerRead(BaseModel):
         "brother_item_authenticated",
     ]
     coletado_em: datetime | None = None
+    codigo_protheus: str | None = None
 
 
 class PrinterStatusRead(BaseModel):
@@ -61,6 +64,8 @@ class PrinterStatusRead(BaseModel):
     alerta: str | None = None
     alertas: list[PrinterStatusAlertRead] = Field(default_factory=list)
     toners: list[PrinterTonerRead] = Field(default_factory=list)
+    suprimentos_toner: list[PrinterSupplyRead] = Field(default_factory=list)
+    cilindro: PrinterSupplyRead | None = None
     mensagem: str | None = None
     mensagem_alerta: str | None = None
     mensagem_operador: str

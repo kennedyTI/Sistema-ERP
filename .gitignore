@@ -34,6 +34,7 @@ backend/scripts/*.local.json
 backend/scripts/*.local.csv
 backend/scripts/*.local.xlsx
 backend/*.url
+backend/glpi_config.ini
 
 # Logs
 *.log

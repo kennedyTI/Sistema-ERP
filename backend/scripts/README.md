@@ -107,3 +107,28 @@ docker compose --env-file .env.docker exec api python backend/scripts/seed_print
 ```
 
 O servico `migrations` executa este seed depois do seed de regras de alertas.
+
+## Seed oficial de suprimentos de impressoras
+
+O script `seed_printer_supplies.py` sincroniza o catalogo inicial da tabela
+`impressoras_suprimentos`. Os registros relacionam modelo, tipo, cor e codigo
+de produto Protheus. Nao contem IP, setor, centro de custo, credencial ou dado
+de equipamento fisico.
+
+O seed e idempotente e preserva codigo nulo quando o produto ainda nao foi
+identificado. Nesse caso, a integracao GLPI bloqueia a abertura e registra o
+motivo, sem enviar requisicao externa.
+
+Execucao no host:
+
+```powershell
+python backend/scripts/seed_printer_supplies.py
+```
+
+Execucao via container:
+
+```powershell
+docker compose --env-file .env.docker exec api python backend/scripts/seed_printer_supplies.py
+```
+
+O servico `migrations` executa este seed depois das migrations Alembic.

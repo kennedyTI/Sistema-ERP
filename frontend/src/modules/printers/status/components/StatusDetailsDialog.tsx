@@ -11,6 +11,7 @@ import {
   type PrinterOperationalLog,
   type PrinterOperationalStatus,
   type PrinterOperationalToner,
+  type PrinterCompatibleSupply,
   type StatusSeverity,
 } from "@/modules/printers/status/statusApi";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
@@ -79,6 +80,26 @@ const tonerSeverityBarStyles: Partial<Record<StatusSeverity, string>> = {
   medium: "bg-amber-400",
 };
 
+const tonerColorBySupplyColor: Record<
+  NonNullable<PrinterCompatibleSupply["cor"]>,
+  PrinterOperationalToner["cor"]
+> = {
+  PRETO: "black",
+  CIANO: "cyan",
+  MAGENTA: "magenta",
+  AMARELO: "yellow",
+};
+
+const tonerNameBySupplyColor: Record<
+  NonNullable<PrinterCompatibleSupply["cor"]>,
+  string
+> = {
+  PRETO: "Preto",
+  CIANO: "Ciano",
+  MAGENTA: "Magenta",
+  AMARELO: "Amarelo",
+};
+
 const tonerCollectionMethodLabels: Record<PrinterOperationalToner["metodo_coleta"], string> = {
   printer_mib_walk: "Printer-MIB",
   snmp_oid_fallback: "OIDs cadastrados",
@@ -142,6 +163,7 @@ export function StatusDetailsDialog({
 
   const current = details ?? status;
   const toners = current?.toners ?? [];
+  const tonerDisplays = buildTonerDisplays(toners, current?.suprimentos_toner ?? []);
   const tonerCollectionLabel = formatTonerCollectionMethods(toners);
   const tonerUpdatedLabel = formatTonerUpdatedAgo(toners);
   const displayAlerts = current ? selectHighestSeverityAlerts(current) : [];
@@ -193,6 +215,10 @@ export function StatusDetailsDialog({
                     <Detail label="Modelo" value={current.model} />
                     <Detail label="Setor" value={current.sector} />
                     <Detail label="Centro de custo" value={current.cost_center} />
+                    <Detail
+                      label="Codigo do cilindro"
+                      value={current.cilindro?.codigo_protheus ?? "nao cadastrado"}
+                    />
                   </div>
                 </div>
               </div>
@@ -305,7 +331,7 @@ export function StatusDetailsDialog({
                     </p>
                   )}
                 </div>
-                {toners.length === 0 ? (
+                {tonerDisplays.length === 0 ? (
                   <p className="mt-3 text-sm text-muted-foreground">
                     Nenhuma informação de toner coletada.
                   </p>
@@ -313,14 +339,19 @@ export function StatusDetailsDialog({
                   <div
                     className={cn(
                       "mt-3 grid gap-x-8 gap-y-4",
-                      toners.length === 1 ? "max-w-sm" : "sm:grid-cols-2",
+                      tonerDisplays.length === 1 ? "max-w-sm" : "sm:grid-cols-2",
                     )}
                   >
-                    {toners.map((toner) => (
+                    {tonerDisplays.map(({ toner, supply }) => (
                       <TonerLevel
-                        key={`${toner.cor}-${toner.descricao ?? "sem-descricao"}`}
+                        key={
+                          supply
+                            ? `supply-${supply.id}`
+                            : `${toner?.cor}-${toner?.descricao ?? "sem-descricao"}`
+                        }
                         toner={toner}
-                        severity={findTonerAlertSeverity(toner, current.alertas)}
+                        supply={supply}
+                        severity={toner ? findTonerAlertSeverity(toner, current.alertas) : null}
                       />
                     ))}
                   </div>
@@ -376,26 +407,30 @@ export function StatusDetailsDialog({
 
 function TonerLevel({
   toner,
+  supply,
   severity,
 }: {
-  toner: PrinterOperationalToner;
+  toner: PrinterOperationalToner | null;
+  supply: PrinterCompatibleSupply | null;
   severity: StatusSeverity | null;
 }) {
-  const percentage = toner.percentual;
+  const color = toner?.cor ?? (supply?.cor ? tonerColorBySupplyColor[supply.cor] : "unknown");
+  const name = toner?.nome ?? (supply?.cor ? tonerNameBySupplyColor[supply.cor] : "Desconhecido");
+  const percentage = toner?.percentual ?? null;
   const normalizedPercentage = percentage === null
     ? 0
     : Math.min(100, Math.max(0, percentage));
   const percentageLabel = percentage === null ? "Desconhecido" : `${percentage}%`;
 
   return (
-    <div className="min-w-0" title={toner.descricao || undefined}>
+    <div className="min-w-0" title={toner?.descricao || undefined}>
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="flex min-w-0 items-center gap-2 font-medium">
           <span
-            className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tonerDotStyles[toner.cor])}
+            className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tonerDotStyles[color])}
             aria-hidden="true"
           />
-          <span className="truncate">{toner.nome}</span>
+          <span className="truncate">{name}</span>
         </span>
         <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
           {percentageLabel}
@@ -404,7 +439,7 @@ function TonerLevel({
       <div
         className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
         role="progressbar"
-        aria-label={`Nível do toner ${toner.nome}`}
+        aria-label={`Nível do toner ${name}`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percentage ?? undefined}
@@ -413,13 +448,32 @@ function TonerLevel({
         <div
           className={cn(
             "h-full rounded-full transition-[width] duration-300",
-            tonerSeverityBarStyles[severity ?? "unknown"] ?? tonerBarStyles[toner.cor],
+            tonerSeverityBarStyles[severity ?? "unknown"] ?? tonerBarStyles[color],
           )}
           style={{ width: `${normalizedPercentage}%` }}
         />
       </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        Codigo Protheus: {toner?.codigo_protheus ?? supply?.codigo_protheus ?? "nao cadastrado"}
+      </p>
     </div>
   );
+}
+
+function buildTonerDisplays(
+  toners: PrinterOperationalToner[],
+  supplies: PrinterCompatibleSupply[],
+) {
+  if (supplies.length === 0) {
+    return toners.map((toner) => ({ toner, supply: null }));
+  }
+  return supplies.map((supply) => {
+    const expectedColor = supply.cor ? tonerColorBySupplyColor[supply.cor] : "unknown";
+    return {
+      toner: toners.find((toner) => toner.cor === expectedColor) ?? null,
+      supply,
+    };
+  });
 }
 
 function findTonerAlertSeverity(
