@@ -5,13 +5,17 @@ from __future__ import annotations
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 celery_app = Celery(
     "sistema_erp",
     broker=os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0"),
     backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1"),
-    include=["backend.app.modules.printers.monitoring.tasks"],
+    include=[
+        "backend.app.modules.compras.rastreabilidade.tasks",
+        "backend.app.modules.printers.monitoring.tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -36,6 +40,11 @@ celery_app.conf.update(
         "printers-toner-every-60-minutes": {
             "task": "printers_toner_all",
             "schedule": float(os.getenv("PRINTER_TONER_INTERVAL_SECONDS", "3600")),
+        },
+        "compras-rastreabilidade-00-06-12-18": {
+            "task": "compras_rastreabilidade_importar",
+            "schedule": crontab(minute=0, hour="0,6,12,18"),
+            "kwargs": {"origem": "agendada"},
         },
     },
 )

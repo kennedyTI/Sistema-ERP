@@ -50,6 +50,7 @@ def _item_model(execucao_id: int, payload: dict[str, Any]) -> ComprasRastreabili
         data_emissao_sc=parse_date(payload.get("data_emissao_sc")),
         data_aprovacao_sc=parse_date(payload.get("data_aprovacao_sc")),
         aprovador_sc=payload.get("aprovador_sc"),
+        sc_aprovada=payload.get("sc_aprovada"),
         centro_custo=payload.get("centro_custo"),
         solicitante=payload.get("solicitante"),
         unidade_requisitante=payload.get("unidade_requisitante"),
@@ -88,20 +89,36 @@ def importar_rastreabilidade_compras(
     *,
     service: ComprasRastreabilidadeService | None = None,
     criado_por: str | None = None,
+    origem: str = "comando",
+    execucao_id: int | None = None,
 ) -> ImportacaoRastreabilidadeResultado:
-    execution = ComprasRastreabilidadeExecucao(
-        status="em_execucao",
-        iniciado_em=now_sao_paulo(),
-        criado_por=criado_por,
-    )
+    execution: ComprasRastreabilidadeExecucao | None = None
 
     try:
-        db.add(execution)
-        db.commit()
-        db.refresh(execution)
+        if execucao_id is None:
+            execution = ComprasRastreabilidadeExecucao(
+                status="em_andamento",
+                origem=origem,
+                iniciado_em=now_sao_paulo(),
+                criado_por=criado_por,
+            )
+            db.add(execution)
+            db.commit()
+            db.refresh(execution)
+        else:
+            execution = db.get(ComprasRastreabilidadeExecucao, execucao_id)
+            if execution is None:
+                raise ComprasRastreabilidadeImportError(
+                    "Execucao de rastreabilidade nao encontrada."
+                )
+            execution.status = "em_andamento"
+            execution.origem = origem
+            execution.criado_por = criado_por or execution.criado_por
+            execution.atualizado_em = now_sao_paulo()
+            db.commit()
+            db.refresh(execution)
 
         result = (service or ComprasRastreabilidadeService()).build_snapshot()
-        db.query(ComprasRastreabilidadeItem).delete()
         for item in result.itens:
             db.add(_item_model(execution.id, item))
         execution.status = "concluida"
@@ -118,7 +135,7 @@ def importar_rastreabilidade_compras(
     except Exception as exc:
         db.rollback()
         sanitized_message = sanitize_import_error(exc)
-        execution_id = getattr(execution, "id", None)
+        execution_id = getattr(execution, "id", None) or execucao_id
         if execution_id is not None:
             try:
                 persisted_execution = db.get(ComprasRastreabilidadeExecucao, execution_id)

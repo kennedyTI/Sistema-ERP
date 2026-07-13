@@ -132,6 +132,8 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
+        self.assertTrue(permissions.can_access_compras_rastreabilidade)
+        self.assertTrue(permissions.can_manage_compras_rastreabilidade)
 
     def test_gestor_acessa_inicio_sem_admin(self):
         permissions = portal_permissions_for_groups(["Gestor"])
@@ -144,6 +146,8 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_manage_printers_status)
         self.assertTrue(permissions.can_access_printers_machines)
         self.assertTrue(permissions.can_access_printers_paper)
+        self.assertTrue(permissions.can_access_compras_rastreabilidade)
+        self.assertTrue(permissions.can_manage_compras_rastreabilidade)
 
     def test_operador_acessa_inicio_sem_admin(self):
         permissions = portal_permissions_for_groups(["Operador"])
@@ -156,6 +160,7 @@ class PortalPermissionsTest(TestCase):
         self.assertFalse(permissions.can_manage_printers_status)
         self.assertFalse(permissions.can_access_printers_machines)
         self.assertFalse(permissions.can_access_printers_paper)
+        self.assertFalse(permissions.can_access_compras_rastreabilidade)
 
     def test_integracao_protheus_nao_acessa_portal_visual(self):
         permissions = portal_permissions_for_groups(["Integra\u00e7\u00e3o Protheus"])
@@ -169,13 +174,17 @@ class PortalPermissionsTest(TestCase):
                 "impressoras.ver_status",
                 "impressoras.ver_maquinas",
                 "impressoras.editar_maquinas",
+                "compras.ver_rastreabilidade",
             },
             groups=["Gestor"],
         )
 
         self.assertTrue(legacy.can_access_printers_machines)
+        self.assertTrue(legacy.can_access_compras_rastreabilidade)
         self.assertTrue(permissions.impressoras.ver_maquinas)
         self.assertTrue(permissions.impressoras.editar_maquinas)
         self.assertFalse(permissions.impressoras.criar_maquinas)
         self.assertFalse(permissions.impressoras.alternar_status_maquinas)
+        self.assertTrue(permissions.compras.ver_rastreabilidade)
+        self.assertFalse(permissions.compras.atualizar_rastreabilidade)
 

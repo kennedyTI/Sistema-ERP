@@ -10,6 +10,10 @@ django.setup()
 from backend.app.modules.audit.admin import AuditLogAdmin, LogAdmin, ReadOnlyAdminMixin  # noqa: E402
 from backend.app.modules.audit.models import AuditLog, Log  # noqa: E402
 from backend.app.modules.backoffice.management.commands.seed_admin_groups import GROUPS, OLD_GROUP_RENAMES  # noqa: E402
+from backend.app.modules.compras.permissions import (  # noqa: E402
+    PERMISSOES_COMPRAS_EQUIPE_TECNICA,
+    PERMISSOES_COMPRAS_GESTOR,
+)
 from backend.app.modules.printers.machines.admin import PrinterModelAdmin  # noqa: E402
 from backend.app.modules.printers.machines.django_models import PrinterModelAdminModel  # noqa: E402
 from backend.app.modules.printers.permissions import (  # noqa: E402
@@ -111,6 +115,7 @@ class AdminGroupsPolicyTest(TestCase):
         permissions = GROUPS["Equipe T\u00e9cnica"]["permissions"]
 
         self.assertEqual(permissions["audit"], {"view_log", "view_auditlog"})
+        self.assertEqual(permissions["compras"], PERMISSOES_COMPRAS_EQUIPE_TECNICA)
         self.assertEqual(permissions["impressoras"], PERMISSOES_EQUIPE_TECNICA)
         self.assertEqual(permissions["printer_machines"], "all")
         self.assertEqual(permissions["printer_alert_rules"], "all")
@@ -125,7 +130,10 @@ class AdminGroupsPolicyTest(TestCase):
     def test_grupos_recebem_permissoes_funcionais_sem_admin(self):
         self.assertEqual(
             GROUPS["Gestor"]["permissions"],
-            {"impressoras": PERMISSOES_GESTOR},
+            {
+                "compras": PERMISSOES_COMPRAS_GESTOR,
+                "impressoras": PERMISSOES_GESTOR,
+            },
         )
         self.assertEqual(
             GROUPS["Operador"]["permissions"],

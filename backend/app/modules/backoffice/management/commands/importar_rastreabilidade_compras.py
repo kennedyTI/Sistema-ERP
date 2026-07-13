@@ -3,9 +3,13 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from backend.app.core.database import SessionLocal
+from backend.app.core.redis_client import get_redis_client
 from backend.app.modules.compras.rastreabilidade.importer import (
     ComprasRastreabilidadeImportError,
-    importar_rastreabilidade_compras,
+)
+from backend.app.modules.compras.rastreabilidade.workflow import (
+    RastreabilidadeImportacaoEmAndamento,
+    executar_importacao_com_lock,
 )
 
 
@@ -16,9 +20,26 @@ class Command(BaseCommand):
         self.stdout.write("[Compras] Iniciando importacao da rastreabilidade.")
         db = SessionLocal()
         try:
-            result = importar_rastreabilidade_compras(db)
+            result = executar_importacao_com_lock(
+                db,
+                origem="comando",
+                criado_por="management_command",
+                redis_client=get_redis_client(),
+            )
+        except RastreabilidadeImportacaoEmAndamento as exc:
+            execucao_id = exc.execution.id if exc.execution else None
+            self.stdout.write(
+                "[Compras] Ja existe importacao em andamento"
+                + (f" na execucao {execucao_id}." if execucao_id else ".")
+            )
+            return
         except ComprasRastreabilidadeImportError as exc:
             self.stdout.write(f"[Compras] Importacao falhou: {exc}")
+            raise CommandError("Falha ao importar rastreabilidade de compras.") from exc
+        except Exception as exc:
+            self.stdout.write(
+                "[Compras] Importacao falhou: falha sanitizada na orquestracao."
+            )
             raise CommandError("Falha ao importar rastreabilidade de compras.") from exc
         finally:
             db.close()

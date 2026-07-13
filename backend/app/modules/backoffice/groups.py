@@ -9,6 +9,10 @@ from backend.app.modules.auth.permissions import (
     GROUP_OPERADOR,
 )
 from backend.app.modules.backoffice.permissions import BACKOFFICE_READONLY_PERMISSIONS
+from backend.app.modules.compras.permissions import (
+    PERMISSOES_COMPRAS_EQUIPE_TECNICA,
+    PERMISSOES_COMPRAS_GESTOR,
+)
 from backend.app.modules.printers.permissions import (
     PERMISSOES_EQUIPE_TECNICA,
     PERMISSOES_GESTOR,
@@ -20,6 +24,7 @@ GROUPS = {
         "description": "Acessa Impressoras, Papel e o Django Admin.",
         "permissions": {
             "audit": BACKOFFICE_READONLY_PERMISSIONS,
+            "compras": PERMISSOES_COMPRAS_EQUIPE_TECNICA,
             "impressoras": PERMISSOES_EQUIPE_TECNICA,
             "printer_machines": "all",
             "printer_alert_rules": "all",
@@ -32,6 +37,7 @@ GROUPS = {
     GROUP_GESTOR: {
         "description": "Acessa Impressoras, incluindo Papel; nao ve Admin.",
         "permissions": {
+            "compras": PERMISSOES_COMPRAS_GESTOR,
             "impressoras": PERMISSOES_GESTOR,
         },
     },

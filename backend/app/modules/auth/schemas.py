@@ -15,8 +15,14 @@ class PermissoesImpressoras(BaseModel):
     ver_papel: bool = False
 
 
+class PermissoesCompras(BaseModel):
+    ver_rastreabilidade: bool = False
+    atualizar_rastreabilidade: bool = False
+
+
 class PermissoesPortal(BaseModel):
     impressoras: PermissoesImpressoras = Field(default_factory=PermissoesImpressoras)
+    compras: PermissoesCompras = Field(default_factory=PermissoesCompras)
 
 
 class UsuarioAutenticado(BaseModel):
@@ -34,6 +40,9 @@ class PortalPermissions(BaseModel):
     can_manage_printers_status: bool = False
     can_access_printers_machines: bool = False
     can_access_printers_paper: bool = False
+    can_access_compras: bool = False
+    can_access_compras_rastreabilidade: bool = False
+    can_manage_compras_rastreabilidade: bool = False
 
 
 class PortalUser(BaseModel):

@@ -59,7 +59,12 @@ def make_session():
 def test_importer_grava_execucao_e_snapshot_sem_json_oficial():
     db = make_session()
 
-    result = importar_rastreabilidade_compras(db, service=FakeService(), criado_por="pytest")
+    result = importar_rastreabilidade_compras(
+        db,
+        service=FakeService(),
+        criado_por="pytest",
+        origem="comando",
+    )
 
     execution = db.get(ComprasRastreabilidadeExecucao, result.execucao_id)
     items = db.query(ComprasRastreabilidadeItem).all()
@@ -67,10 +72,39 @@ def test_importer_grava_execucao_e_snapshot_sem_json_oficial():
     assert result.total_registros == 1
     assert result.contagens.base_sc_pedido == 1
     assert execution.status == "concluida"
+    assert execution.origem == "comando"
     assert execution.criado_por == "pytest"
     assert len(items) == 1
     assert items[0].numero_sc == "000001"
     assert items[0].payload_completo == {"origem": "unit"}
+
+
+def test_importer_preserva_snapshot_anterior_ate_nova_execucao_concluir():
+    db = make_session()
+    old_execution = ComprasRastreabilidadeExecucao(status="concluida", origem="comando")
+    db.add(old_execution)
+    db.commit()
+    db.add(
+        ComprasRastreabilidadeItem(
+            execucao_id=old_execution.id,
+            numero_sc="SC-ANTIGA",
+            item_sc="0001",
+            payload_completo={},
+        )
+    )
+    db.commit()
+
+    result = importar_rastreabilidade_compras(db, service=FakeService(), origem="agendada")
+
+    assert result.total_registros == 1
+    assert db.query(ComprasRastreabilidadeExecucao).count() == 2
+    assert db.query(ComprasRastreabilidadeItem).count() == 2
+    assert (
+        db.query(ComprasRastreabilidadeItem)
+        .filter_by(execucao_id=old_execution.id, numero_sc="SC-ANTIGA")
+        .one_or_none()
+        is not None
+    )
 
 
 def test_importer_grava_falha_sanitizada_sem_segredos():

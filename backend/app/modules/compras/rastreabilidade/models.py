@@ -18,24 +18,31 @@ from backend.app.core.database import Base
 from backend.app.core.timezone import now_sao_paulo
 
 
-RASTREABILIDADE_EXECUCAO_STATUS = ("em_execucao", "concluida", "erro")
+RASTREABILIDADE_EXECUCAO_STATUS = ("em_andamento", "concluida", "erro")
+RASTREABILIDADE_EXECUCAO_ORIGEM = ("manual", "agendada", "comando")
 
 
 class ComprasRastreabilidadeExecucao(Base):
     __tablename__ = "compras_rastreabilidade_execucoes"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('em_execucao', 'concluida', 'erro')",
+            "status IN ('em_andamento', 'concluida', 'erro')",
             name="ck_compras_rastreabilidade_execucoes_status",
         ),
+        CheckConstraint(
+            "origem IN ('manual', 'agendada', 'comando')",
+            name="ck_compras_rastreabilidade_execucoes_origem",
+        ),
         Index("ix_compras_rastreabilidade_execucoes_status", "status"),
+        Index("ix_compras_rastreabilidade_execucoes_origem", "origem"),
         Index("ix_compras_rastreabilidade_execucoes_iniciado_em", "iniciado_em"),
     )
 
     id = Column(Integer, primary_key=True)
     iniciado_em = Column(DateTime, nullable=False, default=now_sao_paulo)
     finalizado_em = Column(DateTime, nullable=True)
-    status = Column(String(30), nullable=False, default="em_execucao")
+    status = Column(String(30), nullable=False, default="em_andamento")
+    origem = Column(String(30), nullable=False, default="comando")
     total_registros = Column(Integer, nullable=False, default=0)
     total_com_erro = Column(Integer, nullable=False, default=0)
     mensagem_erro_sanitizada = Column(Text, nullable=True)
@@ -74,6 +81,7 @@ class ComprasRastreabilidadeItem(Base):
     data_emissao_sc = Column(Date, nullable=True)
     data_aprovacao_sc = Column(Date, nullable=True)
     aprovador_sc = Column(String(180), nullable=True)
+    sc_aprovada = Column(String(20), nullable=True)
     centro_custo = Column(String(80), nullable=True)
     solicitante = Column(String(180), nullable=True)
     unidade_requisitante = Column(String(80), nullable=True)
