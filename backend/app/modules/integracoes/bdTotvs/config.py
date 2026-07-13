@@ -23,12 +23,14 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BDTOTVS_HOST",
         "BD_TOTVS_HOST",
         "PROTHEUS_DB_HOST",
+        "PROTHEUS_SQL_SERVER",
     ),
     "port": (
         "TOTVS_DB_PORT",
         "BDTOTVS_PORT",
         "BD_TOTVS_PORT",
         "PROTHEUS_DB_PORT",
+        "PROTHEUS_SQL_PORT",
     ),
     "database": (
         "TOTVS_DB_NAME",
@@ -40,6 +42,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_DATABASE",
         "PROTHEUS_DB_NAME",
         "PROTHEUS_DATABASE",
+        "PROTHEUS_SQL_DATABASE",
     ),
     "username": (
         "TOTVS_DB_USER",
@@ -50,6 +53,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_USER",
         "PROTHEUS_DB_USER",
         "PROTHEUS_DB_USERNAME",
+        "PROTHEUS_SQL_USERNAME",
     ),
     "password": (
         "TOTVS_DB_PASSWORD",
@@ -58,6 +62,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_DB_PASSWORD",
         "BD_TOTVS_PASSWORD",
         "PROTHEUS_DB_PASSWORD",
+        "PROTHEUS_SQL_PASSWORD",
     ),
     "driver": (
         "TOTVS_DB_DRIVER",
@@ -66,6 +71,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_DB_DRIVER",
         "BD_TOTVS_DRIVER",
         "PROTHEUS_DB_DRIVER",
+        "PROTHEUS_SQL_DRIVER",
     ),
     "trusted_connection": (
         "TOTVS_DB_TRUSTED_CONNECTION",
@@ -74,6 +80,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_DB_TRUSTED_CONNECTION",
         "BD_TOTVS_TRUSTED_CONNECTION",
         "PROTHEUS_DB_TRUSTED_CONNECTION",
+        "PROTHEUS_SQL_TRUSTED_CONNECTION",
     ),
     "timeout": (
         "TOTVS_DB_TIMEOUT",
@@ -82,6 +89,8 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BD_TOTVS_DB_TIMEOUT",
         "BD_TOTVS_TIMEOUT",
         "PROTHEUS_DB_TIMEOUT",
+        "PROTHEUS_SQL_TIMEOUT",
+        "PROTHEUS_SQL_CONNECTION_TIMEOUT",
     ),
     "encrypt": (
         "TOTVS_DB_ENCRYPT",
@@ -89,6 +98,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BDTOTVS_ENCRYPT",
         "BD_TOTVS_DB_ENCRYPT",
         "PROTHEUS_DB_ENCRYPT",
+        "PROTHEUS_SQL_ENCRYPT",
     ),
     "trust_server_certificate": (
         "TOTVS_DB_TRUST_SERVER_CERTIFICATE",
@@ -96,6 +106,7 @@ ENV_CANDIDATES: dict[str, tuple[str, ...]] = {
         "BDTOTVS_TRUST_SERVER_CERTIFICATE",
         "BD_TOTVS_DB_TRUST_SERVER_CERTIFICATE",
         "PROTHEUS_DB_TRUST_SERVER_CERTIFICATE",
+        "PROTHEUS_SQL_TRUST_SERVER_CERTIFICATE",
     ),
 }
 

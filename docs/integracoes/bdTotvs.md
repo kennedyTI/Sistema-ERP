@@ -46,9 +46,9 @@ TOTVS_DB_ENCRYPT=true
 TOTVS_DB_TRUST_SERVER_CERTIFICATE=true
 ```
 
-Aliases com prefixos `BDTOTVS`, `BD_TOTVS` e `PROTHEUS_DB` tambem sao aceitos
-para compatibilidade. Valores reais devem existir somente no ambiente seguro e
-nunca devem ser versionados.
+Aliases com prefixos `BDTOTVS`, `BD_TOTVS`, `PROTHEUS_DB` e `PROTHEUS_SQL`
+tambem sao aceitos para compatibilidade. Valores reais devem existir somente no
+ambiente seguro e nunca devem ser versionados.
 
 ## Autenticacao
 

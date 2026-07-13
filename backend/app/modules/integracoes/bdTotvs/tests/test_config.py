@@ -47,6 +47,30 @@ def test_configuracao_valida_com_usuario_e_senha():
     assert config.trust_server_certificate is False
 
 
+def test_configuracao_aceita_aliases_legados_protheus_sql():
+    config = get_totvs_db_config(
+        {
+            "PROTHEUS_SQL_SERVER": "sql.example.local",
+            "PROTHEUS_SQL_DATABASE": "protheus",
+            "PROTHEUS_SQL_DRIVER": "ODBC Driver 18 for SQL Server",
+            "PROTHEUS_SQL_TRUSTED_CONNECTION": "false",
+            "PROTHEUS_SQL_USERNAME": "usuario_integracao",
+            "PROTHEUS_SQL_PASSWORD": "senha_ficticia_teste",
+            "PROTHEUS_SQL_CONNECTION_TIMEOUT": "45",
+            "PROTHEUS_SQL_TRUST_SERVER_CERTIFICATE": "true",
+        },
+        load_env=False,
+    )
+
+    assert config.host == "sql.example.local"
+    assert config.database == "protheus"
+    assert config.driver == "ODBC Driver 18 for SQL Server"
+    assert config.username == "usuario_integracao"
+    assert config.password is not None
+    assert config.timeout == 45
+    assert config.trust_server_certificate is True
+
+
 def test_configuracao_ausente_gera_erro_sanitizado():
     try:
         get_totvs_db_config({}, load_env=False)
