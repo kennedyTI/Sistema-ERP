@@ -1,6 +1,6 @@
 """Adiciona backend de rastreabilidade de compras.
 
-Revision ID: 20260713_compras_rastreabilidade_backend
+Revision ID: 20260713_compras_rastreio
 Revises: 20260708_glpi_printer_supplies
 Create Date: 2026-07-13
 """
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "20260713_compras_rastreabilidade_backend"
+revision = "20260713_compras_rastreio"
 down_revision = "20260708_glpi_printer_supplies"
 branch_labels = None
 depends_on = None

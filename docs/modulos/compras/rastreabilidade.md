@@ -35,7 +35,7 @@ Alteracoes de recorte operacional devem ser feitas ali, nao duplicadas em Python
 
 ## Persistencia
 
-A migration `20260713_compras_rastreabilidade_backend` cria:
+A migration `20260713_compras_rastreio` cria:
 
 - `compras_rastreabilidade_execucoes`: controle de execucao, status e erro sanitizado;
 - `compras_rastreabilidade_itens`: snapshot consultivo dos itens rastreados.
