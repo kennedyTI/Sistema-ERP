@@ -432,6 +432,7 @@ O endpoint `/api/v2/auth/me` expõe permissões em português para o frontend:
 - histórico operacional ampliado;
 - integração Protheus;
 - integração bdTotvs documentada em `docs/integracoes/bdTotvs.md`;
+- backend de Compras/Rastreabilidade documentado em `docs/modulos/compras/rastreabilidade.md`;
 - integração GLPI;
 - coleta rica de informações em ciclos de 60 minutos;
 - assistente Telegram em etapa futura.

@@ -1,0 +1,52 @@
+-- ---------------------------------------------------------------------
+-- BASE SC + PEDIDO
+-- ---------------------------------------------------------------------
+-- Consulta inicial. Traz solicitacao de compra (SC1) e, quando existir,
+-- dados do pedido de compra relacionado (SC7).
+
+SELECT
+    C1_FILIAL    = SC1.C1_FILIAL,
+    C1_NUM       = SC1.C1_NUM,
+    C1_ITEM      = SC1.C1_ITEM,
+    C1_PRODUTO   = SC1.C1_PRODUTO,
+    C1_DESCRI    = SC1.C1_DESCRI,
+    C1_QUANT     = SC1.C1_QUANT,
+    C1_OBS       = SC1.C1_OBS,
+    C1_EMISSAO   = SC1.C1_EMISSAO,
+    C1__DTAPRV   = SC1.C1__DTAPRV,
+    C1_CC        = SC1.C1_CC,
+    C1_SOLICIT   = SC1.C1_SOLICIT,
+    C1_UNIDREQ   = SC1.C1_UNIDREQ,
+    C1__NOMAPV   = SC1.C1__NOMAPV,
+    C1_PEDIDO    = SC1.C1_PEDIDO,
+    C1_ITEMPED   = SC1.C1_ITEMPED,
+    C1_RECNO     = SC1.R_E_C_N_O_,
+    SC7_C7_NUM     = SC7.C7_NUM,
+    SC7_C7_ITEM    = SC7.C7_ITEM,
+    SC7_C7_EMISSAO = SC7.C7_EMISSAO,
+    SC7_C7_DATPRF  = SC7.C7_DATPRF,
+    SC7_C7_FORNECE = SC7.C7_FORNECE,
+    SC7_C7_LOJA    = SC7.C7_LOJA,
+    SC7_C7__NOMFOR = SC7.C7__NOMFOR,
+    SC7_C7_PRECO   = SC7.C7_PRECO,
+    SC7_C7_TOTAL   = SC7.C7_TOTAL,
+    SC7_C7_QUANT   = SC7.C7_QUANT,
+    SC7_C7_QUJE    = SC7.C7_QUJE,
+    SC7_C7_CONAPRO = SC7.C7_CONAPRO,
+    SC7_C7_EMITIDO = SC7.C7_EMITIDO,
+    SC7_C7_RESIDUO = SC7.C7_RESIDUO
+FROM dbo.vwSC1010 SC1 WITH (NOLOCK)
+LEFT JOIN dbo.vwSC7010 SC7 WITH (NOLOCK)
+    ON RTRIM(LTRIM(SC1.C1_FILIAL))  = RTRIM(LTRIM(SC7.C7_FILIAL))
+   AND RTRIM(LTRIM(SC1.C1_PEDIDO))  = RTRIM(LTRIM(SC7.C7_NUM))
+   AND RTRIM(LTRIM(SC1.C1_ITEMPED)) = RTRIM(LTRIM(SC7.C7_ITEM))
+   AND SC7.D_E_L_E_T_ = ' '
+WHERE SC1.C1_FILIAL  = '01'
+  AND SC1.C1_EMISSAO > CONVERT(char(8), DATEADD(DAY, -366, GETDATE()), 112)
+  AND SC1.C1_EMISSAO < CONVERT(char(8), DATEADD(DAY, +1, GETDATE()), 112)
+  AND SC1.C1_UNIDREQ = '85050'
+  AND SC1.D_E_L_E_T_ = ' '
+ORDER BY
+    SC1.C1_EMISSAO DESC,
+    SC1.C1_NUM DESC,
+    SC1.C1_ITEM;
